@@ -32,6 +32,8 @@ window.EK_CONFIG = Object.freeze({
 
     /* Reusable approver job-title tag for all review screens and punch cards. */
     .reviewer-role-tag{display:inline-flex;align-items:center;max-width:100%;margin-top:4px;padding:2px 7px;border-radius:999px;background:rgba(7,83,185,.1);border:1px solid rgba(7,83,185,.22);color:#0753b9;font-size:11px;font-weight:800;line-height:1.25;white-space:normal;text-align:center}
+    .review-by-role{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-bottom:3px}
+    .review-by-role .reviewer-role-tag{margin-top:0}
     .pc-sign .reviewer-role-tag{margin-top:0;padding:2px 5px;font-size:8px;line-height:1.15}
     @media print{
       .pc-time-exception{color:#b42318!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -80,7 +82,6 @@ window.EK_CONFIG = Object.freeze({
       const email = String(r?.reviewedBy || '').trim().toLowerCase();
       const profile = reviewerCache.get(email);
       if (!profile) return;
-      if (!r.reviewerName) r.reviewerName = profile.name || '';
       r.reviewerJobTitle = profile.jobTitle || '';
       r.reviewerCategory = profile.category || '';
       r.reviewerIsAdmin = !!profile.isAdmin;
@@ -182,9 +183,9 @@ window.EK_CONFIG = Object.freeze({
     const body = document.getElementById('absenceManageRows');
     if (!body) return;
     body.innerHTML = list.length ? list.map(r => {
-      const reviewerName = r.reviewerName || r.reviewedBy || '—';
-      const reviewerEmail = r.reviewerName && r.reviewedBy ? `<small class="table-sub">${esc(r.reviewedBy)}</small>` : '';
-      const reviewDone = `<b>${esc(reviewerName)}</b>${tagHtml(r.reviewerJobTitle)}${reviewerEmail}<small class="table-sub">${esc(r.reviewedAt || '')}</small><small class="table-sub">${esc(r.comment || '')}</small>`;
+      const reviewerRole = String(r.reviewerJobTitle || r.reviewerCategory || (r.reviewerIsAdmin ? 'Pentadbir Sistem' : 'Pengurusan')).trim() || 'Pengurusan';
+      const reviewVerb = r.status === 'DILULUSKAN' ? 'Diluluskan' : r.status === 'DITOLAK' ? 'Ditolak' : 'Disemak';
+      const reviewDone = `<div class="review-by-role"><b>${esc(reviewVerb)} oleh</b>${tagHtml(reviewerRole)}</div><small class="table-sub">Tarikh/Masa: ${esc(r.reviewedAt || '—')}</small><small class="table-sub">Catatan: ${esc(r.comment || '—')}</small>`;
       const reviewCell = r.status === 'MENUNGGU'
         ? `<div class="row-actions"><button class="action-link approve-link" onclick='openReviewAbsence(${JSON.stringify(r.id)},"DILULUSKAN")'>Lulus</button><button class="action-link warn-link" onclick='openReviewAbsence(${JSON.stringify(r.id)},"DITOLAK")'>Tolak</button></div>`
         : r.synthetic ? '<span class="muted">Tiada permohonan</span>' : reviewDone;
@@ -206,8 +207,10 @@ window.EK_CONFIG = Object.freeze({
     if (!body) return;
     body.innerHTML = list.length ? list.map(r => {
       const reviewed = r.reviewStatus !== 'BELUM DIAMBIL MAKLUM';
+      const reviewerRole = String(r.reviewerJobTitle || r.reviewerCategory || (r.reviewerIsAdmin ? 'Pentadbir Sistem' : 'Pentadbir Sistem')).trim() || 'Pentadbir Sistem';
+      const reviewVerb = r.reviewStatus === 'DIAMBIL MAKLUM' ? 'Diambil maklum' : r.reviewStatus === 'DITOLAK' ? 'Ditolak' : String(r.reviewStatus || 'Disemak');
       const reviewCell = reviewed
-        ? `<b>${esc(r.reviewStatus)} oleh ${esc(r.reviewerName || r.reviewedBy || '—')}</b>${tagHtml(r.reviewerJobTitle)}${r.reviewerName && r.reviewedBy ? `<small class="table-sub">${esc(r.reviewedBy)}</small>` : ''}<small class="table-sub">${esc(r.reviewedAt || '')}</small><small class="table-sub">${esc(r.comment || '')}</small>`
+        ? `<div class="review-by-role"><b>${esc(reviewVerb)} oleh</b>${tagHtml(reviewerRole)}</div><small class="table-sub">Tarikh/Masa: ${esc(r.reviewedAt || '—')}</small><small class="table-sub">Catatan: ${esc(r.comment || '—')}</small>`
         : `<div class="row-actions"><button class="action-link approve-link" onclick='openTimeReview(${JSON.stringify(r.id)},"DIAMBIL MAKLUM")'>Diambil Maklum</button><button class="action-link warn-link" onclick='openTimeReview(${JSON.stringify(r.id)},"DITOLAK")'>Ditolak</button></div>`;
       return `<tr><td><b>${esc(r.name)}</b><small class="table-sub">${esc(r.jobTitle || '—')} · ${esc(r.email)}</small></td><td>${esc(r.date)}</td><td><span class="badge ${r.type === 'LEWAT' ? 'lewat' : 'awal'}">${esc(r.type)}</span></td><td>${esc(r.session)}</td><td><b>${esc(r.recordTime)}</b></td><td>${esc(r.referenceTime || '—')}</td><td><span class="request-status ${r.reviewStatus === 'DIAMBIL MAKLUM' ? 'approved' : r.reviewStatus === 'DITOLAK' ? 'rejected' : 'pending'}">${esc(r.reviewStatus)}</span></td><td>${reviewCell}</td></tr>`;
     }).join('') : '<tr><td colspan="8" class="empty-cell">Tiada rekod sepadan.</td></tr>';
@@ -233,8 +236,8 @@ window.EK_CONFIG = Object.freeze({
         };
       }
 
-      // Review screens: enrich reviewer email with current name/job title, then
-      // render a compact role tag below the approver.
+      // Review screens: resolve the reviewer job title internally, then
+      // render only the role tag, decision time and comment (never reviewer name/email).
       if (typeof applyAbsenceManageFilters === 'function') applyAbsenceManageFilters = patchedAbsenceManageFilters;
       if (typeof loadAbsenceManagement === 'function') {
         const originalLoadAbsenceManagement = loadAbsenceManagement;
