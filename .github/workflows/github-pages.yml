@@ -116,3 +116,5 @@ jobs:
           grep -q 'function beginGlobalLoading' /tmp/gas-shim.js
           grep -q 'function startRequestButton' /tmp/gas-shim.js
           echo "LIVE_PAGES_EXACT_BUILD_OK mobile=${EXPECTED_MOBILE} shim=${EXPECTED_SHIM}"
+
+# deployment source: refactor/performance-v2
