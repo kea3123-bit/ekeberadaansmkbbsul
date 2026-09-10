@@ -321,7 +321,7 @@ function nextAttendanceStep_(values, schedule) {
   // Sesi 2 hanya diwajibkan apabila sekurang-kurangnya satu waktu Sesi 2
   // ditetapkan. Ini membolehkan sekolah menggunakan sama ada 2 atau 4 rakaman
   // sehari tanpa mengubah struktur Kad Perakam Waktu.
-  const hasSession2 = !!(schedule && (schedule.s2In || schedule.s2Out));
+  const hasSession2 = !!(schedule && (schedule.allowSecondSession || schedule.s2In || schedule.s2Out));
   if (!hasSession2) return {type:'', session:1, complete:true};
   if (!v[22]) return {type:'IN', session:2, complete:false};
   if (!v[27]) return {type:'OUT', session:2, complete:false};

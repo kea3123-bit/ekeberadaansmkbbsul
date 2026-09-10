@@ -166,6 +166,7 @@ function buildPunchCardMonthForUser_(user, monthKey) {
   records.forEach(r => {
     const dayReviews = reviewRows.filter(x => x.date === r.date);
     r.reviewState = timeReviewStatementForCard_(dayReviews, r.statusFlags || []);
+    r.reviewItems = dayReviews.map(x => ({type:x.type,session:Number(x.session||1),reviewStatus:x.reviewStatus||'',reviewerJobTitle:getReviewerJobTitleFromEmail_(x.reviewedBy),reviewedAt:x.reviewedAt?formatDateTime_(x.reviewedAt):'',comment:x.comment||''}));
   });
   records.sort((a,b) => a.day - b.day);
   return {
@@ -223,9 +224,11 @@ function punch(token, type, location, clientInfo) {
 
     const ipCheck = evaluatePunchIp_(user, type, recordIp, now, settings, isTestMode, todayRows);
     const session = step.session;
-    const refTime = type === 'IN'
-      ? (session === 1 ? schedule.s1In : schedule.s2In)
-      : (session === 1 ? schedule.s1Out : schedule.s2Out);
+    const refTime = getPunchReferenceTime_(type,session,schedule,user,settings,dateKey,values);
+    if (!isTestMode && type === 'IN') {
+      const latestAllowed = session === 1 ? schedule.maxPunchIn : (schedule.s2Out || '');
+      if (latestAllowed && nowMinutes > timeToMinutes_(latestAllowed)) throw new Error(`Tempoh Rekod Waktu Masuk Sesi ${session} telah tamat pada ${latestAllowed}.`);
+    }
     let exceptionType = '';
     if (!isTestMode && refTime) {
       const refMinutes = timeToMinutes_(refTime);

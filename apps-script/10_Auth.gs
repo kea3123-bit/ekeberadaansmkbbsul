@@ -274,6 +274,8 @@ function buildBootstrap_(user) {
   const today = todayKey_();
   const rec = findAttendanceRecord_(today, user.email);
   const effective = getEffectiveSchedule_(user, settings);
+  const displaySchedule = Object.assign({}, effective);
+  if (rec) displaySchedule.s1Out = getPunchReferenceTime_('OUT',1,effective,user,settings,today,rec.values) || effective.s1Out;
   let locationReady = true;
   if (String(settings.SYSTEM_MODE || 'REAL').toUpperCase() !== 'TEST') {
     try { validateLocationSettings_(settings); } catch (e) { locationReady = false; }
@@ -283,7 +285,7 @@ function buildBootstrap_(user) {
     today,
     now: formatDateTime_(new Date()),
     user: Object.assign(publicUser_(user), {canManageAbsence: isManagementUser_(user)}),
-    schedule: effective,
+    schedule: displaySchedule,
     settings: publicSettings_(settings),
     locationReady,
     attendance: rec ? publicAttendance_(rec, effective) : null

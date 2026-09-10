@@ -237,7 +237,7 @@ function readAbsenceRows_() {
 function invalidateAbsenceRows_(){EK_RUNTIME_ABSENCE_ROWS_=null;}
 function findAbsenceById_(id){return readAbsenceRows_().find(r=>r.id===String(id||'').trim())||null;}
 function publicAbsenceOwn_(r){return {id:r.id,type:r.type,mode:r.mode,startDate:r.startDate,endDate:r.endDate,startTime:r.startTime,endTime:r.endTime,note:r.note,status:r.status,reviewedBy:r.reviewedBy,reviewedAt:r.reviewedAt?formatDateTime_(r.reviewedAt):'',comment:r.comment,submittedAt:r.submittedAt?formatDateTime_(r.submittedAt):''};}
-function publicAbsenceManagement_(r){return {id:r.id,submittedAt:r.submittedAt?formatDateTime_(r.submittedAt):'',email:r.email,name:r.name,jobTitle:r.jobTitle||'',category:r.category,type:r.type,mode:r.mode,startDate:r.startDate,endDate:r.endDate,startTime:r.startTime,endTime:r.endTime,note:r.note,status:r.status,reviewedBy:r.reviewedBy,reviewedAt:r.reviewedAt?formatDateTime_(r.reviewedAt):'',comment:r.comment};}
+function publicAbsenceManagement_(r){return {id:r.id,submittedAt:r.submittedAt?formatDateTime_(r.submittedAt):'',email:r.email,name:r.name,jobTitle:r.jobTitle||'',category:r.category,type:r.type,mode:r.mode,startDate:r.startDate,endDate:r.endDate,startTime:r.startTime,endTime:r.endTime,note:r.note,status:r.status,reviewerJobTitle:getReviewerJobTitleFromEmail_(r.reviewedBy),reviewedAt:r.reviewedAt?formatDateTime_(r.reviewedAt):'',comment:r.comment};}
 function dateRangesOverlap_(a1,a2,b1,b2){return a1<=b2&&b1<=a2;}
 function daysBetweenKeys_(a,b){return Math.round((new Date(b+'T00:00:00').getTime()-new Date(a+'T00:00:00').getTime())/86400000);}
 function addDaysKey_(key,n){const d=new Date(key+'T00:00:00');d.setDate(d.getDate()+n);return Utilities.formatDate(d,tz_(),'yyyy-MM-dd');}
@@ -533,7 +533,7 @@ function publicUnexplainedAbsenceOwn_(r) {
 }
 
 function publicUnexplainedAbsenceManagement_(r) {
-  return {id:r.id,submittedAt:r.startDate,email:r.email,name:r.name,jobTitle:r.jobTitle||'',category:r.category,mode:'TIDAK_HADIR',type:'TIADA PENJELASAN',startDate:r.startDate,endDate:r.endDate,note:r.note,status:'TIDAK MOHON',reviewedBy:'',reviewedAt:'',comment:'',synthetic:true};
+  return {id:r.id,submittedAt:r.startDate,email:r.email,name:r.name,jobTitle:r.jobTitle||'',category:r.category,mode:'TIDAK_HADIR',type:'TIADA PENJELASAN',startDate:r.startDate,endDate:r.endDate,note:r.note,status:'TIDAK MOHON',reviewerJobTitle:'',reviewedAt:'',comment:'',synthetic:true};
 }
 
 /**

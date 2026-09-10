@@ -89,12 +89,32 @@ function getEffectiveSchedule_(user, settings) {
   const s1Out = user.s1Out || user.punchOutFrom || settings.DEFAULT_S1_OUT || settings.DEFAULT_PUNCH_OUT_FROM;
   const s2In = user.s2In || settings.DEFAULT_S2_IN || '';
   const s2Out = user.s2Out || settings.DEFAULT_S2_OUT || '';
-  return {
-    s1In, s1Out, s2In, s2Out,
-    // Compatibility keys for older client code / existing reports. There is no
-    // longer a hard 'masuk ditutup' or 'balik dibenarkan mulai' restriction.
-    lateAfter: s1In,
-    maxPunchIn: '',
-    punchOutFrom: s1Out
-  };
+  const maxPunchIn = user.maxPunchIn || settings.DEFAULT_MAX_PUNCH_IN || '10:00';
+  const allowSecondSession = String(settings.ALLOW_OPTIONAL_SECOND_SESSION || 'TRUE').toUpperCase() !== 'FALSE';
+  return {s1In,s1Out,s2In,s2Out,maxPunchIn,allowSecondSession,lateAfter:s1In,punchOutFrom:s1Out};
+}
+
+function minutesToTime_(minutes) {
+  minutes=Math.max(0,Math.min(1439,Math.round(Number(minutes)||0)));
+  return `${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`;
+}
+function isThursdayWbfUser_(user) {
+  return !!user && (String(user.category||'').trim().toUpperCase()==='AKP' || /PENGETUA/i.test(String(user.jobTitle||'')));
+}
+function getThursdayWbfOutReference_(user,settings,dateKey,values) {
+  if(!isThursdayWbfUser_(user) || String(settings.THURSDAY_WBF_ENABLED||'TRUE').toUpperCase()==='FALSE') return '';
+  if(new Date(`${dateKey}T12:00:00+08:00`).getDay()!==4) return '';
+  const v=padAttendanceValues_(values||[]); if(!v[4]) return '';
+  const inM=timeToMinutes_(formatTime_(v[4]));
+  const inFrom=timeToMinutes_(settings.THURSDAY_WBF_IN_FROM||'07:30'), inTo=timeToMinutes_(settings.THURSDAY_WBF_IN_TO||'09:00');
+  if(![inM,inFrom,inTo].every(Number.isFinite)||inM<inFrom||inM>inTo) return '';
+  const expected=inM+Math.max(1,Number(settings.THURSDAY_WBF_DURATION_MINUTES||450));
+  const outFrom=timeToMinutes_(settings.THURSDAY_WBF_OUT_FROM||'15:00'), outTo=timeToMinutes_(settings.THURSDAY_WBF_OUT_TO||'16:30');
+  if(![expected,outFrom,outTo].every(Number.isFinite)||expected<outFrom||expected>outTo) return '';
+  return minutesToTime_(expected);
+}
+function getPunchReferenceTime_(type,session,schedule,user,settings,dateKey,values) {
+  if(type==='OUT'&&Number(session)===1){const wbf=getThursdayWbfOutReference_(user,settings,dateKey,values);if(wbf)return wbf;}
+  if(type==='IN') return Number(session)===1?schedule.s1In:schedule.s2In;
+  return Number(session)===1?schedule.s1Out:schedule.s2Out;
 }

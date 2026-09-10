@@ -15,9 +15,14 @@ function readTimeReviewRows_(){
 }
 function invalidateTimeReviewRows_(){EK_RUNTIME_TIME_REVIEW_ROWS_=null;}
 
+function getReviewerJobTitleFromEmail_(email) {
+  const em=normalizeEmail_(email), u=em?getUserByEmail_(em,false):null;
+  return u?String(u.jobTitle||(u.isAdmin?'Pentadbir Sistem':u.category||'')).trim():'';
+}
+
 function publicTimeReview_(r) {
   return {id:r.id,date:r.date,email:r.email,name:r.name,jobTitle:r.jobTitle||'',category:r.category,type:r.type,session:r.session,recordTime:r.recordTime,referenceTime:r.referenceTime,
-    reviewStatus:r.reviewStatus||'BELUM DIAMBIL MAKLUM',reviewedBy:r.reviewedBy||'',reviewerName:r.reviewerName||'',reviewedAt:r.reviewedAt?formatDateTime_(r.reviewedAt):'',comment:r.comment||'',createdAt:r.createdAt?formatDateTime_(r.createdAt):''};
+    reviewStatus:r.reviewStatus||'BELUM DIAMBIL MAKLUM',reviewerJobTitle:getReviewerJobTitleFromEmail_(r.reviewedBy),reviewedAt:r.reviewedAt?formatDateTime_(r.reviewedAt):'',comment:r.comment||'',createdAt:r.createdAt?formatDateTime_(r.createdAt):''};
 }
 
 function timeReviewId_(user,date,type,session){
@@ -65,7 +70,7 @@ function inferAttendanceFlags_(values, user, settings) {
   const schedule = getEffectiveSchedule_(user, settings);
   const pairs = [
     {type:'LEWAT', value:v[4], ref:schedule.s1In, cmp:(a,b)=>a>b},
-    {type:'BALIK AWAL', value:v[9], ref:schedule.s1Out, cmp:(a,b)=>a<b},
+    {type:'BALIK AWAL', value:v[9], ref:getPunchReferenceTime_('OUT',1,schedule,user,settings,dateCellToKey_(v[0]),v), cmp:(a,b)=>a<b},
     {type:'LEWAT', value:v[22], ref:schedule.s2In, cmp:(a,b)=>a>b},
     {type:'BALIK AWAL', value:v[27], ref:schedule.s2Out, cmp:(a,b)=>a<b}
   ];
@@ -87,7 +92,7 @@ function ensureTimeReviewRowsForRange_(from, to) {
     const schedule=getEffectiveSchedule_(user,settings);
     const checks=[
       {type:'LEWAT',session:1,value:v[4],ref:schedule.s1In,cmp:(a,b)=>a>b},
-      {type:'BALIK AWAL',session:1,value:v[9],ref:schedule.s1Out,cmp:(a,b)=>a<b},
+      {type:'BALIK AWAL',session:1,value:v[9],ref:getPunchReferenceTime_('OUT',1,schedule,user,settings,date,v),cmp:(a,b)=>a<b},
       {type:'LEWAT',session:2,value:v[22],ref:schedule.s2In,cmp:(a,b)=>a>b},
       {type:'BALIK AWAL',session:2,value:v[27],ref:schedule.s2Out,cmp:(a,b)=>a<b}
     ];
@@ -149,18 +154,16 @@ function reviewTimeException(token,id,decision,comment) {
   sh.getRange(rec.row,12,1,5).setValues([[decision,admin.email,admin.name,now,String(comment||'').trim()]]);
   invalidateTimeReviewRows_();
   audit_('SEMAK_WAKTU',rec.id,`${decision}; ${rec.type}; ${rec.date}; sesi=${rec.session}`,admin.email);
-  return {ok:true,status:decision,reviewerName:admin.name,reviewedAt:formatDateTime_(now)};
+  return {ok:true,status:decision,reviewerJobTitle:admin.jobTitle||'Pentadbir Sistem',reviewedAt:formatDateTime_(now)};
 }
 
 function timeReviewStatementForCard_(reviews, flags) {
-  flags=Array.isArray(flags)?flags:splitAttendanceFlags_(flags);
-  if(!flags.length) return '';
+  flags=Array.isArray(flags)?flags:splitAttendanceFlags_(flags); if(!flags.length)return '';
   const relevant=(reviews||[]).filter(r=>flags.includes(String(r.type||'').toUpperCase()));
-  if(relevant.some(r=>r.reviewStatus==='DITOLAK')) {
-    const x=relevant.find(r=>r.reviewStatus==='DITOLAK'); return `DITOLAK - ${x.reviewerName||'PENTADBIR SISTEM'}`;
-  }
-  if(relevant.length && relevant.every(r=>r.reviewStatus==='DIAMBIL MAKLUM')) return 'Maklum - Pengetua';
-  return 'Belum diambil Maklum';
+  const statement=r=>[r.reviewStatus||'',getReviewerJobTitleFromEmail_(r.reviewedBy)||'Pentadbir Sistem',r.comment||'',r.reviewedAt?formatDateTime_(r.reviewedAt):''].filter(Boolean).join(' · ');
+  if(relevant.some(r=>r.reviewStatus==='DITOLAK')) return statement(relevant.find(r=>r.reviewStatus==='DITOLAK'));
+  if(relevant.length&&relevant.every(r=>r.reviewStatus==='DIAMBIL MAKLUM')) return relevant.map(statement).join(' | ');
+  return 'BELUM DIAMBIL MAKLUM';
 }
 
 function generatePdfReport_(title, headers, rows, fileName) {
@@ -181,7 +184,7 @@ function generateTimeReviewPdf(token, filters) {
   if(filters.type) rows=rows.filter(r=>r.type===filters.type);
   if(filters.status) rows=rows.filter(r=>r.reviewStatus===filters.status);
   return generatePdfReport_(`Laporan Semakan Lewat / Balik Awal ${data.fromDate} hingga ${data.toDate}`,
-    ['Tarikh','Nama','Jawatan','Jenis','Sesi','Rekod','Rujukan','Status Semakan','Pelulus','Ulasan'],
-    rows.map(r=>[r.date,r.name,r.jobTitle,r.type,r.session,r.recordTime,r.referenceTime,r.reviewStatus,r.reviewerName||'',r.comment||'']),
+    ['Tarikh','Nama','Jawatan','Jenis','Sesi','Rekod','Rujukan','Status Semakan','Jawatan Pelulus','Ulasan'],
+    rows.map(r=>[r.date,r.name,r.jobTitle,r.type,r.session,r.recordTime,r.referenceTime,r.reviewStatus,r.reviewerJobTitle||'',r.comment||'']),
     `Semakan_Waktu_${data.fromDate}_${data.toDate}.pdf`);
 }

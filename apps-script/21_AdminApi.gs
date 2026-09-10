@@ -163,12 +163,19 @@ function adminSaveSettings(token, payload) {
     MAX_GPS_ACCURACY_M: String(Number(payload.maxGpsAccuracyM || 120)),
     // Legacy keys are mirrored from Sesi 1 for backwards compatibility.
     DEFAULT_LATE_AFTER: normalizeTime_(payload.defaultS1In || payload.defaultLateAfter),
-    DEFAULT_MAX_PUNCH_IN: '23:59',
+    DEFAULT_MAX_PUNCH_IN: normalizeTime_(payload.defaultMaxPunchIn || currentSettings.DEFAULT_MAX_PUNCH_IN || '10:00'),
     DEFAULT_PUNCH_OUT_FROM: normalizeTime_(payload.defaultS1Out || payload.defaultPunchOutFrom),
     DEFAULT_S1_IN: normalizeTime_(payload.defaultS1In || payload.defaultLateAfter),
     DEFAULT_S1_OUT: normalizeTime_(payload.defaultS1Out || payload.defaultPunchOutFrom),
     DEFAULT_S2_IN: normalizeOptionalTime_(payload.defaultS2In),
     DEFAULT_S2_OUT: normalizeOptionalTime_(payload.defaultS2Out),
+    ALLOW_OPTIONAL_SECOND_SESSION: String(payload.allowOptionalSecondSession || currentSettings.ALLOW_OPTIONAL_SECOND_SESSION || 'TRUE').toUpperCase() === 'FALSE' ? 'FALSE' : 'TRUE',
+    THURSDAY_WBF_ENABLED: String(payload.thursdayWbfEnabled || currentSettings.THURSDAY_WBF_ENABLED || 'TRUE').toUpperCase() === 'FALSE' ? 'FALSE' : 'TRUE',
+    THURSDAY_WBF_IN_FROM: normalizeTime_(payload.thursdayWbfInFrom || currentSettings.THURSDAY_WBF_IN_FROM || '07:30'),
+    THURSDAY_WBF_IN_TO: normalizeTime_(payload.thursdayWbfInTo || currentSettings.THURSDAY_WBF_IN_TO || '09:00'),
+    THURSDAY_WBF_OUT_FROM: normalizeTime_(payload.thursdayWbfOutFrom || currentSettings.THURSDAY_WBF_OUT_FROM || '15:00'),
+    THURSDAY_WBF_OUT_TO: normalizeTime_(payload.thursdayWbfOutTo || currentSettings.THURSDAY_WBF_OUT_TO || '16:30'),
+    THURSDAY_WBF_DURATION_MINUTES: String(Math.max(1,Math.min(1440,Number(payload.thursdayWbfDurationMinutes || currentSettings.THURSDAY_WBF_DURATION_MINUTES || 450)))),
     ABSENT_AFTER: normalizeTime_(payload.absentAfter),
     PUNCH_REMINDER_ENABLED: String(payload.punchReminderEnabled || 'TRUE').toUpperCase() === 'FALSE' ? 'FALSE' : 'TRUE',
     PUNCH_REMINDER_TIME: normalizeTime_(payload.punchReminderTime || '09:00'),
@@ -188,6 +195,8 @@ function adminSaveSettings(token, payload) {
   if (!(Number(next.RADIUS_M) > 0 && Number(next.RADIUS_M) <= 5000)) throw new Error('Radius mesti antara 1 hingga 5000 meter.');
   if (!(Number(next.MAX_GPS_ACCURACY_M) > 0 && Number(next.MAX_GPS_ACCURACY_M) <= 2000)) throw new Error('Had ketepatan GPS tidak sah.');
   if (next.DEFAULT_S2_OUT && !next.DEFAULT_S2_IN) throw new Error('Tetapkan Sesi 2 Masuk sebelum Sesi 2 Keluar.');
+  if (timeToMinutes_(next.THURSDAY_WBF_IN_TO) <= timeToMinutes_(next.THURSDAY_WBF_IN_FROM)) throw new Error('Julat WBF Khamis: waktu masuk akhir mesti selepas waktu masuk mula.');
+  if (timeToMinutes_(next.THURSDAY_WBF_OUT_TO) <= timeToMinutes_(next.THURSDAY_WBF_OUT_FROM)) throw new Error('Julat WBF Khamis: waktu pulang akhir mesti selepas waktu pulang mula.');
 
   const sh = getSheetOrThrow_(EK.SHEETS.SETTINGS);
   const existingRows = sh.getLastRow() >= 2 ? sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues() : [];
