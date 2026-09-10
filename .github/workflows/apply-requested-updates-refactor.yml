@@ -28,40 +28,28 @@ jobs:
           python3 .github/scripts/patch-request-refactor.py
           curl -fsSL 'https://raw.githubusercontent.com/kea3123-bit/ekeberadaansmkbbsul/6182c980875ae1b8fb8fe5a03712d2eec45cac28/.github/scripts/patch-request-ui.py' -o /tmp/patch-request-ui.py
           python3 /tmp/patch-request-ui.py
-      - name: Capture validation diagnostics
+      - name: Validate Apps Script and frontend syntax
         shell: bash
         run: |
-          set +e
+          set -euo pipefail
           cat apps-script/*.gs > /tmp/apps-script.js
-          node --check /tmp/apps-script.js >/tmp/backend.log 2>&1; backend=$?
-          python3 - <<'PY'
-          from pathlib import Path
-          s=Path('Scripts.html').read_text()
-          a=s.find('<script>'); b=s.rfind('</script>')
-          if a < 0 or b <= a: raise SystemExit('script wrapper not found')
-          Path('/tmp/frontend.js').write_text(s[a+8:b])
-          PY
-          extract=$?
-          node --check /tmp/frontend.js >/tmp/frontend.log 2>&1; frontend=$?
-          grep -q 'AKTIVITI KOKURIKULUM' apps-script/00_Core.gs; g1=$?
-          grep -q 'THURSDAY_WBF_ENABLED' apps-script/00_Core.gs; g2=$?
-          grep -q 'allowOptionalSecondSession' apps-script/42_Settings.gs; g3=$?
-          grep -q 'reviewerJobTitle' apps-script/60_TimeReview.gs; g4=$?
-          grep -q 'reviewerJobTitle' apps-script/61_Absence.gs; g5=$?
-          grep -q 'timeReviewSort' Index.html; g6=$?
-          grep -q 'pc-time-alert' Styles.html; g7=$?
-          {
-            echo "backend=$backend"
-            echo "extract=$extract"
-            echo "frontend=$frontend"
-            echo "grep_types=$g1 grep_wbf=$g2 grep_settings=$g3 grep_time=$g4 grep_absence=$g5 grep_sort=$g6 grep_style=$g7"
-            echo "--- backend ---"
-            cat /tmp/backend.log
-            echo "--- frontend ---"
-            cat /tmp/frontend.log
-          } > VALIDATION_REQUESTED_UPDATES.txt
-          exit 0
-      - name: Commit diagnostic candidate branch
+          node --check /tmp/apps-script.js
+          cp Scripts.html /tmp/frontend.js
+          node --check /tmp/frontend.js
+          grep -q 'AKTIVITI KOKURIKULUM' apps-script/00_Core.gs
+          grep -q 'AKTIVITI SUKAN/PERMAINAN' apps-script/00_Core.gs
+          grep -q 'BENGKEL/KURSUS/SEMINAR (PPD)' apps-script/00_Core.gs
+          grep -q 'MESYUARAT/TAKLIMAT (KPM)' apps-script/00_Core.gs
+          grep -q 'THURSDAY_WBF_ENABLED' apps-script/00_Core.gs
+          grep -q 'allowOptionalSecondSession' apps-script/42_Settings.gs
+          grep -q 'reviewerJobTitle' apps-script/60_TimeReview.gs
+          grep -q 'reviewerJobTitle' apps-script/61_Absence.gs
+          grep -q 'timeReviewSort' Index.html
+          grep -q 'absenceManageSort' Index.html
+          grep -q 'reportSort' Index.html
+          grep -q 'userSort' Index.html
+          grep -q 'pc-time-alert' Styles.html
+      - name: Commit requested updates to deploy source branch
         shell: bash
         run: |
           set -euo pipefail
@@ -69,5 +57,5 @@ jobs:
           git config user.name 'eKeberadaan Bot'
           git config user.email 'actions@users.noreply.github.com'
           git add -A
-          git commit -m 'test: candidate requested updates for performance branch'
-          git push --force origin HEAD:fix/requested-updates-v2
+          git commit -m 'feat: update reviews WBF punch sessions and sorting'
+          git push origin HEAD:refactor/performance-v2
