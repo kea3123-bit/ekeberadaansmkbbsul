@@ -524,7 +524,27 @@ const state = {
   function updateAbsenceModeUi(){
     const mode=document.getElementById('absenceMode')?.value||'TIDAK_HADIR',d=state.absence||{};
     const typeSel=document.getElementById('absenceType');
-    const types=mode==='KEBERADAAN'?(d.presenceTypes||[]):(d.types||[]);
+    const requiredAbsenceTypes=[
+      'CUTI REHAT KHAS','CUTI REHAT','CUTI SAKIT (AWAM)','CUTI SAKIT (SWASTA)',
+      'CUTI TANPA REKOD KELOMPOK','KURSUS','BENGKEL','TAKLIMAT','MESYUARAT','SEMINAR',
+      'AKTIVITI KOKURIKULUM','AKTIVITI SUKAN/PERMAINAN','LAIN-LAIN'
+    ];
+    const requiredPresenceTypes=[
+      'PROGRAM DALAMAN SEKOLAH - KEBERADAAN',
+      'URUSAN PERIBADI (MASUK LEWAT) - KEBERADAAN',
+      'MESYUARAT DALAM SEKOLAH - KEBERADAAN',
+      'BENGKEL/KURSUS/SEMINAR (PPD)',
+      'BENGKEL/KURSUS/SEMINAR (JPN)',
+      'BENGKEL/KURSUS/SEMINAR (KPM)',
+      'MESYUARAT/TAKLIMAT (PPD)',
+      'MESYUARAT/TAKLIMAT (JPN)',
+      'MESYUARAT/TAKLIMAT (KPM)',
+      'LAIN-LAIN - KEBERADAAN'
+    ];
+    const serverTypes=mode==='KEBERADAAN'?(d.presenceTypes||[]):(d.types||[]);
+    const requiredTypes=mode==='KEBERADAAN'?requiredPresenceTypes:requiredAbsenceTypes;
+    const seen=new Set(),types=[];
+    [...serverTypes,...requiredTypes].forEach(value=>{const x=String(value||'').trim().toUpperCase();if(x&&!seen.has(x)){seen.add(x);types.push(x);}});
     if(typeSel)typeSel.innerHTML='<option value="">Pilih jenis</option>'+types.map(x=>`<option>${esc(x)}</option>`).join('');
     ['absenceStartTimeWrap','absenceEndTimeWrap'].forEach(id=>document.getElementById(id)?.classList.toggle('hidden',mode!=='KEBERADAAN'));
     const st=document.getElementById('absenceStartTime'),et=document.getElementById('absenceEndTime');if(st)st.required=mode==='KEBERADAAN';if(et)et.required=mode==='KEBERADAAN';
