@@ -1,0 +1,53 @@
+name: Apply absence type options
+
+on:
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - '.github/scripts/patch-absence-type-options.py'
+      - '.github/workflows/apply-absence-type-options.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply absence type patch
+        run: python3 .github/scripts/patch-absence-type-options.py
+      - name: Validate frontend contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp Scripts.html /tmp/frontend.js
+          node --check /tmp/frontend.js
+          grep -q 'AKTIVITI KOKURIKULUM' Scripts.html
+          grep -q 'AKTIVITI SUKAN/PERMAINAN' Scripts.html
+          grep -q 'BENGKEL/KURSUS/SEMINAR (PPD)' Scripts.html
+          grep -q 'BENGKEL/KURSUS/SEMINAR (JPN)' Scripts.html
+          grep -q 'BENGKEL/KURSUS/SEMINAR (KPM)' Scripts.html
+          grep -q 'MESYUARAT/TAKLIMAT (PPD)' Scripts.html
+          grep -q 'MESYUARAT/TAKLIMAT (JPN)' Scripts.html
+          grep -q 'MESYUARAT/TAKLIMAT (KPM)' Scripts.html
+          grep -q 'Sila isi tajuk aktiviti yang terlibat' Index.html
+      - name: Commit app change and remove temporary patch files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/scripts/patch-absence-type-options.py .github/workflows/apply-absence-type-options.yml
+          git config user.name 'eKeberadaan Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git commit -m 'fix: keep requested absence and presence types in UI'
+          git push origin HEAD:refactor/performance-v2
