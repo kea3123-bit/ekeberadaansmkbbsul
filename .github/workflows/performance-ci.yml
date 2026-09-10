@@ -1,0 +1,166 @@
+name: Performance refactor CI
+
+on:
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - 'Index.html'
+      - 'Logo.html'
+      - 'Scripts.html'
+      - 'Styles.html'
+      - 'package.json'
+      - 'web/**'
+      - 'scripts/build-pages.py'
+      - 'apps-script/**'
+      - '.github/workflows/performance-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pinned frontend dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Build modular static site
+        run: python3 scripts/build-pages.py
+
+      - name: Validate frontend and backend syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in _site/assets/*.js; do node --check "$f"; done
+          node --check _site/vendor/bootstrap/bootstrap.bundle.min.js
+          cat apps-script/*.gs > /tmp/apps-script-backend.js
+          node --check /tmp/apps-script-backend.js
+
+      - name: Browser runtime smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME=$(command -v google-chrome || command -v chromium || command -v chromium-browser)
+          "$CHROME" --version
+          python3 -m http.server 4173 --directory _site >/tmp/eke-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+          for n in 1 2 3 4 5; do
+            curl -fsS http://127.0.0.1:4173/ >/dev/null && break
+            sleep 1
+          done
+          "$CHROME" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --virtual-time-budget=4000 --dump-dom \
+            'http://127.0.0.1:4173/' > /tmp/runtime-dom.html
+          grep -q 'data-ek-runtime="ready"' /tmp/runtime-dom.html
+          grep -q 'data-ek-bootstrap="ready"' /tmp/runtime-dom.html
+          grep -q 'id="loginPage"' /tmp/runtime-dom.html
+
+          "$CHROME" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --window-size=390,844 --virtual-time-budget=4000 --dump-dom \
+            'http://127.0.0.1:4173/' > /tmp/runtime-mobile-dom.html
+          grep -q 'data-ek-runtime="ready"' /tmp/runtime-mobile-dom.html
+          grep -q 'data-ek-bootstrap="ready"' /tmp/runtime-mobile-dom.html
+          grep -q 'class="content container-fluid"' /tmp/runtime-mobile-dom.html
+          echo "BROWSER_RUNTIME_OK DESKTOP_DOM=$(wc -c < /tmp/runtime-dom.html) MOBILE_DOM=$(wc -c < /tmp/runtime-mobile-dom.html)"
+
+      - name: Verify full Bootstrap frontend contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"' _site/index.html
+          grep -q 'vendor/bootstrap/bootstrap.min.css' _site/index.html
+          grep -q 'vendor/bootstrap/bootstrap.bundle.min.js' _site/index.html
+          test -s _site/vendor/bootstrap/bootstrap.min.css
+          test -s _site/vendor/bootstrap/bootstrap.bundle.min.js
+          ! grep -q 'cdn.jsdelivr.net' _site/index.html
+          grep -q 'class="content container-fluid"' _site/index.html
+          grep -q 'class="sidebar collapse"' _site/index.html
+          grep -q 'nav nav-pills flex-column' _site/index.html
+          grep -q 'modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg' _site/index.html
+          grep -q 'data-bs-dismiss="toast"' _site/index.html
+          grep -R -q 'spinner-border spinner-border-sm' _site/assets
+          grep -R -q 'bootstrap.Collapse' _site/assets
+          grep -R -q 'bootstrap.Modal' _site/assets
+          grep -R -q 'bootstrap.Toast' _site/assets
+          ls _site/assets/mobile.*.css >/dev/null
+          grep -q '@media (max-width:767.98px)' web/mobile-bootstrap.css
+          grep -q 'sidebar.collapse:not(.show)' web/mobile-bootstrap.css
+          grep -q 'overflow-x:auto' web/mobile-bootstrap.css
+
+      - name: Verify admin modal and async loading regression contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          # User/admin modal controls must never fall back to unstyled browser defaults.
+          grep -q '.modal #modalContent input:not' web/mobile-bootstrap.css
+          grep -q '.modal #modalContent select' web/mobile-bootstrap.css
+          grep -q '.modal #modalContent textarea' web/mobile-bootstrap.css
+          grep -q '.modal #modalContent .check-line' web/mobile-bootstrap.css
+          grep -q '.modal #modalContent .modal-grid' web/mobile-bootstrap.css
+          grep -R -q 'function openUserModal' _site/assets
+          grep -R -q 'jobTitle' _site/assets
+          grep -R -q 'name=.*category' _site/assets
+          # Every bridge RPC has a debounced global Bootstrap loader; direct actions
+          # also receive a temporary spinner/disabled state when safe to do so.
+          grep -q 'function beginGlobalLoading' web/gas-shim.js
+          grep -q 'function startRequestButton' web/gas-shim.js
+          grep -q "ekGlobalLoading" web/gas-shim.js
+          grep -q '#ekGlobalLoading' web/mobile-bootstrap.css
+          grep -R -q 'Sedang memproses' _site/assets
+          # Explicit backend override must still work for staging.
+          grep -q 'queryBackend,configuredBackend,storedBackend' web/gas-shim.js
+
+      - name: Performance budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          html=$(wc -c < _site/index.html)
+          js=$(find _site -type f -name '*.js' -print0 | xargs -0 cat | wc -c)
+          css=$(find _site -type f -name '*.css' -print0 | xargs -0 cat | wc -c)
+          total=$(du -sb _site | awk '{print $1}')
+          echo "HTML=$html bytes"
+          echo "JS(all, including Bootstrap)=$js bytes"
+          echo "CSS(all, including Bootstrap)=$css bytes"
+          echo "TOTAL=$total bytes"
+          test "$html" -lt 100000
+          test "$js" -lt 350000
+          test "$css" -lt 350000
+          test "$total" -lt 900000
+
+      - name: Verify canonical backend contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R -q 'function doPost(e)' apps-script
+          grep -R -q 'function checkDelimaAccount(' apps-script
+          grep -R -q 'function loginWithPin(' apps-script
+          grep -R -q 'function resumeSession(' apps-script
+          grep -R -q 'function punch(' apps-script
+          grep -R -q 'LockService.getScriptLock()' apps-script/20_UserApi.gs
+          grep -R -q 'lock.releaseLock()' apps-script/20_UserApi.gs
+          grep -R -q 'function getAdminData(' apps-script
+          grep -R -q 'function getAttendanceRowIndex_' apps-script
+          grep -R -q 'function getSuccessfulLoginEmails_' apps-script
+          grep -R -q 'EK_ATT_INDEX_CACHE_KEY_' apps-script/41_AttendanceData.gs
+          grep -R -q 'EK_TRUSTED_TOUCH_MIN_INTERVAL_MS_' apps-script/11_Sessions.gs
+          grep -R -q 'recent && sameFingerprint' apps-script/11_Sessions.gs
+          grep -R -q 'invalidateTimeReviewRows_();' apps-script/60_TimeReview.gs
+          grep -R -q 'function diagnosePerformanceBackend' apps-script/95_Diagnostics.gs
+          grep -R -q 'EK_RUNTIME_ABSENCE_ROWS_' apps-script
+          grep -R -q 'Asia/Kuala_Lumpur' apps-script/appsscript.json
+          grep -R -q 'function isPagesWebOriginAllowed_' apps-script/Bridges.gs
+          grep -R -q 'EK_PAGES_ORIGINS' apps-script/Bridges.gs
+          ! grep -R -q "createTemplateFromFile('Index')" apps-script/*.gs
+          test ! -e Code.gs
+          test ! -e .github/workflows/apps-script-deploy.yml
+          test ! -e .github/workflows/mirror-repository.yml
+          count=$(find apps-script -maxdepth 1 -name '*.gs' | wc -l)
+          echo "Apps Script modules=$count"
+          test "$count" -ge 16

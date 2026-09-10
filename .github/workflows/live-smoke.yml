@@ -1,0 +1,93 @@
+name: Live web smoke test
+
+on:
+  workflow_run:
+    workflows: ["Publish optimized eKeberadaan web"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/performance-v2
+
+      - name: Resolve backend URL
+        id: backend
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import re
+          s=open('web/config.js',encoding='utf-8').read()
+          m=re.search(r"APPS_SCRIPT_WEB_APP_URL:\s*'([^']+)'",s)
+          if not m: raise SystemExit('Backend URL missing')
+          print('url='+m.group(1))
+          PY
+
+      - name: Verify optimized GitHub Pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          PAGE='https://farshoffs.github.io/ekeberadaansmkbbsul/'
+          for n in 1 2 3 4 5 6; do
+            code=$(curl -L --silent --show-error --max-time 30 -o /tmp/page.html -w '%{http_code}' "$PAGE" || true)
+            [ "$code" = 200 ] && break
+            sleep 5
+          done
+          test "$code" = 200
+          grep -q 'e-Keberadaan — Perakam Waktu Digital' /tmp/page.html
+          grep -q 'assets/app\.' /tmp/page.html
+          grep -q 'assets/core\.' /tmp/page.html
+          grep -q 'vendor/bootstrap/bootstrap.min.css' /tmp/page.html
+          grep -q 'vendor/bootstrap/bootstrap.bundle.min.js' /tmp/page.html
+          ! grep -q 'data:image' /tmp/page.html
+          bytes=$(wc -c < /tmp/page.html)
+          echo "LIVE_HTML_BYTES=$bytes"
+          test "$bytes" -lt 100000
+          curl -LfsS --max-time 30 "${PAGE}vendor/bootstrap/bootstrap.min.css" -o /tmp/bootstrap.css
+          curl -LfsS --max-time 30 "${PAGE}vendor/bootstrap/bootstrap.bundle.min.js" -o /tmp/bootstrap.js
+          grep -q 'Bootstrap' /tmp/bootstrap.css
+          grep -q 'Bootstrap' /tmp/bootstrap.js
+          curl -LfsS --max-time 30 "${PAGE}sw.js" -o /tmp/sw.js
+          curl -LfsS --max-time 30 "${PAGE}manifest.webmanifest" -o /tmp/manifest.json
+          grep -q 'eke-static-' /tmp/sw.js
+          grep -q 'e-Keberadaan' /tmp/manifest.json
+          curl -Lso /dev/null --max-time 30 -w 'PAGES_TTFB=%{time_starttransfer}s TOTAL=%{time_total}s SIZE=%{size_download}\n' "$PAGE"
+
+      - name: Verify Apps Script bridge GET
+        shell: bash
+        env:
+          BACKEND: ${{ steps.backend.outputs.url }}
+        run: |
+          set -euo pipefail
+          curl -LfsS --max-time 30 "${BACKEND}?bridge=1" -o /tmp/bridge-get.html
+          grep -q 'EK_BRIDGE_READY' /tmp/bridge-get.html
+          grep -q 'eKeberadaan Backend Bridge' /tmp/bridge-get.html
+          echo "BRIDGE_GET_BYTES=$(wc -c < /tmp/bridge-get.html)"
+
+      - name: Verify real browser RPC shape
+        shell: bash
+        env:
+          BACKEND: ${{ steps.backend.outputs.url }}
+        run: |
+          set -euo pipefail
+          payload='{"id":"ci-login-data","channel":"ci","method":"getLoginPageData","args":[],"origin":"https://farshoffs.github.io"}'
+          curl -LfsS --max-time 30 \
+            --data-urlencode "payload=${payload}" \
+            "${BACKEND}?bridge=1" -o /tmp/bridge-post.html
+          echo "BRIDGE_POST_BYTES=$(wc -c < /tmp/bridge-post.html)"
+          if grep -q 'ci-login-data' /tmp/bridge-post.html && grep -q 'schoolName' /tmp/bridge-post.html && grep -q 'pinLength' /tmp/bridge-post.html; then
+            echo 'BRIDGE_REAL_RPC_OK'
+          else
+            echo 'Expected real RPC payload not found. Relevant markers:'
+            grep -Eo 'EK_BRIDGE_RESULT|ci-login-data|schoolName|pinLength|Fungsi backend[^<]*|Origin bridge[^<]*|Payload bridge[^<]*|Permintaan bridge[^<]*' /tmp/bridge-post.html || true
+            echo 'TAIL:'
+            tail -c 5000 /tmp/bridge-post.html || true
+            echo
+            exit 1
+          fi
