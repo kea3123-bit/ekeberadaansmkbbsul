@@ -1,0 +1,48 @@
+name: Apply admin punch card reviewer tags
+
+on:
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - '.github/scripts/patch-admin-card-review-tags.py'
+      - '.github/workflows/apply-admin-card-review-tags.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply admin card reviewer tag patch
+        run: python3 .github/scripts/patch-admin-card-review-tags.py
+      - name: Validate frontend contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check web/config.js
+          grep -q "const recordReviews" web/config.js
+          grep -q "typeof loadAdminCard === 'function'" web/config.js
+          grep -q "getTimeReviewData" web/config.js
+          grep -q "data._reviewMeta = {month: data.month, rows}" web/config.js
+      - name: Commit app change and remove temporary patch files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/scripts/patch-admin-card-review-tags.py .github/workflows/apply-admin-card-review-tags.yml
+          git config user.name 'eKeberadaan Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git commit -m 'fix: show reviewer job tag on employee punch cards'
+          git push origin HEAD:refactor/performance-v2
