@@ -1,0 +1,54 @@
+name: Apply requested eKeberadaan updates
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-requested-updates.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply backend and frontend patches
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/patch-request-code.py
+          python3 .github/scripts/patch-request-ui.py
+
+      - name: Validate syntax and requested anchors
+        run: |
+          set -euo pipefail
+          cp Code.gs /tmp/Code.js
+          cp Scripts.html /tmp/Scripts.js
+          node --check /tmp/Code.js
+          node --check /tmp/Scripts.js
+          git diff --check
+          grep -q 'THURSDAY_WBF_ENABLED' Code.gs
+          grep -q 'AKTIVITI KOKURIKULUM' Code.gs
+          grep -q 'BENGKEL/KURSUS/SEMINAR (KPM)' Code.gs
+          grep -q 'absenceManageSort' Index.html
+          grep -q 'timeReviewSort' Index.html
+          grep -q 'reportSort' Index.html
+          grep -q 'userSort' Index.html
+          grep -q 'pc-time-alert' Scripts.html
+          grep -q 'review-role-tag' Scripts.html
+
+      - name: Publish source update
+        run: |
+          set -euo pipefail
+          rm -f .github/scripts/patch-request-code.py .github/scripts/patch-request-ui.py .github/workflows/apply-requested-updates.yml
+          git config user.name 'eKeberadaan Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat: refine reviews WBF punch sessions and sorting'
+          git push origin main
