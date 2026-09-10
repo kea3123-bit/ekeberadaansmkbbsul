@@ -1,0 +1,39 @@
+name: Apply mobile login visibility fix
+
+on:
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - '.github/scripts/patch-mobile-login-visibility.py'
+      - '.github/workflows/apply-mobile-login-visibility.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply mobile auth visibility fix
+        run: python3 .github/scripts/patch-mobile-login-visibility.py
+      - name: Validate visibility contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'Auth visibility contract' web/mobile-bootstrap.css
+          grep -q '\.shell.hidden' web/mobile-bootstrap.css
+          grep -q '\.login-page.hidden' web/mobile-bootstrap.css
+      - name: Commit app change and remove temporary patch files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/scripts/patch-mobile-login-visibility.py
+          rm -f .github/workflows/apply-mobile-login-visibility.yml
+          git config user.name 'eKeberadaan Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: hide app shell completely during mobile login'
+          git push origin HEAD:refactor/performance-v2
