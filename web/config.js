@@ -175,11 +175,12 @@ window.EK_CONFIG = Object.freeze({
     const st = document.getElementById('absenceManageStatus')?.value || '';
     const cat = document.getElementById('absenceManageCategory')?.value || '';
     const mode = document.getElementById('absenceManageMode')?.value || '';
-    const list = data.filter(r => {
+    const list = sortRecords(data.filter(r => {
       const hay = norm([r.id,r.submittedAt,r.name,r.jobTitle,r.email,r.category,r.mode,r.type,r.startDate,r.endDate,r.startTime,r.endTime,r.note,r.status,r.reviewedBy,r.reviewerName,r.reviewerJobTitle,r.reviewedAt,r.comment].join(' '));
       return (!q || hay.includes(q)) && (!st || r.status === st) && (!cat || r.category === cat) && (!mode || r.mode === mode);
-    });
+    }), getTableSort('absenceManage'));
     text('absenceManageCount', `${list.length} / ${data.length} rekod`);
+    updateTableSortIndicators('absenceManage');
     const body = document.getElementById('absenceManageRows');
     if (!body) return;
     body.innerHTML = list.length ? list.map(r => {
@@ -198,11 +199,12 @@ window.EK_CONFIG = Object.freeze({
     const q = norm(document.getElementById('timeReviewSearch')?.value);
     const type = document.getElementById('timeReviewType')?.value || '';
     const st = document.getElementById('timeReviewStatus')?.value || '';
-    const list = data.filter(r => {
+    const list = sortRecords(data.filter(r => {
       const hay = norm([r.name,r.jobTitle,r.email,r.category,r.date,r.type,r.session,r.recordTime,r.referenceTime,r.reviewStatus,r.reviewerName,r.reviewerJobTitle,r.comment].join(' '));
       return (!q || hay.includes(q)) && (!type || r.type === type) && (!st || r.reviewStatus === st);
-    });
+    }), getTableSort('timeReview'));
     text('timeReviewCount', `${list.length} / ${data.length} rekod`);
+    updateTableSortIndicators('timeReview');
     const body = document.getElementById('timeReviewRows');
     if (!body) return;
     body.innerHTML = list.length ? list.map(r => {
