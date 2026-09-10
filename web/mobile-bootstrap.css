@@ -380,3 +380,12 @@ input,select,textarea,button{max-width:100%}
   #screen-home .home-punch-heading h1{font-size:27px}
   .login-card h1{font-size:22px}
 }
+
+/* Auth visibility contract: mobile layout must never override .hidden.
+ * The mobile .shell rule uses display:grid!important; without these more
+ * specific selectors, Safari/iPhone can render the app shell below login. */
+.shell.hidden,
+.login-page.hidden {
+  display:none!important;
+}
+
