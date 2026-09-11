@@ -154,10 +154,21 @@ function performanceBurstStats_(values) {
 }
 
 function parsePerformanceBurstBridgeResponse_(body) {
-  const text = String(body || '');
+  const text = String(body || '').trim();
+  if (!text) throw new Error('Respons bridge ujian kosong.');
+
+  // Current perf-burst transport returns JSON directly. Retain the HtmlService
+  // parser as a compatibility fallback for an older deployment during rollout.
+  try {
+    const direct = JSON.parse(text);
+    if (direct && direct.type === 'EK_BRIDGE_RESULT') return direct;
+  } catch (e) {}
+
   const match = text.match(/const RESPONSE = ([\s\S]*?);\s*\n\s*function deliver/);
-  if (!match) throw new Error('Respons bridge ujian tidak dapat dibaca.');
-  return JSON.parse(match[1]);
+  if (match) return JSON.parse(match[1]);
+
+  const prefix = text.slice(0, 160).replace(/\s+/g, ' ');
+  throw new Error(`Respons bridge ujian tidak dapat dibaca. Prefix=${prefix}`);
 }
 
 function runPerformanceBurstStage_(webAppUrl, origin, suiteId, concurrency) {

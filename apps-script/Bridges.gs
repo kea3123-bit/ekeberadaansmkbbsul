@@ -57,6 +57,18 @@ function renderPagesBridge_(responsePayload, targetOrigin) {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
+// Normal browser RPC keeps the HtmlService/postMessage transport. The burst
+// harness is server-to-server and gets direct JSON so its metrics are not
+// coupled to HtmlService serialization details.
+function renderPagesBridgeTransport_(responsePayload, targetOrigin, channel) {
+  if (String(channel || '') === 'perf-burst') {
+    return ContentService
+      .createTextOutput(JSON.stringify(responsePayload || null))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  return renderPagesBridge_(responsePayload, targetOrigin);
+}
+
 function pagesBridgeMethodAllowed_(method) {
   return [
     'adminBulkResetPasswords',
@@ -187,20 +199,20 @@ function doPost(e) {
       if (value === undefined) value = null;
     }
 
-    return renderPagesBridge_({
+    return renderPagesBridgeTransport_({
       type: 'EK_BRIDGE_RESULT',
       id: id,
       channel: channel,
       ok: true,
       value: value
-    }, origin);
+    }, origin, channel);
   } catch (err) {
-    return renderPagesBridge_({
+    return renderPagesBridgeTransport_({
       type: 'EK_BRIDGE_RESULT',
       id: id,
       channel: channel,
       ok: false,
       error: (err && err.message) ? err.message : String(err || 'Ralat backend')
-    }, origin);
+    }, origin, channel);
   }
 }
