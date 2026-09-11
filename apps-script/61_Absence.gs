@@ -69,6 +69,7 @@ function publicAbsenceListItem_(r, fromDate, toDate) {
     category:String(r.category||''),
     mode:String(r.mode||'TIDAK_HADIR') === 'KEBERADAAN' ? 'KEBERADAAN' : 'TIDAK_HADIR',
     type:String(r.type||'TIDAK HADIR'),
+    note:String(r.note||''),
     startDate,
     endDate,
     startTime:normalizeOptionalTime_(r.startTime),
@@ -88,7 +89,7 @@ function filterPublicAbsencePresenceRows_(rows, filters) {
     if (status && String(r.status||'').toUpperCase() !== status) return false;
     if (category && r.category !== category) return false;
     if (search) {
-      const hay = [r.name,r.jobTitle,r.category,r.mode,r.type,r.startDate,r.endDate,r.startTime,r.endTime,r.status].join(' ').toLowerCase();
+      const hay = [r.name,r.jobTitle,r.category,r.mode,r.type,r.note,r.startDate,r.endDate,r.startTime,r.endTime,r.status].join(' ').toLowerCase();
       if (!hay.includes(search)) return false;
     }
     return true;
