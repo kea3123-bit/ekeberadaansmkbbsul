@@ -98,7 +98,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # User/admin modal controls must never fall back to unstyled browser defaults.
           grep -q '.modal #modalContent input:not' web/mobile-bootstrap.css
           grep -q '.modal #modalContent select' web/mobile-bootstrap.css
           grep -q '.modal #modalContent textarea' web/mobile-bootstrap.css
@@ -107,14 +106,11 @@ jobs:
           grep -R -q 'function openUserModal' _site/assets
           grep -R -q 'jobTitle' _site/assets
           grep -R -q 'name=.*category' _site/assets
-          # Every bridge RPC has a debounced global Bootstrap loader; direct actions
-          # also receive a temporary spinner/disabled state when safe to do so.
           grep -q 'function beginGlobalLoading' web/gas-shim.js
           grep -q 'function startRequestButton' web/gas-shim.js
           grep -q "ekGlobalLoading" web/gas-shim.js
           grep -q '#ekGlobalLoading' web/mobile-bootstrap.css
           grep -R -q 'Sedang memproses' _site/assets
-          # Explicit backend override must still work for staging.
           grep -q 'queryBackend,configuredBackend,storedBackend' web/gas-shim.js
 
       - name: Performance budget
@@ -143,8 +139,12 @@ jobs:
           grep -R -q 'function loginWithPin(' apps-script
           grep -R -q 'function resumeSession(' apps-script
           grep -R -q 'function punch(' apps-script
-          grep -R -q 'LockService.getScriptLock()' apps-script/20_UserApi.gs
-          grep -R -q 'lock.releaseLock()' apps-script/20_UserApi.gs
+          grep -q "acquireAttendanceKeyLock_('PUNCH'" apps-script/20_UserApi.gs
+          grep -q 'function acquireAttendanceKeyLock_' apps-script/41_AttendanceData.gs
+          grep -q 'function ensureAttendanceSlotForUser_' apps-script/41_AttendanceData.gs
+          grep -q 'function registerAttendanceRowsBatch_' apps-script/41_AttendanceData.gs
+          grep -q 'daily batched row slots' apps-script/95_Diagnostics.gs
+          grep -q 'WEB_APP_PARALLEL' apps-script/96_PerformanceBurstTest.gs
           grep -R -q 'function getAdminData(' apps-script
           grep -R -q 'function getAttendanceRowIndex_' apps-script
           grep -R -q 'function getSuccessfulLoginEmails_' apps-script
