@@ -569,7 +569,7 @@ const state = {
 
   function addClientDays(key,n){const d=new Date(key+'T12:00:00');d.setDate(d.getDate()+n);return localDateKey(d);}
   function localDateKey(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
-  function presetRange(kind){const today=state.boot?.today||localDateKey(new Date()),systemStart=getSystemStartDateClient(),d=new Date(today+'T12:00:00');if(kind==='today')return[today<systemStart?systemStart:today,today];if(kind==='month'){const start=`${today.slice(0,7)}-01`;return[start<systemStart?systemStart:start,today];}const start=addClientDays(today,-d.getDay());return[start<systemStart?systemStart:start,today];}
+  function presetRange(kind){const today=state.boot?.today||localDateKey(new Date()),systemStart=getSystemStartDateClient(),d=new Date(today+'T12:00:00'),single=key=>{const safe=key<systemStart?systemStart:key;return[safe,safe];};if(kind==='yesterday')return single(addClientDays(today,-1));if(kind==='tomorrow')return single(addClientDays(today,1));if(kind==='today')return single(today);if(kind==='month'){const start=`${today.slice(0,7)}-01`;return[start<systemStart?systemStart:start,today];}const start=addClientDays(today,-d.getDay());return[start<systemStart?systemStart:start,today];}
 
   function compareText(a,b){return String(a??'').localeCompare(String(b??''),'ms',{numeric:true,sensitivity:'base'});}
   function sortRecords(list,mode){
