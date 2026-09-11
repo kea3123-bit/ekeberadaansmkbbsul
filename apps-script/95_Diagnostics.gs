@@ -1,7 +1,7 @@
 // ---------- Read-only runtime diagnostics ----------
 // Run manually from the Apps Script editor after a deployment.
 // This function is intentionally NOT exposed through the GitHub Pages bridge.
-// Launch-performance Phase 3 source marker: 2026-09-11.
+// Launch-performance Phase 4 source marker: 2026-09-11.
 function diagnosePerformanceBackend() {
   const started = Date.now();
   const marks = {};
@@ -19,8 +19,6 @@ function diagnosePerformanceBackend() {
   const absenceRows = measure('absenceRowsMs', () => readAbsenceRows_());
   const timeReviewRows = measure('timeReviewRowsMs', () => readTimeReviewRows_());
 
-  // Repeat the hot paths in the same execution. These should be near-zero or
-  // materially faster because runtime/cache/index data has already been loaded.
   measure('settingsWarmMs', () => getSettings_());
   measure('usersWarmMs', () => getAllUsers_());
   measure('attendanceIndexWarmMs', () => getAttendanceRowIndex_());
@@ -45,8 +43,8 @@ function diagnosePerformanceBackend() {
       targetDailyUsers: 100,
       attendanceIndex: 'date+email direct lookup / daily batched row slots',
       ipCheck: 'hour registry cache; strict global ordering only for BLOCK policy',
-      punchLock: 'per-user keyed cache lease; Spreadsheet writes run in parallel',
-      note: 'Re-run the staged 20/50/100-user burst after deploying Phase 3.'
+      punchLock: 'daily batched row slots + direct per-user row writes; global lock only for one-time slot allocation and strict BLOCK IP policy',
+      note: 'Re-run the staged 20/50/100-user burst after deploying Phase 4.'
     },
     timingsMs: marks,
     totalMs: Date.now() - started
