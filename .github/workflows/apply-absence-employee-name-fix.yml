@@ -1,0 +1,43 @@
+name: Apply absence employee name fix
+
+on:
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - '.github/workflows/apply-absence-employee-name-fix.yml'
+      - '.github/scripts/fix-absence-employee-name.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply employee name fix
+        run: python3 .github/scripts/fix-absence-employee-name.py
+      - name: Validate frontend and backend contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp Scripts.html /tmp/frontend.js
+          node --check /tmp/frontend.js
+          cat apps-script/*.gs > /tmp/apps-script.js
+          node --check /tmp/apps-script.js
+          grep -Fq "const user = email ? getUserByEmail_(email, false) : null;" apps-script/61_Absence.gs
+          grep -Fq "name:String(r.name||(user&&user.name)||'')" apps-script/61_Absence.gs
+          grep -Fq "<b>${esc(r.name || '—')}</b><small" web/config.js
+          grep -Fq "<b>${esc(r.name||'—')}</b><small" Scripts.html
+      - name: Commit app change and remove temporary patch files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/scripts/fix-absence-employee-name.py .github/workflows/apply-absence-employee-name-fix.yml
+          git config user.name 'eKeberadaan Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: restore employee names in absence lists'
+          git push origin HEAD:refactor/performance-v2
