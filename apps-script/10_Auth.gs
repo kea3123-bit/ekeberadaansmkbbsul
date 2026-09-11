@@ -702,13 +702,43 @@ function constantTimeEquals_(a, b) {
 
 function normalizeClientInfo_(info) {
   info = info && typeof info === 'object' ? info : {};
-  const ip = normalizeIp_(info.ip);
+  const publicIpv4 = normalizeIp_(info.publicIpv4);
+  const publicIpv6 = normalizeIp_(info.publicIpv6);
+  const suppliedIp = normalizeIp_(info.ip);
+  const ip = publicIpv4 || suppliedIp || publicIpv6;
+  const num = (value, min, max) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= min && n <= max ? n : '';
+  };
   return {
     ip,
+    publicIpv4,
+    publicIpv6,
+    ipSource:String(info.ipSource || '').trim().slice(0, 60),
+    clientInstanceId:String(info.clientInstanceId || '').trim().slice(0, 120),
     userAgent: String(info.userAgent || '').trim().slice(0, 500),
     platform: String(info.platform || '').trim().slice(0, 120),
+    vendor: String(info.vendor || '').trim().slice(0, 120),
     timezone: String(info.timezone || '').trim().slice(0, 100),
-    language: String(info.language || '').trim().slice(0, 60)
+    browserTimezone: String(info.browserTimezone || '').trim().slice(0, 100),
+    language: String(info.language || '').trim().slice(0, 60),
+    deviceType:String(info.deviceType || '').trim().slice(0, 80),
+    deviceModel:String(info.deviceModel || '').trim().slice(0, 160),
+    architecture:String(info.architecture || '').trim().slice(0, 80),
+    platformVersion:String(info.platformVersion || '').trim().slice(0, 100),
+    browserBrands:String(info.browserBrands || '').trim().slice(0, 300),
+    screen:String(info.screen || '').trim().slice(0, 60),
+    viewport:String(info.viewport || '').trim().slice(0, 60),
+    pixelRatio:num(info.pixelRatio,0.1,20),
+    touchPoints:num(info.touchPoints,0,100),
+    hardwareConcurrency:num(info.hardwareConcurrency,0,256),
+    deviceMemoryGb:num(info.deviceMemoryGb,0,1024),
+    colorDepth:num(info.colorDepth,0,128),
+    displayMode:String(info.displayMode || '').trim().slice(0, 60),
+    networkType:String(info.networkType || '').trim().slice(0, 60),
+    networkDownlinkMbps:num(info.networkDownlinkMbps,0,100000),
+    networkRttMs:num(info.networkRttMs,0,600000),
+    saveData:!!info.saveData
   };
 }
 
@@ -724,8 +754,23 @@ function recordLoginEventSafe_(user, clientInfo, status, detail) {
     const ci = normalizeClientInfo_(clientInfo);
     const tracking = String(getSettings_().IP_TRACKING_ENABLED || 'TRUE').toUpperCase() !== 'FALSE';
     const sh = getSheetOrThrow_(EK.SHEETS.LOGIN_LOG);
+    const network = [
+      ci.networkType || '',
+      ci.networkDownlinkMbps !== '' ? `${ci.networkDownlinkMbps}Mbps` : '',
+      ci.networkRttMs !== '' ? `RTT ${ci.networkRttMs}ms` : '',
+      ci.saveData ? 'SaveData' : ''
+    ].filter(Boolean).join(' ');
     const device = [
+      ci.deviceType ? `Type=${ci.deviceType}` : '',
+      ci.deviceModel ? `Model=${ci.deviceModel}` : '',
       ci.platform ? `Platform=${ci.platform}` : '',
+      ci.screen ? `Screen=${ci.screen}` : '',
+      ci.viewport ? `Viewport=${ci.viewport}` : '',
+      ci.touchPoints !== '' ? `Touch=${ci.touchPoints}` : '',
+      ci.hardwareConcurrency !== '' ? `CPU=${ci.hardwareConcurrency}` : '',
+      ci.deviceMemoryGb !== '' ? `RAM=${ci.deviceMemoryGb}GB` : '',
+      network ? `Network=${network}` : '',
+      ci.clientInstanceId ? `Client=${ci.clientInstanceId}` : '',
       ci.timezone ? `TZ=${ci.timezone}` : '',
       ci.language ? `Lang=${ci.language}` : '',
       ci.userAgent || ''
@@ -738,7 +783,7 @@ function recordLoginEventSafe_(user, clientInfo, status, detail) {
       tracking ? (ci.ip || '') : '',
       device,
       String(status || ''),
-      String(detail || '')
+      `${String(detail || '')}${tracking && ci.publicIpv6 ? `; IPv6=${ci.publicIpv6}` : ''}`
     ]);
   } catch (e) {}
 }

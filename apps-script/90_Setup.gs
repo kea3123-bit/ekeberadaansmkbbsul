@@ -170,6 +170,9 @@ function setupTrustedDevicesSheet_(ss) {
   sh.setColumnWidth(6, 170);
   sh.setColumnWidths(7, 3, 180);
   sh.setColumnWidth(13, 260);
+  sh.setColumnWidth(14, 240); sh.setColumnWidths(15, 2, 150); sh.setColumnWidths(17, 2, 130);
+  sh.setColumnWidths(19, 4, 100); sh.setColumnWidth(23, 260); sh.setColumnWidths(24, 2, 190);
+  sh.setColumnWidth(26, 520); sh.setColumnWidths(27, 2, 160);
   try { sh.hideColumns(12, 1); } catch (e) {}
 }
 
@@ -179,6 +182,10 @@ function ensureTrustedDevicesSheet_() {
   if (!sh) {
     setupTrustedDevicesSheet_(ss);
     sh = ss.getSheetByName(EK.SHEETS.TRUSTED_DEVICES);
+  } else {
+    // Self-heal appended telemetry headers for an existing production sheet.
+    ensureHeaders_(sh, EK.TRUSTED_DEVICE_HEADERS);
+    styleHeader_(sh, EK.TRUSTED_DEVICE_HEADERS.length);
   }
   EK_RUNTIME_SHEETS_[EK.SHEETS.TRUSTED_DEVICES] = sh;
   return sh;

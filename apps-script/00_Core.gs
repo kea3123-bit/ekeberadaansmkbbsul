@@ -20,7 +20,7 @@ const EK = Object.freeze({
   ABSENCE_HEADERS: ['ID', 'DihantarPada', 'Emel', 'Nama', 'Kategori', 'Jenis', 'TarikhMula', 'TarikhAkhir', 'Catatan', 'Status', 'DisemakOleh', 'DisemakPada', 'UlasanPengetua', 'DikemaskiniPada', 'Mod', 'MasaMula', 'MasaAkhir', 'Jawatan'],
   TIME_REVIEW_HEADERS: ['ID', 'DiciptaPada', 'Tarikh', 'Emel', 'Nama', 'Jawatan', 'Kategori', 'Jenis', 'Sesi', 'WaktuRekod', 'WaktuRujukan', 'StatusSemakan', 'DisemakOleh', 'NamaPelulus', 'DisemakPada', 'Ulasan'],
   LOGIN_HEADERS: ['Masa', 'Emel', 'Nama', 'Kategori', 'IP Awam', 'Peranti/Pelayar', 'Status', 'Butiran'],
-  TRUSTED_DEVICE_HEADERS: ['DeviceID', 'Emel', 'NamaPeranti', 'Platform', 'Pelayar', 'IPTerakhir', 'DiciptaPada', 'DilihatTerakhir', 'TamatPada', 'Aktif', 'VersiSesi', 'TokenHash', 'SebabBatal'],
+  TRUSTED_DEVICE_HEADERS: ['DeviceID', 'Emel', 'NamaPeranti', 'Platform', 'Pelayar', 'IPTerakhir', 'DiciptaPada', 'DilihatTerakhir', 'TamatPada', 'Aktif', 'VersiSesi', 'TokenHash', 'SebabBatal', 'ClientInstanceID', 'JenisPeranti', 'ModelPeranti', 'Skrin', 'Viewport', 'PixelRatio', 'TouchPoints', 'CPU', 'RAMGB', 'Rangkaian', 'IPv4Awam', 'IPv6Awam', 'UserAgent', 'ZonMasa', 'Bahasa'],
   DEFAULT_SETTINGS: {
     SCHOOL_NAME: 'SMK Bandar Baru Sungai Lalang',
     SCHOOL_LAT: '',

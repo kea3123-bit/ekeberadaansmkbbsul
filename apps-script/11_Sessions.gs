@@ -30,7 +30,22 @@ function trustedDeviceFromRow_(v, row) {
     active:toBool_(v[9]),
     sessionVersion:Math.max(1, Number(v[10]) || 1),
     tokenHash:String(v[11] || '').trim(),
-    revokeReason:String(v[12] || '').trim()
+    revokeReason:String(v[12] || '').trim(),
+    clientInstanceId:String(v[13] || '').trim(),
+    deviceType:String(v[14] || '').trim(),
+    model:String(v[15] || '').trim(),
+    screen:String(v[16] || '').trim(),
+    viewport:String(v[17] || '').trim(),
+    pixelRatio:v[18] === '' ? '' : Number(v[18]),
+    touchPoints:v[19] === '' ? '' : Number(v[19]),
+    cpu:v[20] === '' ? '' : Number(v[20]),
+    ramGb:v[21] === '' ? '' : Number(v[21]),
+    network:String(v[22] || '').trim(),
+    publicIpv4:String(v[23] || '').trim(),
+    publicIpv6:String(v[24] || '').trim(),
+    userAgent:String(v[25] || '').trim(),
+    timezone:String(v[26] || '').trim(),
+    language:String(v[27] || '').trim()
   };
 }
 
@@ -83,6 +98,28 @@ function platformNameFromClientInfo_(ci) {
 
 function deviceNameFromClientInfo_(ci) {
   return `${platformNameFromClientInfo_(ci)} · ${browserNameFromUa_(ci && ci.userAgent)}`;
+}
+
+function trustedDeviceNetworkLabel_(ci) {
+  return [
+    ci.networkType || '',
+    ci.networkDownlinkMbps !== '' ? `${ci.networkDownlinkMbps}Mbps` : '',
+    ci.networkRttMs !== '' ? `RTT ${ci.networkRttMs}ms` : '',
+    ci.saveData ? 'SaveData' : '',
+    ci.displayMode || ''
+  ].filter(Boolean).join(' ').slice(0, 220);
+}
+
+function trustedDeviceTelemetryValues_(ci) {
+  return [
+    ci.clientInstanceId || '', ci.deviceType || '', ci.deviceModel || '',
+    ci.screen || '', ci.viewport || '', ci.pixelRatio === '' ? '' : ci.pixelRatio,
+    ci.touchPoints === '' ? '' : ci.touchPoints,
+    ci.hardwareConcurrency === '' ? '' : ci.hardwareConcurrency,
+    ci.deviceMemoryGb === '' ? '' : ci.deviceMemoryGb,
+    trustedDeviceNetworkLabel_(ci), ci.publicIpv4 || '', ci.publicIpv6 || '',
+    ci.userAgent || '', ci.timezone || '', ci.language || ''
+  ];
 }
 
 function newTrustedDeviceSecret_() {
@@ -149,7 +186,7 @@ function registerOrRefreshTrustedDevice_(user, clientInfo, existingCredential) {
   sh.appendRow([
     deviceId, user.email, deviceNameFromClientInfo_(ci), platformNameFromClientInfo_(ci), browserNameFromUa_(ci.userAgent),
     ci.ip || '', now, now, exp, true, Math.max(1, Number(user.sessionVersion || 1)),
-    hashTrustedDeviceSecret_(deviceId, secret), ''
+    hashTrustedDeviceSecret_(deviceId, secret), '', ...trustedDeviceTelemetryValues_(ci)
   ]);
   const row = sh.getLastRow();
   sh.getRange(row, 7, 1, 3).setNumberFormat('dd/MM/yyyy HH:mm:ss');
@@ -167,15 +204,20 @@ function touchTrustedDevice_(rec, clientInfo, extendExpiry) {
   const nextBrowser = browserNameFromUa_(ci.userAgent);
   const nextName = `${nextPlatform} · ${nextBrowser}`;
   const nextIp = ci.ip || rec.lastIp || '';
+  const telemetry = trustedDeviceTelemetryValues_(ci);
   const lastSeenMs = dateMillis_(rec.lastSeenAt);
   const recent = lastSeenMs > 0 && (now.getTime() - lastSeenMs) < EK_TRUSTED_TOUCH_MIN_INTERVAL_MS_;
   const sameFingerprint = nextName === String(rec.deviceName || '') &&
     nextPlatform === String(rec.platform || '') &&
     nextBrowser === String(rec.browser || '') &&
-    nextIp === String(rec.lastIp || '');
+    nextIp === String(rec.lastIp || '') &&
+    String(ci.clientInstanceId || '') === String(rec.clientInstanceId || '') &&
+    String(ci.deviceType || '') === String(rec.deviceType || '') &&
+    String(ci.deviceModel || '') === String(rec.model || '') &&
+    String(ci.screen || '') === String(rec.screen || '') &&
+    String(ci.publicIpv4 || '') === String(rec.publicIpv4 || '') &&
+    String(ci.publicIpv6 || '') === String(rec.publicIpv6 || '');
 
-  // A refresh a few seconds after the previous page load should not create
-  // another Google Sheets write. IP/device changes still persist immediately.
   if (extendExpiry && recent && sameFingerprint) return rec;
 
   const previousExpiryMs = dateMillis_(rec.expiresAt);
@@ -185,16 +227,28 @@ function touchTrustedDevice_(rec, clientInfo, extendExpiry) {
     nextName, nextPlatform, nextBrowser, nextIp,
     rec.createdAt || now, now, exp
   ]]);
+  sh.getRange(rec.row, 14, 1, telemetry.length).setValues([telemetry]);
   rec.deviceName = nextName;
   rec.platform = nextPlatform;
   rec.browser = nextBrowser;
   rec.lastIp = nextIp;
   rec.lastSeenAt = now;
   rec.expiresAt = exp;
-  // Do not invalidate the shared trusted-device cache for a normal metadata
-  // touch. A stale lastSeen/IP for <=60s does not change authentication. Only
-  // force invalidation when the previous credential was close to expiry, so a
-  // concurrent execution cannot reject a credential we have just extended.
+  rec.clientInstanceId = ci.clientInstanceId || '';
+  rec.deviceType = ci.deviceType || '';
+  rec.model = ci.deviceModel || '';
+  rec.screen = ci.screen || '';
+  rec.viewport = ci.viewport || '';
+  rec.pixelRatio = ci.pixelRatio;
+  rec.touchPoints = ci.touchPoints;
+  rec.cpu = ci.hardwareConcurrency;
+  rec.ramGb = ci.deviceMemoryGb;
+  rec.network = trustedDeviceNetworkLabel_(ci);
+  rec.publicIpv4 = ci.publicIpv4 || '';
+  rec.publicIpv6 = ci.publicIpv6 || '';
+  rec.userAgent = ci.userAgent || '';
+  rec.timezone = ci.timezone || '';
+  rec.language = ci.language || '';
   if (extendExpiry && previousExpiryMs && previousExpiryMs - now.getTime() < 5 * 60 * 1000) {
     invalidateTrustedDevicesCache_();
   }
@@ -242,13 +296,35 @@ function assertSessionDeviceActive_(session, user) {
   }
 }
 
+function syncClientTelemetry(token, deviceCredential, clientInfo) {
+  const session = verifySessionToken_(token);
+  const user = requireSessionUser_(token);
+  const ci = normalizeClientInfo_(clientInfo);
+  let rec = null;
+  if (session.d && deviceCredential) {
+    rec = verifyTrustedDeviceCredential_(deviceCredential, user.email, session.d);
+  } else if (session.d) {
+    rec = findTrustedDeviceById_(session.d);
+    if (!rec || rec.email !== user.email || !rec.active) rec = null;
+  } else if (deviceCredential) {
+    try { rec = verifyTrustedDeviceCredential_(deviceCredential, user.email); } catch (e) {}
+  }
+  if (!rec) return {ok:true,synced:false};
+  touchTrustedDevice_(rec, ci, true);
+  return {ok:true,synced:true,device:publicTrustedDevice_(rec)};
+}
+
 function publicTrustedDevice_(d) {
   return {
     deviceId:d.deviceId,
     deviceName:d.deviceName || 'Peranti',
-    platform:d.platform || '',
-    browser:d.browser || '',
-    lastIp:d.lastIp || '',
+    platform:d.platform || '', browser:d.browser || '', lastIp:d.lastIp || '',
+    clientInstanceId:d.clientInstanceId || '', deviceType:d.deviceType || '', model:d.model || '',
+    screen:d.screen || '', viewport:d.viewport || '', pixelRatio:d.pixelRatio === '' ? '' : d.pixelRatio,
+    touchPoints:d.touchPoints === '' ? '' : d.touchPoints, cpu:d.cpu === '' ? '' : d.cpu,
+    ramGb:d.ramGb === '' ? '' : d.ramGb, network:d.network || '',
+    publicIpv4:d.publicIpv4 || '', publicIpv6:d.publicIpv6 || '',
+    timezone:d.timezone || '', language:d.language || '',
     createdAt:d.createdAt ? formatDateTime_(d.createdAt) : '',
     lastSeenAt:d.lastSeenAt ? formatDateTime_(d.lastSeenAt) : '',
     expiresAt:d.expiresAt ? formatDateTime_(d.expiresAt) : '',

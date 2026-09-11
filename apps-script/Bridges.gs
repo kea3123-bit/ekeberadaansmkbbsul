@@ -111,7 +111,8 @@ function pagesBridgeMethodAllowed_(method) {
     'reviewAbsenceRequest',
     'reviewTimeException',
     'setFirstPin',
-    'submitAbsenceRequest'
+    'submitAbsenceRequest',
+    'syncClientTelemetry'
   ].indexOf(method) !== -1;
 }
 
@@ -158,6 +159,7 @@ function invokePagesBridgeMethod_(method, args) {
     case 'reviewTimeException': return reviewTimeException.apply(null, args);
     case 'setFirstPin': return setFirstPin.apply(null, args);
     case 'submitAbsenceRequest': return submitAbsenceRequest.apply(null, args);
+    case 'syncClientTelemetry': return syncClientTelemetry.apply(null, args);
     default: throw new Error('Fungsi backend tidak dibenarkan.');
   }
 }
