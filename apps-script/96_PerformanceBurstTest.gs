@@ -9,6 +9,22 @@
 const EK_PERF_BURST_SHEET_ = 'PERF_BURST_TEST';
 const EK_PERF_BURST_TOKEN_TTL_MS_ = 5 * 60 * 1000;
 const EK_PERF_BURST_LOCK_TIMEOUT_MS_ = 30000;
+const EK_PERF_BURST_DEFAULT_WEB_APP_URL_ = 'https://script.google.com/macros/s/AKfycbyUv2F6Fl3drRR-TTTJkefu73TwbuQk5GVf36z87WLYIy40SSqZOfKBCeSIy7xje_wq/exec';
+
+function performanceBurstWebAppUrl_() {
+  const candidates = [];
+  try { candidates.push(String(ScriptApp.getService().getUrl() || '').trim()); } catch (e) {}
+  try {
+    candidates.push(String(PropertiesService.getScriptProperties().getProperty('EK_WEB_APP_URL') || '').trim());
+  } catch (e) {}
+  candidates.push(EK_PERF_BURST_DEFAULT_WEB_APP_URL_);
+
+  for (let i = 0; i < candidates.length; i += 1) {
+    const url = String(candidates[i] || '').trim().replace(/\/+$/, '');
+    if (/^https:\/\/script\.google\.com\/macros\/s\/[^/?#]+\/(?:exec|dev)$/.test(url)) return url;
+  }
+  throw new Error('Web App URL tidak dapat dikenal pasti. Tetapkan Script Property EK_WEB_APP_URL kepada URL /exec deployment sedia ada.');
+}
 
 function performanceBurstSignature_(timestampMs, runId) {
   const material = `PERF_BURST\n${Number(timestampMs) || 0}\n${String(runId || '')}`;
@@ -211,10 +227,7 @@ function runPerformanceBurstStage_(webAppUrl, origin, suiteId, concurrency) {
  * 3. Copy the returned/logged JSON back into ChatGPT for interpretation.
  */
 function runPerformanceBurstSuite() {
-  const webAppUrl = String(ScriptApp.getService().getUrl() || '').trim();
-  if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/(?:exec|dev)$/.test(webAppUrl)) {
-    throw new Error('Web App URL tidak dapat dikenal pasti. Pastikan projek ini telah dideploy sebagai Web App.');
-  }
+  const webAppUrl = performanceBurstWebAppUrl_();
 
   const origins = getPagesWebOrigins_();
   const origin = origins.indexOf('https://kea3123-bit.github.io') !== -1
