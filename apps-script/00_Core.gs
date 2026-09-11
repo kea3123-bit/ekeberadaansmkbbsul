@@ -149,6 +149,7 @@ function onOpen() {
     .addItem('Hantar laporan semalam sekarang', 'sendYesterdayAttendanceReportFromMenu')
     .addSeparator()
     .addItem('Baiki rekod duplikat', 'repairAttendanceDuplicatesFromMenu')
+    .addItem('Baiki status waktu tersimpan', 'repairAttendanceTimingStatusesFromMenu')
     .addItem('Jana laporan hari ini', 'generateTodayReportFromMenu')
     .addToUi();
 }

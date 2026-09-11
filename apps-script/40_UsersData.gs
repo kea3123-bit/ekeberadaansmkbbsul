@@ -114,12 +114,18 @@ function getThursdayWbfOutReference_(user,settings,dateKey,values) {
   return minutesToTime_(expected);
 }
 function hasSecondAttendanceSession_(schedule) {
+  // TRUE means the user MAY continue with Sesi 2; it does not mean Sesi 2 is
+  // compulsory on every day. Blank s2In/s2Out therefore remains valid for an
+  // optional break/return workflow.
   return !!(schedule && (schedule.allowSecondSession || schedule.s2In || schedule.s2Out));
 }
 
 function getFinalOutReference_(schedule,user,settings,dateKey,values) {
   const wbf=getThursdayWbfOutReference_(user,settings,dateKey,values);
   if(wbf)return wbf;
+  // A configured S2 out is authoritative. For an optional/unconfigured S2,
+  // the employee still owes the normal S1 end time, so a later S2 departure is
+  // compared against s1Out rather than inventing a second-session reference.
   return String((schedule&&(schedule.s2Out||schedule.s1Out))||'').trim();
 }
 

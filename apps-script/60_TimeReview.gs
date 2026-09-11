@@ -178,6 +178,87 @@ function cleanupSupersededSession1EarlyReviews_(from,to) {
   return stale.length;
 }
 
+/**
+ * Recalculate persisted Status / StatusWaktu from the actual punch sequence.
+ *
+ * This is deliberately separate from inferAttendanceFlags_(): reads already use
+ * the effective status, while this routine repairs older physical sheet values
+ * written by pre-fix deployments. Only columns O (Status) and AI (StatusWaktu)
+ * are touched, so GPS/IP/timestamps are never rewritten.
+ */
+function repairAttendanceTimingStatuses_(options) {
+  options=options||{};
+  const settings=getSettings_();
+  let from=clampToSystemStart_(options.from||options.fromDate||getSystemStartDate_(settings),settings);
+  let to=validateDateKey_(options.to||options.toDate||todayKey_());
+  if(to<from)return {rowsChecked:0,rowsUpdated:0,reviewsRemoved:0,fromDate:from,toDate:to};
+
+  const usersByEmail={};
+  getAllUsers_().forEach(u=>usersByEmail[u.email]=u);
+  const changes=[];
+  let checked=0;
+
+  dateKeysBetween_(from,to).forEach(date=>{
+    getAttendanceByDate_(date).forEach(rec=>{
+      const v=padAttendanceValues_(rec.values);
+      const email=normalizeEmail_(v[1]);
+      const user=usersByEmail[email];
+      if(!user||!v[4]||String(v[14]||'').toUpperCase()==='TIDAK HADIR')return;
+      checked++;
+      const flags=inferAttendanceFlags_(v,user,settings,date);
+      const nextFlags=joinAttendanceFlags_(flags);
+      const nextStatus=attendanceStatusFromFlags_(flags);
+      const oldFlags=joinAttendanceFlags_(splitAttendanceFlags_(v[34]));
+      const oldStatus=String(v[14]||'').trim().toUpperCase();
+      if(oldFlags!==nextFlags||oldStatus!==nextStatus.toUpperCase()){
+        changes.push({row:rec.row,status:nextStatus,flags:nextFlags});
+      }
+    });
+  });
+
+  if(changes.length){
+    const sh=getSheetOrThrow_(EK.SHEETS.ATTENDANCE);
+    const byRow=new Map(changes.map(x=>[x.row,x]));
+    groupContiguousRows_(changes.map(x=>x.row)).forEach(g=>{
+      const statuses=[],flags=[];
+      for(let row=g.start;row<=g.end;row++){
+        const x=byRow.get(row);
+        statuses.push([x.status]);
+        flags.push([x.flags]);
+      }
+      sh.getRange(g.start,15,g.end-g.start+1,1).setValues(statuses);
+      sh.getRange(g.start,35,g.end-g.start+1,1).setValues(flags);
+    });
+    SpreadsheetApp.flush();
+  }
+
+  const reviewsRemoved=cleanupSupersededSession1EarlyReviews_(from,to);
+  const result={rowsChecked:checked,rowsUpdated:changes.length,reviewsRemoved,fromDate:from,toDate:to};
+  if(options.audit!==false&&changes.length){
+    audit_('BAIKI_STATUS_WAKTU',`${from}..${to}`,`Semak=${checked}; kemas kini=${changes.length}; semakan S1 dibuang=${reviewsRemoved}`,options.actor||'SISTEM');
+  }
+  return result;
+}
+
+function repairAttendanceTimingStatusesFromMenu() {
+  const admin=requireGoogleAdmin_();
+  const settings=getSettings_();
+  const result=repairAttendanceTimingStatuses_({
+    from:getSystemStartDate_(settings),
+    to:todayKey_(),
+    actor:admin.email,
+    audit:true
+  });
+  try{
+    SpreadsheetApp.getUi().alert(
+      'Baiki status waktu',
+      `${result.rowsUpdated} rekod dikemas kini daripada ${result.rowsChecked} rekod yang disemak. ${result.reviewsRemoved} semakan Balik Awal Sesi 1 lama dibuang.`,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }catch(e){}
+  return result;
+}
+
 function getTimeReviewData(token,fromDate,toDate) {
   requireSessionAdmin_(token);
   ensureMalaysiaSpreadsheetTimeZone_();

@@ -6,6 +6,10 @@ function getAdminData(token, dateStr) {
   const allUsers = getAllUsers_();
   const activeUsers = allUsers.filter(u => u.active);
   const settings = getSettings_();
+  // Self-heal stale BALIK AWAL written by older deployments. The effective
+  // report was already correct; this also keeps the physical KEHADIRAN sheet
+  // consistent with the final-departure rule.
+  try { repairAttendanceTimingStatuses_({from:dateKey,to:dateKey,audit:false}); } catch (_e) {}
   const report = buildDailyReport_(dateKey, activeUsers, settings);
 
   return {

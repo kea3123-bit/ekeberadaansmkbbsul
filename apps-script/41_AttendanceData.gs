@@ -457,6 +457,14 @@ function buildMergedAttendanceValues_(group) {
   merged[2] = user ? user.name : (rows.slice().reverse().map(v => String(v[2] || '').trim()).find(Boolean) || String(first[2] || ''));
   merged[3] = user ? user.category : (rows.slice().reverse().map(v => String(v[3] || '').trim()).find(Boolean) || String(first[3] || ''));
 
+  // Recompute timing flags from the merged punch sequence instead of keeping
+  // the union of historical flags (which may contain an obsolete S1 early-out).
+  if (user && merged[4] && String(merged[14] || '').toUpperCase() !== 'TIDAK HADIR') {
+    const effectiveFlags = inferAttendanceFlags_(merged,user,getSettings_(),dateKey);
+    merged[34] = joinAttendanceFlags_(effectiveFlags);
+    merged[14] = attendanceStatusFromFlags_(effectiveFlags);
+  }
+
   const latestUpdated = group.slice().sort((a, b) =>
     (dateValueMs_(a.values[18]) - dateValueMs_(b.values[18])) || (a.row - b.row)
   ).pop();
@@ -524,9 +532,10 @@ function nextAttendanceStep_(values, schedule) {
   const v = padAttendanceValues_(values);
   if (!v[4]) return {type:'IN', session:1, complete:false};
   if (!v[9]) return {type:'OUT', session:1, complete:false};
-  // Sesi 2 hanya diwajibkan apabila sekurang-kurangnya satu waktu Sesi 2
-  // ditetapkan. Ini membolehkan sekolah menggunakan sama ada 2 atau 4 rakaman
-  // sehari tanpa mengubah struktur Kad Perakam Waktu.
+  // Sesi 2 boleh menjadi sambungan OPTIONAL walaupun waktu Sesi 2 tidak
+  // dikonfigurasi. Ini penting untuk pegawai yang pada sesetengah hari keluar
+  // rehat dan masuk semula, tetapi pada hari lain hanya menggunakan Sesi 1.
+  // Jika Sesi 2 tidak digunakan, pengguna tidak perlu membuat apa-apa lagi.
   const hasSession2 = !!(schedule && (schedule.allowSecondSession || schedule.s2In || schedule.s2Out));
   if (!hasSession2) return {type:'', session:1, complete:true};
   if (!v[22]) return {type:'IN', session:2, complete:false};
