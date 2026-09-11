@@ -197,12 +197,14 @@ function punch(token, type, location, clientInfo) {
   const dateKey = todayKey_();
   const schedule = getEffectiveSchedule_(user,settings);
   const nowMinutes = minutesNow_(now);
-
-  // TIDAK_HADIR is CacheService-backed. Resolve it before the global write
-  // lock so a cache miss never keeps 100 morning punches waiting behind it.
   const presenceRequest = type === 'IN'
     ? findRelevantPresenceForDate_(user.email,dateKey,readAbsenceRows_())
     : null;
+
+  // One batched row allocation per day removes appendRow from the morning hot
+  // path. Existing blank slot rows are intentionally treated as BELUM HADIR by
+  // reporting/card code until the first real punch is written.
+  const slot = ensureAttendanceSlotForUser_(dateKey, user);
 
   let values = null;
   let session = 1;
@@ -210,22 +212,25 @@ function punch(token, type, location, clientInfo) {
   let exceptionType = '';
   let ipCheck = {note:'',warning:'',blocked:false,registry:null,audit:null};
   let punchError = null;
-  let wasNewRow = false;
   let lockWaitMs = 0;
   let lockHeldMs = 0;
-  const lockRequestedAt = Date.now();
-  const lock = LockService.getScriptLock();
+  let writeMs = 0;
+  let userLease = null;
+  let strictIpLock = null;
 
   try {
-    lock.waitLock(20000);
-    lockWaitMs = Date.now() - lockRequestedAt;
-    const lockAcquiredAt = Date.now();
+    // This is a logical lock for this staff/date only. Its ScriptLock gate is
+    // held for milliseconds during lease acquisition, not during the Sheet write.
+    userLease = acquireAttendanceKeyLock_('PUNCH', dateKey + '|' + user.email, 6000);
+    lockWaitMs = userLease.waitMs || 0;
+    const userLockAcquiredAt = Date.now();
     try {
       const sh = getSheetOrThrow_(EK.SHEETS.ATTENDANCE);
       const rec = findAttendanceRecord_(dateKey,user.email);
-      values = rec ? padAttendanceValues_(rec.values) : Array(EK.ATT_HEADERS.length).fill('');
+      if (!rec) throw new Error('Rekod waktu hari ini tidak dapat dikenal pasti. Cuba semula.');
+      values = padAttendanceValues_(rec.values);
 
-      if (rec && String(values[15] || '').toUpperCase() === 'TIDAK_HADIR' && !values[4]) {
+      if (String(values[15] || '').toUpperCase() === 'TIDAK_HADIR' && !values[4]) {
         throw new Error('Anda mempunyai rekod Tidak Hadir yang telah diluluskan untuk hari ini. Hubungi pentadbir jika rekod itu perlu dibatalkan.');
       }
 
@@ -250,18 +255,18 @@ function punch(token, type, location, clientInfo) {
         if (type === 'OUT' && nowMinutes < refMinutes) exceptionType = 'BALIK AWAL';
       }
 
-      // Hour/IP cache is read and updated while the same short ScriptLock is
-      // held, so concurrent punches see the preceding successful punch without
-      // rescanning the entire attendance day on every request.
+      // BLOCK must preserve strict shared-IP ordering. WARN/OFF may evaluate
+      // concurrently because they do not reject a punch; registry updates are
+      // serialized briefly after the Sheet write instead of serializing writes.
+      const ipPolicy = normalizeIpPunchPolicy_(settings.IP_PUNCH_POLICY || 'WARN');
+      if (ipPolicy === 'BLOCK' && recordIp) {
+        strictIpLock = LockService.getScriptLock();
+        strictIpLock.waitLock(20000);
+      }
       ipCheck = evaluatePunchIp_(user,type,recordIp,now,settings,isTestMode);
       if (ipCheck.blocked) throw new Error(ipCheck.error || 'Rakaman waktu ditolak oleh Polisi IP.');
 
-      if (!rec) {
-        values[0]=dateKey; values[1]=user.email; values[2]=user.name; values[3]=user.category;
-      } else {
-        values[2]=user.name; values[3]=user.category;
-      }
-
+      values[2]=user.name; values[3]=user.category;
       if (session === 1 && type === 'IN') {
         values[4]=now; values[5]=loc.lat; values[6]=loc.lng; values[7]=loc.distanceM; values[8]=loc.accuracyM; values[19]=recordIp || '';
       } else if (session === 1 && type === 'OUT') {
@@ -283,33 +288,45 @@ function punch(token, type, location, clientInfo) {
         values[17]=mergeAttendanceReason_(values[17],presenceRequestReason_(presenceRequest,'CATATAN'));
       }
 
-      if (!rec) {
-        sh.appendRow(values);
-        const row = sh.getLastRow();
-        registerAttendanceRow_(dateKey,user.email,row);
-        wasNewRow = true;
+      const writeStarted = Date.now();
+      sh.getRange(rec.row,1,1,EK.ATT_HEADERS.length).setValues([values]);
+      writeMs = Date.now() - writeStarted;
+
+      if (strictIpLock) {
+        registerPunchIpUse_(ipCheck,user,type,session,recordIp,now);
       } else {
-        sh.getRange(rec.row,1,1,EK.ATT_HEADERS.length).setValues([values]);
+        // WARN/OFF registry update is a cache-only critical section. Even on a
+        // shared school NAT IP it is far shorter than a Spreadsheet write.
+        let ipLease = null;
+        try {
+          ipLease = acquireAttendanceKeyLock_('IPREG', dateKey + '|' + (recordIp || '-'), 3000);
+          registerPunchIpUse_(ipCheck,user,type,session,recordIp,now);
+        } finally {
+          releaseAttendanceKeyLock_(ipLease);
+        }
       }
-      registerPunchIpUse_(ipCheck,user,type,session,recordIp,now);
     } finally {
-      lockHeldMs = Date.now() - lockAcquiredAt;
-      lock.releaseLock();
+      if (strictIpLock) {
+        try { strictIpLock.releaseLock(); } catch (_e) {}
+        strictIpLock = null;
+      }
+      lockHeldMs = Date.now() - userLockAcquiredAt;
+      releaseAttendanceKeyLock_(userLease);
+      userLease = null;
     }
   } catch (err) {
     punchError = err;
-    try { if (lock.hasLock()) lock.releaseLock(); } catch (_e) {}
+    if (strictIpLock) { try { strictIpLock.releaseLock(); } catch (_e) {} }
+    releaseAttendanceKeyLock_(userLease);
   }
 
-  // Audit writes, review-sheet reads/writes and email must never extend the
-  // attendance critical section. This is the key launch-burst optimization.
   if (ipCheck && ipCheck.audit) {
     audit_(ipCheck.audit.action,user.email,ipCheck.audit.details,user.email);
   }
   if (punchError) throw punchError;
 
   const action = `REKOD_${type === 'IN' ? 'MASUK' : 'KELUAR'}_SESI_${session}`;
-  audit_(action,user.email,`${exceptionType || 'TEPAT MASA'}; mod=${isTestMode ? 'TEST' : 'REAL'}; jarak ${loc.distanceM}m; IP=${recordIp || '-'}; ${ipCheck.note || 'IP tiada isu'}; lockWaitMs=${lockWaitMs}; lockHeldMs=${lockHeldMs}; row=${wasNewRow ? 'NEW' : 'UPDATE'}`,user.email);
+  audit_(action,user.email,`${exceptionType || 'TEPAT MASA'}; mod=${isTestMode ? 'TEST' : 'REAL'}; jarak ${loc.distanceM}m; IP=${recordIp || '-'}; ${ipCheck.note || 'IP tiada isu'}; keyLockWaitMs=${lockWaitMs}; keyLockHeldMs=${lockHeldMs}; writeMs=${writeMs}; slotWaitMs=${slot.slotWaitMs}; slotsCreated=${slot.createdSlots}`,user.email);
 
   let timeReviewRecord = null;
   if (exceptionType) {
@@ -334,6 +351,6 @@ function punch(token, type, location, clientInfo) {
     ip:recordIp || '',
     ipWarning:ipCheck.warning || '',
     timeException:timeReviewRecord ? publicTimeReview_(timeReviewRecord) : null,
-    performance:{lockWaitMs,lockHeldMs,totalMs:Date.now()-perfStarted}
+    performance:{lockWaitMs,lockHeldMs,writeMs,slotWaitMs:slot.slotWaitMs,totalMs:Date.now()-perfStarted}
   };
 }

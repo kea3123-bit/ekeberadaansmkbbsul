@@ -71,8 +71,20 @@ function resetPerformanceBurstSheet_() {
   sh.getRange(1, 1, 1, 7).setValues([[
     'RunID', 'Stage', 'Request', 'StartedAt', 'LockWaitMs', 'PreflightMs', 'Server'
   ]]);
+  // Reserve one distinct row per request across the 20/50/100 stages. This
+  // mirrors the production v3 daily-slot architecture without touching KEHADIRAN.
+  const reserved = Array.from({length:170}, (_, i) => [`RESERVED-${i+1}`,'','','','','','']);
+  sh.getRange(2, 1, reserved.length, 7).setValues(reserved);
   sh.setFrozenRows(1);
   return sh;
+}
+
+function performanceBurstReservedRow_(stage, requestNo) {
+  const s = Number(stage || 0), n = Number(requestNo || 0);
+  if (s === 20) return 1 + n;      // 2..21
+  if (s === 50) return 21 + n;     // 22..71
+  if (s === 100) return 71 + n;    // 72..171
+  throw new Error('Stage ujian prestasi tidak sah.');
 }
 
 /**
@@ -84,8 +96,6 @@ function performanceBurstProbe(probeToken, runId, stage, requestNo, sentAtMs) {
   verifyPerformanceBurstToken_(probeToken, runId);
   const started = Date.now();
 
-  // Mirror the cached reads used around a normal punch without modifying any
-  // production attendance, absence or review rows.
   const preflightStarted = Date.now();
   getSettings_();
   getAllUsers_();
@@ -93,43 +103,38 @@ function performanceBurstProbe(probeToken, runId, stage, requestNo, sentAtMs) {
   readAbsenceRows_();
   const preflightMs = Date.now() - preflightStarted;
 
-  const lock = LockService.getScriptLock();
-  const waitStarted = Date.now();
-  lock.waitLock(EK_PERF_BURST_LOCK_TIMEOUT_MS_);
-  const acquiredAt = Date.now();
-  const lockWaitMs = acquiredAt - waitStarted;
+  let lease = null;
+  let lockWaitMs = 0;
+  let lockHeldMs = 0;
   let writeMs = 0;
-
   try {
-    const sh = getSpreadsheet_().getSheetByName(EK_PERF_BURST_SHEET_);
-    if (!sh) throw new Error('Sheet PERF_BURST_TEST belum disediakan. Jalankan suite dari editor.');
-    const writeStarted = Date.now();
-    sh.appendRow([
-      String(runId || ''),
-      Number(stage) || 0,
-      Number(requestNo) || 0,
-      new Date(started),
-      lockWaitMs,
-      preflightMs,
-      'WEB_APP'
-    ]);
-    writeMs = Date.now() - writeStarted;
+    lease = acquireAttendanceKeyLock_('PERF', runId + '|' + requestNo, 6000);
+    lockWaitMs = lease.waitMs || 0;
+    const acquiredAt = Date.now();
+    try {
+      const sh = getSpreadsheet_().getSheetByName(EK_PERF_BURST_SHEET_);
+      if (!sh) throw new Error('Sheet PERF_BURST_TEST belum disediakan. Jalankan suite dari editor.');
+      const row = performanceBurstReservedRow_(stage, requestNo);
+      const writeStarted = Date.now();
+      sh.getRange(row, 1, 1, 7).setValues([[
+        String(runId || ''), Number(stage)||0, Number(requestNo)||0,
+        new Date(started), lockWaitMs, preflightMs, 'WEB_APP_PARALLEL'
+      ]]);
+      writeMs = Date.now() - writeStarted;
+    } finally {
+      lockHeldMs = Date.now() - acquiredAt;
+      releaseAttendanceKeyLock_(lease);
+      lease = null;
+    }
   } finally {
-    lock.releaseLock();
+    releaseAttendanceKeyLock_(lease);
   }
 
   const finished = Date.now();
   return {
-    ok: true,
-    runId: String(runId || ''),
-    stage: Number(stage) || 0,
-    requestNo: Number(requestNo) || 0,
-    arrivalLagMs: Math.max(0, started - (Number(sentAtMs) || started)),
-    preflightMs,
-    lockWaitMs,
-    lockHeldMs: finished - acquiredAt,
-    writeMs,
-    totalMs: finished - started
+    ok:true, runId:String(runId||''), stage:Number(stage)||0, requestNo:Number(requestNo)||0,
+    arrivalLagMs:Math.max(0, started-(Number(sentAtMs)||started)),
+    preflightMs, lockWaitMs, lockHeldMs, writeMs, totalMs:finished-started
   };
 }
 

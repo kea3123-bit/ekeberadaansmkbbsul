@@ -72,6 +72,162 @@ function registerAttendanceRow_(dateKey, email, row) {
 }
 
 
+// ---------- Launch burst v3: daily row slots + keyed punch locks ----------
+// Google Apps Script exposes only one ScriptLock for the whole deployment. A
+// full attendance write under that lock serializes 100 different staff. We use
+// the ScriptLock only as a very short gate for named CacheService leases. Each
+// staff member then writes to their own pre-allocated KEHADIRAN row.
+const EK_ATT_KEY_LOCK_PREFIX_ = 'EK_ATT_KLOCK_V1:';
+const EK_ATT_SLOT_READY_PREFIX_ = 'EK_ATT_SLOTS_V1:';
+const EK_ATT_KEY_LOCK_LEASE_SEC_ = 30;
+
+function attendanceKeyLockCacheKey_(scope, key) {
+  const safeScope = String(scope || 'ATT').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 24);
+  const safeKey = String(key || '').replace(/[^A-Za-z0-9@._|:-]/g, '_').slice(0, 180);
+  return `${EK_ATT_KEY_LOCK_PREFIX_}${safeScope}:${safeKey}`;
+}
+
+function acquireAttendanceKeyLock_(scope, key, timeoutMs) {
+  const started = Date.now();
+  const deadline = started + Math.max(500, Number(timeoutMs || 5000));
+  const cache = getScriptCache_();
+  const cacheKey = attendanceKeyLockCacheKey_(scope, key);
+  const token = Utilities.getUuid();
+
+  while (Date.now() < deadline) {
+    const gate = LockService.getScriptLock();
+    if (gate.tryLock(250)) {
+      try {
+        if (!cache.get(cacheKey)) {
+          cache.put(cacheKey, token, EK_ATT_KEY_LOCK_LEASE_SEC_);
+          return {cacheKey, token, waitMs:Date.now() - started};
+        }
+      } finally {
+        gate.releaseLock();
+      }
+    }
+    Utilities.sleep(20 + Math.floor(Math.random() * 25));
+  }
+  throw new Error('Sistem sedang memproses rekod waktu anda. Sila cuba semula sebentar lagi.');
+}
+
+function releaseAttendanceKeyLock_(lease) {
+  if (!lease || !lease.cacheKey || !lease.token) return;
+  const gate = LockService.getScriptLock();
+  if (!gate.tryLock(1000)) return; // lease expires automatically after 30s
+  try {
+    const cache = getScriptCache_();
+    if (cache.get(lease.cacheKey) === lease.token) cache.remove(lease.cacheKey);
+  } finally {
+    gate.releaseLock();
+  }
+}
+
+function registerAttendanceRowsBatch_(idx, dateKey, users, startRow, previousLastRow) {
+  if (!idx || !idx.byDate || !idx.byMonth || !idx.byKey || Number(idx.lastRow || 0) !== Number(previousLastRow || 0)) {
+    invalidateAttendanceIndex_();
+    return false;
+  }
+  const monthKey = dateKey.slice(0, 7);
+  const pushUnique = (map, k, row) => {
+    const list = map[k] || (map[k] = []);
+    if (!list.includes(row)) list.push(row);
+  };
+  users.forEach((user, i) => {
+    const row = startRow + i;
+    const email = normalizeEmail_(user.email);
+    pushUnique(idx.byDate, dateKey, row);
+    pushUnique(idx.byMonth, monthKey, row);
+    pushUnique(idx.byKey, dateKey + '|' + email, row);
+  });
+  idx.lastRow = previousLastRow + users.length;
+  EK_RUNTIME_ATT_INDEX_ = idx;
+  cachePutJson_(EK_ATT_INDEX_CACHE_KEY_, idx, EK_ATT_INDEX_TTL_SEC_);
+  return true;
+}
+
+/**
+ * Ensure today's active users already own a physical row in KEHADIRAN.
+ * The first missing user creates all missing active-user rows in ONE batch.
+ * Other simultaneous requests observe the ready cache and never queue through
+ * one Spreadsheet write per staff member.
+ */
+function ensureAttendanceSlotForUser_(dateKey, user) {
+  dateKey = validateDateKey_(dateKey);
+  let rec = findAttendanceRecord_(dateKey, user.email);
+  if (rec) return {record:rec, createdSlots:0, createdForUser:false, slotWaitMs:0};
+
+  const started = Date.now();
+  const cache = getScriptCache_();
+  const readyKey = EK_ATT_SLOT_READY_PREFIX_ + dateKey;
+  const deadline = started + 8000;
+
+  while (Date.now() < deadline) {
+    // Once the first request has created the batch, waiting executions can
+    // refresh their per-execution index and leave without acquiring ScriptLock.
+    if (cache.get(readyKey)) {
+      EK_RUNTIME_ATT_INDEX_ = null;
+      rec = findAttendanceRecord_(dateKey, user.email);
+      if (rec) return {record:rec, createdSlots:0, createdForUser:false, slotWaitMs:Date.now()-started};
+      // A user may have been activated after today's batch was created.
+      cache.remove(readyKey);
+    }
+
+    const gate = LockService.getScriptLock();
+    if (gate.tryLock(300)) {
+      try {
+        // Recheck from source/cache after acquiring the one-time slot gate.
+        EK_RUNTIME_ATT_INDEX_ = null;
+        rec = findAttendanceRecord_(dateKey, user.email);
+        if (rec) {
+          cache.put(readyKey, '1', 21600);
+          return {record:rec, createdSlots:0, createdForUser:false, slotWaitMs:Date.now()-started};
+        }
+
+        // Correctness first for the once-per-day allocation: rebuild the small
+        // A:B index once, then extend it incrementally for the whole batch.
+        invalidateAttendanceIndex_();
+        const sh = getSheetOrThrow_(EK.SHEETS.ATTENDANCE);
+        const idx = getAttendanceRowIndex_();
+        const activeUsers = getAllUsers_().filter(u => u.active);
+        if (!activeUsers.some(u => normalizeEmail_(u.email) === normalizeEmail_(user.email))) activeUsers.push(user);
+        const missing = activeUsers.filter(u => !((idx.byKey[dateKey + '|' + normalizeEmail_(u.email)] || []).length));
+
+        if (missing.length) {
+          const previousLastRow = sh.getLastRow();
+          const startRow = previousLastRow + 1;
+          const rows = missing.map(u => {
+            const v = Array(EK.ATT_HEADERS.length).fill('');
+            v[0] = dateKey;
+            v[1] = normalizeEmail_(u.email);
+            v[2] = u.name || '';
+            v[3] = u.category || '';
+            return v;
+          });
+          sh.getRange(startRow, 1, rows.length, EK.ATT_HEADERS.length).setValues(rows);
+          registerAttendanceRowsBatch_(idx, dateKey, missing, startRow, previousLastRow);
+        }
+
+        cache.put(readyKey, '1', 21600);
+        EK_RUNTIME_ATT_INDEX_ = null;
+        rec = findAttendanceRecord_(dateKey, user.email);
+        if (!rec) throw new Error('Slot rekod waktu tidak dapat disediakan. Cuba semula.');
+        return {
+          record:rec,
+          createdSlots:missing.length,
+          createdForUser:missing.some(u => normalizeEmail_(u.email) === normalizeEmail_(user.email)),
+          slotWaitMs:Date.now()-started
+        };
+      } finally {
+        gate.releaseLock();
+      }
+    }
+    Utilities.sleep(25 + Math.floor(Math.random() * 25));
+  }
+  throw new Error('Penyediaan rekod waktu mengambil masa terlalu lama. Sila cuba semula.');
+}
+
+
 function groupContiguousRows_(rows) {
   const sorted = [...new Set((rows || []).map(Number).filter(n => n >= 2))].sort((a,b) => a-b);
   const groups = [];
