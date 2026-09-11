@@ -6,13 +6,17 @@
  * Therefore requests arrive as cross-origin POST form submissions and the
  * HtmlService response posts the result back to the top-level GitHub Pages page.
  */
+var EK_RUNTIME_PAGES_ORIGINS_=null;
+var EK_PAGES_ORIGINS_CACHE_KEY_='EK_PERF_PAGES_ORIGINS_V1';
 function getPagesWebOrigins_() {
+  if(Array.isArray(EK_RUNTIME_PAGES_ORIGINS_))return EK_RUNTIME_PAGES_ORIGINS_.slice();
+  try{var cached=getScriptCache_().get(EK_PAGES_ORIGINS_CACHE_KEY_);if(cached){var parsed=JSON.parse(cached);if(Array.isArray(parsed)){EK_RUNTIME_PAGES_ORIGINS_=parsed;return parsed.slice();}}}catch(e){}
   var props = PropertiesService.getScriptProperties();
   var multi = String(props.getProperty('EK_PAGES_ORIGINS') || '').trim();
   var legacy = String(props.getProperty('EK_PAGES_ORIGIN') || '').trim();
   var raw = multi || legacy || 'https://farshoffs.github.io,https://kea3123-bit.github.io';
   var seen = {};
-  return raw.split(/[\s,;]+/).map(function(value) {
+  var origins=raw.split(/[\s,;]+/).map(function(value) {
     return String(value || '').trim().replace(/\/$/, '');
   }).filter(function(value) {
     if (!/^https:\/\/[A-Za-z0-9.-]+(?::\d+)?$/.test(value)) return false;
@@ -20,6 +24,9 @@ function getPagesWebOrigins_() {
     seen[value] = true;
     return true;
   });
+  EK_RUNTIME_PAGES_ORIGINS_=origins;
+  try{getScriptCache_().put(EK_PAGES_ORIGINS_CACHE_KEY_,JSON.stringify(origins),300);}catch(e){}
+  return origins.slice();
 }
 
 function getPagesWebOrigin_() {

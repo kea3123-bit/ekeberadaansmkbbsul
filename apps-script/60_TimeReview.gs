@@ -6,14 +6,18 @@ function getTimeReviewSheet_() {
   return sh;
 }
 
+const EK_TIME_REVIEW_CACHE_KEY_='EK_PERF_TIME_REVIEW_ROWS_V1';
+const EK_TIME_REVIEW_CACHE_TTL_SEC_=60;
 function readTimeReviewRows_(){
   if(Array.isArray(EK_RUNTIME_TIME_REVIEW_ROWS_))return EK_RUNTIME_TIME_REVIEW_ROWS_;
+  const cached=cacheGetJson_(EK_TIME_REVIEW_CACHE_KEY_);
+  if(Array.isArray(cached)){EK_RUNTIME_TIME_REVIEW_ROWS_=cached;return cached;}
   const sh=getTimeReviewSheet_();if(sh.getLastRow()<2)return(EK_RUNTIME_TIME_REVIEW_ROWS_=[]);
   EK_RUNTIME_TIME_REVIEW_ROWS_=sh.getRange(2,1,sh.getLastRow()-1,EK.TIME_REVIEW_HEADERS.length).getValues().map((v,i)=>({
     row:i+2,id:String(v[0]||''),createdAt:v[1]||'',date:dateCellToKey_(v[2]),email:normalizeEmail_(v[3]),name:String(v[4]||''),jobTitle:String(v[5]||''),category:String(v[6]||''),type:String(v[7]||''),session:Number(v[8]||1),recordTime:displayMalaysiaTime_(v[9]),referenceTime:displayMalaysiaTime_(v[10]),reviewStatus:String(v[11]||'BELUM DIAMBIL MAKLUM'),reviewedBy:String(v[12]||''),reviewerName:String(v[13]||''),reviewedAt:v[14]||'',comment:String(v[15]||'')
-  })).filter(r=>r.id);return EK_RUNTIME_TIME_REVIEW_ROWS_;
+  })).filter(r=>r.id);cachePutJson_(EK_TIME_REVIEW_CACHE_KEY_,EK_RUNTIME_TIME_REVIEW_ROWS_,EK_TIME_REVIEW_CACHE_TTL_SEC_);return EK_RUNTIME_TIME_REVIEW_ROWS_;
 }
-function invalidateTimeReviewRows_(){EK_RUNTIME_TIME_REVIEW_ROWS_=null;}
+function invalidateTimeReviewRows_(){EK_RUNTIME_TIME_REVIEW_ROWS_=null;try{getScriptCache_().remove(EK_TIME_REVIEW_CACHE_KEY_);}catch(e){}}
 
 function getReviewerJobTitleFromEmail_(email) {
   const em=normalizeEmail_(email), u=em?getUserByEmail_(em,false):null;
@@ -32,8 +36,10 @@ function timeReviewId_(user,date,type,session){
 function createTimeReviewRecord_(data) {
   const user = data.user;
   const id = timeReviewId_(user,data.date,data.type,data.session);
-  const existing = readTimeReviewRows_().find(r=>r.id===id);
-  if (existing) return Object.assign({}, existing, {isNew:false});
+  if(!data.assumeNew){
+    const existing = readTimeReviewRows_().find(r=>r.id===id);
+    if (existing) return Object.assign({}, existing, {isNew:false});
+  }
   const now = new Date();
   const row = [id,now,data.date,user.email,user.name,user.jobTitle||'',user.category,data.type,Number(data.session||1),data.recordTime||'',data.referenceTime||'','BELUM DIAMBIL MAKLUM','','','', ''];
   const sh = getTimeReviewSheet_(); sh.appendRow(row); invalidateTimeReviewRows_();

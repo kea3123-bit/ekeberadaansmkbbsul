@@ -674,13 +674,19 @@ function requireSessionAdmin_(token) {
   return user;
 }
 
+const EK_SESSION_SECRET_CACHE_KEY_='EK_PERF_SESSION_SECRET_V1';
+let EK_RUNTIME_SESSION_SECRET_='';
 function getSessionSecret_() {
+  if(EK_RUNTIME_SESSION_SECRET_)return EK_RUNTIME_SESSION_SECRET_;
+  try{const cached=getScriptCache_().get(EK_SESSION_SECRET_CACHE_KEY_);if(cached){EK_RUNTIME_SESSION_SECRET_=cached;return cached;}}catch(e){}
   const props = PropertiesService.getScriptProperties();
   let secret = props.getProperty(EK.SESSION.SECRET_KEY);
   if (!secret) {
     secret = `${Utilities.getUuid()}-${Utilities.getUuid()}-${Date.now()}`;
     props.setProperty(EK.SESSION.SECRET_KEY, secret);
   }
+  EK_RUNTIME_SESSION_SECRET_=secret;
+  try{getScriptCache_().put(EK_SESSION_SECRET_CACHE_KEY_,secret,21600);}catch(e){}
   return secret;
 }
 

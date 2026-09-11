@@ -230,14 +230,19 @@ function applyApprovedAbsenceToAttendance_(rec, manager) {
   SpreadsheetApp.flush(); return conflicts;
 }
 
+const EK_ABSENCE_CACHE_KEY_ = 'EK_PERF_ABSENCE_ROWS_V1';
+const EK_ABSENCE_CACHE_TTL_SEC_ = 60;
 function readAbsenceRows_() {
   if(Array.isArray(EK_RUNTIME_ABSENCE_ROWS_))return EK_RUNTIME_ABSENCE_ROWS_;
+  const cached=cacheGetJson_(EK_ABSENCE_CACHE_KEY_);
+  if(Array.isArray(cached)){EK_RUNTIME_ABSENCE_ROWS_=cached;return cached;}
   const sh=getSheetOrThrow_(EK.SHEETS.ABSENCE); if(sh.getLastRow()<2)return(EK_RUNTIME_ABSENCE_ROWS_=[]);
   const vals=sh.getRange(2,1,sh.getLastRow()-1,EK.ABSENCE_HEADERS.length).getValues();
   EK_RUNTIME_ABSENCE_ROWS_=vals.map((v,i)=>({row:i+2,id:String(v[0]||''),submittedAt:v[1]||'',submittedMs:dateValueMs_(v[1]),email:normalizeEmail_(v[2]),name:String(v[3]||''),category:String(v[4]||''),type:String(v[5]||''),startDate:dateCellToKey_(v[6]),endDate:dateCellToKey_(v[7]),note:String(v[8]||''),status:String(v[9]||'MENUNGGU'),reviewedBy:String(v[10]||''),reviewedAt:v[11]||'',comment:String(v[12]||''),updatedAt:v[13]||'',mode:String(v[14]||'TIDAK_HADIR').toUpperCase()==='KEBERADAAN'?'KEBERADAAN':'TIDAK_HADIR',startTime:normalizeOptionalTime_(v[15]),endTime:normalizeOptionalTime_(v[16]),jobTitle:String(v[17]||'')})).filter(r=>r.id);
+  cachePutJson_(EK_ABSENCE_CACHE_KEY_,EK_RUNTIME_ABSENCE_ROWS_,EK_ABSENCE_CACHE_TTL_SEC_);
   return EK_RUNTIME_ABSENCE_ROWS_;
 }
-function invalidateAbsenceRows_(){EK_RUNTIME_ABSENCE_ROWS_=null;}
+function invalidateAbsenceRows_(){EK_RUNTIME_ABSENCE_ROWS_=null;try{getScriptCache_().remove(EK_ABSENCE_CACHE_KEY_);}catch(e){}}
 function findAbsenceById_(id){return readAbsenceRows_().find(r=>r.id===String(id||'').trim())||null;}
 function publicAbsenceOwn_(r){return {id:r.id,type:r.type,mode:r.mode,startDate:r.startDate,endDate:r.endDate,startTime:r.startTime,endTime:r.endTime,note:r.note,status:r.status,reviewedBy:r.reviewedBy,reviewedAt:r.reviewedAt?formatDateTime_(r.reviewedAt):'',comment:r.comment,submittedAt:r.submittedAt?formatDateTime_(r.submittedAt):''};}
 function publicAbsenceManagement_(r){return {id:r.id,submittedAt:r.submittedAt?formatDateTime_(r.submittedAt):'',email:r.email,name:r.name,jobTitle:r.jobTitle||'',category:r.category,type:r.type,mode:r.mode,startDate:r.startDate,endDate:r.endDate,startTime:r.startTime,endTime:r.endTime,note:r.note,status:r.status,reviewerJobTitle:getReviewerJobTitleFromEmail_(r.reviewedBy),reviewedAt:r.reviewedAt?formatDateTime_(r.reviewedAt):'',comment:r.comment};}

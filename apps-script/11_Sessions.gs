@@ -1,5 +1,5 @@
 // ---------- Trusted-device session (30-day rolling, max 2 devices) ----------
-const EK_TRUSTED_TOUCH_MIN_INTERVAL_MS_ = 5 * 60 * 1000;
+const EK_TRUSTED_TOUCH_MIN_INTERVAL_MS_ = 60 * 60 * 1000;
 
 function trustedDeviceCredentialParts_(credential) {
   const raw = String(credential || '').trim();
@@ -178,6 +178,7 @@ function touchTrustedDevice_(rec, clientInfo, extendExpiry) {
   // another Google Sheets write. IP/device changes still persist immediately.
   if (extendExpiry && recent && sameFingerprint) return rec;
 
+  const previousExpiryMs = dateMillis_(rec.expiresAt);
   const sh = ensureTrustedDevicesSheet_();
   const exp = extendExpiry ? new Date(Date.now() + EK.SESSION.REMEMBER_DAYS * 24 * 60 * 60 * 1000) : rec.expiresAt;
   sh.getRange(rec.row, 3, 1, 7).setValues([[
@@ -190,7 +191,13 @@ function touchTrustedDevice_(rec, clientInfo, extendExpiry) {
   rec.lastIp = nextIp;
   rec.lastSeenAt = now;
   rec.expiresAt = exp;
-  invalidateTrustedDevicesCache_();
+  // Do not invalidate the shared trusted-device cache for a normal metadata
+  // touch. A stale lastSeen/IP for <=60s does not change authentication. Only
+  // force invalidation when the previous credential was close to expiry, so a
+  // concurrent execution cannot reject a credential we have just extended.
+  if (extendExpiry && previousExpiryMs && previousExpiryMs - now.getTime() < 5 * 60 * 1000) {
+    invalidateTrustedDevicesCache_();
+  }
   return rec;
 }
 
