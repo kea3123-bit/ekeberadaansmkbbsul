@@ -50,6 +50,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # GitHub Actions tokens cannot update workflow files in this repo.
+          # The patch is validated with the Pages cleanup locally, then the
+          # workflow edit is applied separately through the user's GitHub connection.
+          git checkout -- .github/workflows/github-pages.yml
           rm -f .github/scripts/launch-performance-phase1.py .github/workflows/apply-launch-performance-phase1.yml
           git config user.name 'eKeberadaan Bot'
           git config user.email 'actions@users.noreply.github.com'
