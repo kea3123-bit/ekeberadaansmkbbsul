@@ -624,7 +624,7 @@ const state = {
     const requiredAbsenceTypes=[
       'CUTI REHAT KHAS','CUTI REHAT','CUTI SAKIT (AWAM)','CUTI SAKIT (SWASTA)',
       'CUTI TANPA REKOD KELOMPOK','KURSUS','BENGKEL','TAKLIMAT','MESYUARAT','SEMINAR',
-      'AKTIVITI KOKURIKULUM','AKTIVITI SUKAN/PERMAINAN','LAIN-LAIN'
+      'AKTIVITI KOKURIKULUM','AKTIVITI SUKAN/PERMAINAN','URUSAN PEPERIKSAAN','LAIN-LAIN'
     ];
     const requiredPresenceTypes=[
       'PROGRAM DALAMAN SEKOLAH - KEBERADAAN',
@@ -636,7 +636,7 @@ const state = {
       'MESYUARAT/TAKLIMAT (PPD)',
       'MESYUARAT/TAKLIMAT (JPN)',
       'MESYUARAT/TAKLIMAT (KPM)',
-      'LAIN-LAIN - KEBERADAAN'
+      'URUSAN PEPERIKSAAN','LAIN-LAIN - KEBERADAAN'
     ];
     const serverTypes=mode==='KEBERADAAN'?(d.presenceTypes||[]):(d.types||[]);
     const requiredTypes=mode==='KEBERADAAN'?requiredPresenceTypes:requiredAbsenceTypes;
