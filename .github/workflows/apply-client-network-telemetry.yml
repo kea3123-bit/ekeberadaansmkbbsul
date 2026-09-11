@@ -18,7 +18,11 @@ jobs:
           ref: refactor/performance-v2
           fetch-depth: 0
       - name: Apply patch
-        run: python3 .github/scripts/patch-client-network-telemetry.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/anchor = "function logoutApp(token) {"/anchor = "function publicTrustedDevice_(d) {"/' .github/scripts/patch-client-network-telemetry.py
+          python3 .github/scripts/patch-client-network-telemetry.py
       - name: Validate frontend and Apps Script syntax
         shell: bash
         run: |
