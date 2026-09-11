@@ -117,4 +117,4 @@ jobs:
           grep -q 'function startRequestButton' /tmp/gas-shim.js
           echo "LIVE_PAGES_EXACT_BUILD_OK mobile=${EXPECTED_MOBILE} shim=${EXPECTED_SHIM}"
 
-# deployment source: refactor/performance-v2 · normal punch-card times regular weight 2026-09-11
+# deployment source: refactor/performance-v2 · absence names and notes refresh 2026-09-11
