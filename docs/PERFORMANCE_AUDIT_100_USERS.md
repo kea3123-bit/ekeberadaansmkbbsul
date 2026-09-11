@@ -34,3 +34,17 @@ Audit target: 100 active daily users with a morning punch burst, GitHub Pages fr
 ## Launch verification
 
 Before and after deploying the modular Apps Script backend, run `diagnosePerformanceBackend()` from the Apps Script editor and retain its output. Perform a controlled burst test before launch. Backend source changes are not live until the existing Apps Script Web App is published as a new version.
+
+
+## Phase 2 implemented
+
+- Attendance index V3 includes a `date|email` row map, so punch reads only the target user's row.
+- First punch appends incrementally update the shared attendance index instead of invalidating and rebuilding it.
+- IP duplicate checks use one hour-level CacheService registry; the first request seeds it and subsequent requests are O(1) lookups.
+- The global ScriptLock now contains only row lookup, punch sequence/IP decision and the attendance write/cache update.
+- Audit, time-review creation and notification email run after the lock is released.
+- Successful punch responses include `performance.lockWaitMs`, `lockHeldMs` and `totalMs` for staged launch testing.
+
+### Launch gate
+
+Do not certify exact 100-at-once capacity from static analysis alone. Deploy the matching Apps Script version, then stage 20, 50 and 100 concurrent/near-concurrent punches and inspect lock timings, Apps Script execution errors and duplicate-row count.

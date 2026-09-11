@@ -768,60 +768,77 @@ function hourBucket_(dateValue) {
   return Utilities.formatDate(new Date(dateValue), tz_(), 'yyyy-MM-dd HH');
 }
 
-function evaluatePunchIp_(user, type, ip, now, settings, isTestMode, preloadedTodayRows) {
+const EK_PUNCH_IP_HOUR_CACHE_PREFIX_ = 'EK_PERF_PUNCH_IP_HOUR_V1_';
+const EK_PUNCH_IP_HOUR_TTL_SEC_ = 2 * 60 * 60;
+
+function punchIpRegistryCacheKey_(bucket) {
+  return EK_PUNCH_IP_HOUR_CACHE_PREFIX_ + String(bucket || '').replace(/[^0-9]/g, '');
+}
+
+function buildPunchIpHourRegistry_(now) {
+  const bucket = hourBucket_(now);
+  const cacheKey = punchIpRegistryCacheKey_(bucket);
+  const cached = cacheGetJson_(cacheKey);
+  if (cached && cached.bucket === bucket && cached.ips && typeof cached.ips === 'object') {
+    return {cacheKey, bucket, ips:cached.ips};
+  }
+
+  const ips = Object.create(null);
+  const dateKey = bucket.slice(0, 10);
+  const add = (ip, email, name, kind, value) => {
+    ip = normalizeIp_(ip);
+    email = normalizeEmail_(email);
+    if (!ip || !email || !value || hourBucket_(value) !== bucket) return;
+    (ips[ip] || (ips[ip] = [])).push({email,name:String(name || ''),kind,time:formatTime_(value)});
+  };
+  getAttendanceByDate_(dateKey).forEach(r => {
+    const v = r.values;
+    add(v[19],v[1],v[2],'MASUK',v[4]);
+    add(v[20],v[1],v[2],'BALIK',v[9]);
+    add(v[32],v[1],v[2],'MASUK 2',v[22]);
+    add(v[33],v[1],v[2],'KELUAR 2',v[27]);
+  });
+  const stored = {bucket,ips};
+  cachePutJson_(cacheKey,stored,EK_PUNCH_IP_HOUR_TTL_SEC_);
+  return {cacheKey,bucket,ips};
+}
+
+function evaluatePunchIp_(user, type, ip, now, settings, isTestMode) {
   const tracking = String(settings.IP_TRACKING_ENABLED || 'TRUE').toUpperCase() !== 'FALSE';
   const policy = normalizeIpPunchPolicy_(settings.IP_PUNCH_POLICY || 'WARN');
 
-  if (!tracking) return {note:'IP tracking tidak aktif', warning:''};
+  if (!tracking) return {note:'IP tracking tidak aktif',warning:'',blocked:false,registry:null,audit:null};
   if (!ip) {
     const note = 'IP awam tidak dapat dikesan';
-    audit_('IP_PUNCH_TIDAK_DIKESAN', user.email, `${type}; ${hourBucket_(now)}`, user.email);
-    return {note, warning: note};
+    return {note,warning:note,blocked:false,registry:null,audit:{action:'IP_PUNCH_TIDAK_DIKESAN',details:`${type}; ${hourBucket_(now)}`}};
   }
   if (policy === 'OFF' || isTestMode) {
-    return {note: isTestMode ? `IP ${ip} direkodkan — semakan pertindihan diabaikan dalam MOD TEST` : `IP ${ip} direkodkan`, warning:''};
+    return {note:isTestMode?`IP ${ip} direkodkan — semakan pertindihan diabaikan dalam MOD TEST`:`IP ${ip} direkodkan`,warning:'',blocked:false,registry:null,audit:null};
   }
 
-  const bucket = hourBucket_(now);
-  // Only today's rows can match the current hour bucket. Avoid scanning the
-  // entire historical attendance table on every punch.
-  const rows = Array.isArray(preloadedTodayRows)
-    ? preloadedTodayRows.map(r => r.values || r)
-    : getAttendanceByDate_(todayKey_()).map(r => r.values);
-  if (!rows.length) return {note:`IP ${ip} — unik dalam jam ini`, warning:''};
-  const conflicts = [];
+  const registry = buildPunchIpHourRegistry_(now);
+  const conflicts = (registry.ips[ip] || []).filter(c => normalizeEmail_(c.email) !== user.email);
+  if (!conflicts.length) return {note:`IP ${ip} — unik dalam jam ini`,warning:'',blocked:false,registry,audit:null};
 
-  rows.forEach(v => {
-    const otherEmail = normalizeEmail_(v[1]);
-    if (!otherEmail || otherEmail === user.email) return;
-
-    if (v[4] && normalizeIp_(v[19]) === ip && hourBucket_(v[4]) === bucket) {
-      conflicts.push({email:otherEmail, name:String(v[2] || ''), kind:'MASUK', time:formatTime_(v[4])});
-    }
-    if (v[9] && normalizeIp_(v[20]) === ip && hourBucket_(v[9]) === bucket) {
-      conflicts.push({email:otherEmail, name:String(v[2] || ''), kind:'BALIK', time:formatTime_(v[9])});
-    }
-    if (v[22] && normalizeIp_(v[32]) === ip && hourBucket_(v[22]) === bucket) {
-      conflicts.push({email:otherEmail, name:String(v[2] || ''), kind:'MASUK 2', time:formatTime_(v[22])});
-    }
-    if (v[27] && normalizeIp_(v[33]) === ip && hourBucket_(v[27]) === bucket) {
-      conflicts.push({email:otherEmail, name:String(v[2] || ''), kind:'KELUAR 2', time:formatTime_(v[27])});
-    }
-  });
-
-  if (!conflicts.length) return {note:`IP ${ip} — unik dalam jam ini`, warning:''};
-
-  const uniquePeople = [...new Set(conflicts.map(c => c.email))];
-  const details = conflicts.slice(0, 5).map(c => `${c.name || c.email} (${c.kind} ${c.time})`).join(', ');
-  const hour = bucket.slice(-2);
+  const uniquePeople = [...new Set(conflicts.map(c => normalizeEmail_(c.email)).filter(Boolean))];
+  const details = conflicts.slice(0,5).map(c => `${c.name || c.email} (${c.kind} ${c.time})`).join(', ');
+  const hour = registry.bucket.slice(-2);
   const note = `IP SAMA: ${ip} digunakan ${uniquePeople.length} akaun lain dalam jam ${hour}:00–${hour}:59`;
-  audit_('IP_PUNCH_BERTINDIH', user.email, `${note}; ${details}`, user.email);
-
+  const audit = {action:'IP_PUNCH_BERTINDIH',details:`${note}; ${details}`};
   if (policy === 'BLOCK') {
-    throw new Error('Rakaman waktu ditolak: IP awam yang sama telah digunakan oleh akaun lain dalam jam yang sama. Jika anda menggunakan Wi-Fi sekolah/shared network, minta Pentadbir Sistem tukar Polisi IP kepada AMARAN.');
+    return {note,warning:'',blocked:true,registry,audit,error:'Rakaman waktu ditolak: IP awam yang sama telah digunakan oleh akaun lain dalam jam yang sama. Jika anda menggunakan Wi-Fi sekolah/shared network, minta Pentadbir Sistem tukar Polisi IP kepada AMARAN.'};
   }
+  return {note,warning:`${note}. Rekod waktu diterima kerana Polisi IP = AMARAN.`,blocked:false,registry,audit};
+}
 
-  return {note, warning:`${note}. Rekod waktu diterima kerana Polisi IP = AMARAN.`};
+function registerPunchIpUse_(ipCheck, user, type, session, ip, now) {
+  const registry = ipCheck && ipCheck.registry;
+  ip = normalizeIp_(ip);
+  if (!registry || !ip) return;
+  const kind = session === 2 ? (type === 'IN' ? 'MASUK 2' : 'KELUAR 2') : (type === 'IN' ? 'MASUK' : 'BALIK');
+  const list = registry.ips[ip] || (registry.ips[ip] = []);
+  list.push({email:user.email,name:user.name || '',kind,time:formatTime_(now)});
+  cachePutJson_(registry.cacheKey,{bucket:registry.bucket,ips:registry.ips},EK_PUNCH_IP_HOUR_TTL_SEC_);
 }
 
 function mergeIpCheckNote_(existing, next) {

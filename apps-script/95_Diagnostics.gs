@@ -40,6 +40,13 @@ function diagnosePerformanceBackend() {
       absenceRows: absenceRows.length,
       timeReviewRows: timeReviewRows.length
     },
+    launchReadiness: {
+      targetDailyUsers: 100,
+      attendanceIndex: 'date+email direct lookup / incremental punch append',
+      ipCheck: 'hour registry cache',
+      punchLock: 'attendance write critical section only',
+      note: 'Run a staged 20/50/100-user burst against the deployed Web App before launch.'
+    },
     timingsMs: marks,
     totalMs: Date.now() - started
   };

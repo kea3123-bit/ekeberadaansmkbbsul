@@ -178,6 +178,7 @@ function buildPunchCardMonthForUser_(user, monthKey) {
 }
 
 function punch(token, type, location, clientInfo) {
+  const perfStarted = Date.now();
   const user = requireSessionUser_(token);
   const settings = getSettings_();
   const isTestMode = String(settings.SYSTEM_MODE || 'REAL').toUpperCase() === 'TEST';
@@ -190,130 +191,149 @@ function punch(token, type, location, clientInfo) {
   const ipTracking = String(settings.IP_TRACKING_ENABLED || 'TRUE').toUpperCase() !== 'FALSE';
   const recordIp = ipTracking ? ci.ip : '';
   const loc = isTestMode
-    ? {lat: '', lng: '', accuracyM: '', distanceM: 0}
-    : validateAndMeasureLocation_(location, settings);
+    ? {lat:'',lng:'',accuracyM:'',distanceM:0}
+    : validateAndMeasureLocation_(location,settings);
   const now = new Date();
   const dateKey = todayKey_();
-  const schedule = getEffectiveSchedule_(user, settings);
+  const schedule = getEffectiveSchedule_(user,settings);
   const nowMinutes = minutesNow_(now);
 
-  let result = null;
-  let timeReviewRecord = null;
+  // TIDAK_HADIR is CacheService-backed. Resolve it before the global write
+  // lock so a cache miss never keeps 100 morning punches waiting behind it.
+  const presenceRequest = type === 'IN'
+    ? findRelevantPresenceForDate_(user.email,dateKey,readAbsenceRows_())
+    : null;
+
+  let values = null;
+  let session = 1;
+  let refTime = '';
+  let exceptionType = '';
+  let ipCheck = {note:'',warning:'',blocked:false,registry:null,audit:null};
+  let punchError = null;
+  let wasNewRow = false;
+  let lockWaitMs = 0;
+  let lockHeldMs = 0;
+  const lockRequestedAt = Date.now();
   const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
+
   try {
-    const todayRows = getAttendanceByDate_(dateKey);
-    let userMatches = todayRows.filter(r => r.email === user.email);
-    const sh = getSheetOrThrow_(EK.SHEETS.ATTENDANCE);
-    let rec = userMatches.length > 1
-      ? mergeAttendanceDuplicateGroup_(sh, userMatches)
-      : (userMatches[0] || null);
-    if (userMatches.length > 1) audit_('AUTO_GABUNG_DUPLIKAT', `${user.email} ${dateKey}`, `${userMatches.length} rekod digabungkan menjadi 1`);
+    lock.waitLock(20000);
+    lockWaitMs = Date.now() - lockRequestedAt;
+    const lockAcquiredAt = Date.now();
+    try {
+      const sh = getSheetOrThrow_(EK.SHEETS.ATTENDANCE);
+      const rec = findAttendanceRecord_(dateKey,user.email);
+      values = rec ? padAttendanceValues_(rec.values) : Array(EK.ATT_HEADERS.length).fill('');
 
-    let values = rec ? padAttendanceValues_(rec.values) : Array(EK.ATT_HEADERS.length).fill('');
-    if (rec && String(values[15] || '').toUpperCase() === 'TIDAK_HADIR' && !values[4]) {
-      throw new Error('Anda mempunyai rekod Tidak Hadir yang telah diluluskan untuk hari ini. Hubungi pentadbir jika rekod itu perlu dibatalkan.');
-    }
-
-    const step = nextAttendanceStep_(values, schedule);
-    if (step.complete) throw new Error('Semua rekod waktu hari ini sudah lengkap.');
-    if (step.type !== type) {
-      const expected = step.type === 'IN' ? 'Waktu Masuk' : 'Waktu Balik';
-      throw new Error(`Turutan rekod waktu mesti berselang. Rekod seterusnya ialah ${expected}.`);
-    }
-
-    const ipCheck = evaluatePunchIp_(user, type, recordIp, now, settings, isTestMode, todayRows);
-    const session = step.session;
-    const refTime = getPunchReferenceTime_(type,session,schedule,user,settings,dateKey,values);
-    if (!isTestMode && type === 'IN') {
-      const latestAllowed = session === 1 ? schedule.maxPunchIn : (schedule.s2Out || '');
-      if (latestAllowed && nowMinutes > timeToMinutes_(latestAllowed)) throw new Error(`Tempoh Rekod Waktu Masuk Sesi ${session} telah tamat pada ${latestAllowed}.`);
-    }
-    let exceptionType = '';
-    if (!isTestMode && refTime) {
-      const refMinutes = timeToMinutes_(refTime);
-      if (type === 'IN' && nowMinutes > refMinutes) exceptionType = 'LEWAT';
-      if (type === 'OUT' && nowMinutes < refMinutes) exceptionType = 'BALIK AWAL';
-    }
-
-    const presenceRequest = type === 'IN'
-      ? findRelevantPresenceForDate_(user.email, dateKey, readAbsenceRows_())
-      : null;
-
-    if (!rec) {
-      values[0] = dateKey;
-      values[1] = user.email;
-      values[2] = user.name;
-      values[3] = user.category;
-    } else {
-      values[2] = user.name;
-      values[3] = user.category;
-    }
-
-    if (session === 1 && type === 'IN') {
-      values[4] = now; values[5] = loc.lat; values[6] = loc.lng; values[7] = loc.distanceM; values[8] = loc.accuracyM; values[19] = recordIp || '';
-    } else if (session === 1 && type === 'OUT') {
-      values[9] = now; values[10] = loc.lat; values[11] = loc.lng; values[12] = loc.distanceM; values[13] = loc.accuracyM; values[20] = recordIp || '';
-    } else if (session === 2 && type === 'IN') {
-      values[22] = now; values[23] = loc.lat; values[24] = loc.lng; values[25] = loc.distanceM; values[26] = loc.accuracyM; values[32] = recordIp || '';
-    } else if (session === 2 && type === 'OUT') {
-      values[27] = now; values[28] = loc.lat; values[29] = loc.lng; values[30] = loc.distanceM; values[31] = loc.accuracyM; values[33] = recordIp || '';
-    }
-
-    const flags = splitAttendanceFlags_(values[34]);
-    if (exceptionType && !flags.includes(exceptionType)) flags.push(exceptionType);
-    values[34] = joinAttendanceFlags_(flags);
-    values[14] = attendanceStatusFromFlags_(flags);
-    values[15] = isTestMode ? 'TEST' : 'GPS';
-    values[18] = now;
-    values[21] = mergeIpCheckNote_(values[21], ipCheck.note);
-    if (presenceRequest && type === 'IN') {
-      values[17] = mergeAttendanceReason_(values[17], presenceRequestReason_(presenceRequest, 'CATATAN'));
-    }
-
-    if (!rec) {
-      sh.appendRow(values);
-      invalidateAttendanceIndex_();
-      rec = {row: sh.getLastRow(), values, email:user.email};
-    } else {
-      sh.getRange(rec.row, 1, 1, EK.ATT_HEADERS.length).setValues([values]);
-      rec.values = values;
-    }
-
-    const action = `REKOD_${type === 'IN' ? 'MASUK' : 'KELUAR'}_SESI_${session}`;
-    audit_(action, user.email, `${exceptionType || 'TEPAT MASA'}; mod=${isTestMode ? 'TEST' : 'REAL'}; jarak ${loc.distanceM}m; IP=${recordIp || '-'}; ${ipCheck.note || 'IP tiada isu'}`, user.email);
-
-    if (exceptionType) {
-      timeReviewRecord = createTimeReviewRecord_({
-        date: dateKey,
-        user,
-        type: exceptionType,
-        session,
-        recordTime: formatTime_(now),
-        referenceTime: refTime
-      });
-      // Status tetap LEWAT. Jika Keberadaan bagi tarikh ini sudah diluluskan
-      // dan punch berlaku selepas waktu akhir Keberadaan, catatan/kelulusan
-      // tersebut dianggap memadai dan semakan LEWAT diambil maklum automatik.
-      if (exceptionType === 'LEWAT' && presenceRequest && presenceRequest.status === 'DILULUSKAN') {
-        timeReviewRecord = autoAcknowledgeTimeReviewFromPresence_(timeReviewRecord, presenceRequest);
+      if (rec && String(values[15] || '').toUpperCase() === 'TIDAK_HADIR' && !values[4]) {
+        throw new Error('Anda mempunyai rekod Tidak Hadir yang telah diluluskan untuk hari ini. Hubungi pentadbir jika rekod itu perlu dibatalkan.');
       }
-    }
 
-    const label = type === 'IN' ? 'Masuk' : 'Balik';
-    result = {
-      ok: true,
-      message: `Rekod waktu ${label} berjaya${exceptionType ? ` — status ${exceptionType}` : ''}.`,
-      attendance: publicAttendance_({values}, schedule),
-      distanceM: loc.distanceM,
-      ip: recordIp || '',
-      ipWarning: ipCheck.warning || '',
-      timeException: timeReviewRecord ? publicTimeReview_(timeReviewRecord) : null
-    };
-  } finally {
-    lock.releaseLock();
+      const step = nextAttendanceStep_(values,schedule);
+      if (step.complete) throw new Error('Semua rekod waktu hari ini sudah lengkap.');
+      if (step.type !== type) {
+        const expected = step.type === 'IN' ? 'Waktu Masuk' : 'Waktu Balik';
+        throw new Error(`Turutan rekod waktu mesti berselang. Rekod seterusnya ialah ${expected}.`);
+      }
+      session = step.session;
+      refTime = getPunchReferenceTime_(type,session,schedule,user,settings,dateKey,values);
+
+      if (!isTestMode && type === 'IN') {
+        const latestAllowed = session === 1 ? schedule.maxPunchIn : (schedule.s2Out || '');
+        if (latestAllowed && nowMinutes > timeToMinutes_(latestAllowed)) {
+          throw new Error(`Tempoh Rekod Waktu Masuk Sesi ${session} telah tamat pada ${latestAllowed}.`);
+        }
+      }
+      if (!isTestMode && refTime) {
+        const refMinutes = timeToMinutes_(refTime);
+        if (type === 'IN' && nowMinutes > refMinutes) exceptionType = 'LEWAT';
+        if (type === 'OUT' && nowMinutes < refMinutes) exceptionType = 'BALIK AWAL';
+      }
+
+      // Hour/IP cache is read and updated while the same short ScriptLock is
+      // held, so concurrent punches see the preceding successful punch without
+      // rescanning the entire attendance day on every request.
+      ipCheck = evaluatePunchIp_(user,type,recordIp,now,settings,isTestMode);
+      if (ipCheck.blocked) throw new Error(ipCheck.error || 'Rakaman waktu ditolak oleh Polisi IP.');
+
+      if (!rec) {
+        values[0]=dateKey; values[1]=user.email; values[2]=user.name; values[3]=user.category;
+      } else {
+        values[2]=user.name; values[3]=user.category;
+      }
+
+      if (session === 1 && type === 'IN') {
+        values[4]=now; values[5]=loc.lat; values[6]=loc.lng; values[7]=loc.distanceM; values[8]=loc.accuracyM; values[19]=recordIp || '';
+      } else if (session === 1 && type === 'OUT') {
+        values[9]=now; values[10]=loc.lat; values[11]=loc.lng; values[12]=loc.distanceM; values[13]=loc.accuracyM; values[20]=recordIp || '';
+      } else if (session === 2 && type === 'IN') {
+        values[22]=now; values[23]=loc.lat; values[24]=loc.lng; values[25]=loc.distanceM; values[26]=loc.accuracyM; values[32]=recordIp || '';
+      } else if (session === 2 && type === 'OUT') {
+        values[27]=now; values[28]=loc.lat; values[29]=loc.lng; values[30]=loc.distanceM; values[31]=loc.accuracyM; values[33]=recordIp || '';
+      }
+
+      const flags = splitAttendanceFlags_(values[34]);
+      if (exceptionType && !flags.includes(exceptionType)) flags.push(exceptionType);
+      values[34]=joinAttendanceFlags_(flags);
+      values[14]=attendanceStatusFromFlags_(flags);
+      values[15]=isTestMode ? 'TEST' : 'GPS';
+      values[18]=now;
+      values[21]=mergeIpCheckNote_(values[21],ipCheck.note);
+      if (presenceRequest && type === 'IN') {
+        values[17]=mergeAttendanceReason_(values[17],presenceRequestReason_(presenceRequest,'CATATAN'));
+      }
+
+      if (!rec) {
+        sh.appendRow(values);
+        const row = sh.getLastRow();
+        registerAttendanceRow_(dateKey,user.email,row);
+        wasNewRow = true;
+      } else {
+        sh.getRange(rec.row,1,1,EK.ATT_HEADERS.length).setValues([values]);
+      }
+      registerPunchIpUse_(ipCheck,user,type,session,recordIp,now);
+    } finally {
+      lockHeldMs = Date.now() - lockAcquiredAt;
+      lock.releaseLock();
+    }
+  } catch (err) {
+    punchError = err;
+    try { if (lock.hasLock()) lock.releaseLock(); } catch (_e) {}
   }
 
-  if (timeReviewRecord && timeReviewRecord.isNew !== false && !timeReviewRecord.autoAcknowledged) notifyTimeException_(timeReviewRecord);
-  return result;
+  // Audit writes, review-sheet reads/writes and email must never extend the
+  // attendance critical section. This is the key launch-burst optimization.
+  if (ipCheck && ipCheck.audit) {
+    audit_(ipCheck.audit.action,user.email,ipCheck.audit.details,user.email);
+  }
+  if (punchError) throw punchError;
+
+  const action = `REKOD_${type === 'IN' ? 'MASUK' : 'KELUAR'}_SESI_${session}`;
+  audit_(action,user.email,`${exceptionType || 'TEPAT MASA'}; mod=${isTestMode ? 'TEST' : 'REAL'}; jarak ${loc.distanceM}m; IP=${recordIp || '-'}; ${ipCheck.note || 'IP tiada isu'}; lockWaitMs=${lockWaitMs}; lockHeldMs=${lockHeldMs}; row=${wasNewRow ? 'NEW' : 'UPDATE'}`,user.email);
+
+  let timeReviewRecord = null;
+  if (exceptionType) {
+    timeReviewRecord = createTimeReviewRecord_({
+      date:dateKey,user,type:exceptionType,session,
+      recordTime:formatTime_(now),referenceTime:refTime
+    });
+    if (exceptionType === 'LEWAT' && presenceRequest && presenceRequest.status === 'DILULUSKAN') {
+      timeReviewRecord = autoAcknowledgeTimeReviewFromPresence_(timeReviewRecord,presenceRequest);
+    }
+  }
+  if (timeReviewRecord && timeReviewRecord.isNew !== false && !timeReviewRecord.autoAcknowledged) {
+    notifyTimeException_(timeReviewRecord);
+  }
+
+  const label = type === 'IN' ? 'Masuk' : 'Balik';
+  return {
+    ok:true,
+    message:`Rekod waktu ${label} berjaya${exceptionType ? ` — status ${exceptionType}` : ''}.`,
+    attendance:publicAttendance_({values},schedule),
+    distanceM:loc.distanceM,
+    ip:recordIp || '',
+    ipWarning:ipCheck.warning || '',
+    timeException:timeReviewRecord ? publicTimeReview_(timeReviewRecord) : null,
+    performance:{lockWaitMs,lockHeldMs,totalMs:Date.now()-perfStarted}
+  };
 }

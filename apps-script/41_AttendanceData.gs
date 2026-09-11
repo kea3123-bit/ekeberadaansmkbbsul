@@ -2,8 +2,8 @@
 
 // Attendance row index: one cheap 2-column scan per cache generation,
 // followed by narrow full-row reads only for the requested date/month.
-const EK_ATT_INDEX_CACHE_KEY_ = 'EK_PERF_ATT_INDEX_V2';
-const EK_ATT_INDEX_TTL_SEC_ = 30;
+const EK_ATT_INDEX_CACHE_KEY_ = 'EK_PERF_ATT_INDEX_V3';
+const EK_ATT_INDEX_TTL_SEC_ = 120;
 let EK_RUNTIME_ATT_INDEX_ = null;
 
 function getAttendanceRowIndex_() {
@@ -11,21 +11,22 @@ function getAttendanceRowIndex_() {
   const lastRow = sh.getLastRow();
   if (EK_RUNTIME_ATT_INDEX_ && EK_RUNTIME_ATT_INDEX_.lastRow === lastRow) return EK_RUNTIME_ATT_INDEX_;
   const cached = cacheGetJson_(EK_ATT_INDEX_CACHE_KEY_);
-  if (cached && cached.lastRow === lastRow && cached.byDate && cached.byMonth) {
+  if (cached && cached.lastRow === lastRow && cached.byDate && cached.byMonth && cached.byKey) {
     EK_RUNTIME_ATT_INDEX_ = cached;
     return cached;
   }
-  const byDate = Object.create(null), byMonth = Object.create(null);
+  const byDate = Object.create(null), byMonth = Object.create(null), byKey = Object.create(null);
   if (lastRow >= 2) {
     sh.getRange(2, 1, lastRow - 1, 2).getValues().forEach((v, i) => {
       const dateKey = dateCellToKey_(v[0]);
       if (!dateKey) return;
-      const row = i + 2, monthKey = dateKey.slice(0, 7);
+      const row = i + 2, monthKey = dateKey.slice(0, 7), email = normalizeEmail_(v[1]);
       (byDate[dateKey] || (byDate[dateKey] = [])).push(row);
       (byMonth[monthKey] || (byMonth[monthKey] = [])).push(row);
+      if (email) (byKey[dateKey + '|' + email] || (byKey[dateKey + '|' + email] = [])).push(row);
     });
   }
-  const out = {lastRow, byDate, byMonth};
+  const out = {lastRow, byDate, byMonth, byKey};
   EK_RUNTIME_ATT_INDEX_ = out;
   cachePutJson_(EK_ATT_INDEX_CACHE_KEY_, out, EK_ATT_INDEX_TTL_SEC_);
   return out;
@@ -33,6 +34,41 @@ function getAttendanceRowIndex_() {
 function invalidateAttendanceIndex_(){
   EK_RUNTIME_ATT_INDEX_ = null;
   try { getScriptCache_().remove(EK_ATT_INDEX_CACHE_KEY_); } catch(e) {}
+}
+
+function registerAttendanceRow_(dateKey, email, row) {
+  dateKey = validateDateKey_(dateKey);
+  email = normalizeEmail_(email);
+  row = Number(row || 0);
+  if (!email || row < 2) { invalidateAttendanceIndex_(); return; }
+
+  // The normal punch path has already loaded the old index before append.
+  // Reuse that in-memory object instead of observing the new lastRow and
+  // rebuilding the entire historical A:B index.
+  let idx = EK_RUNTIME_ATT_INDEX_;
+  if (!idx || !idx.byDate || !idx.byMonth || !idx.byKey || Number(idx.lastRow || 0) !== row - 1) {
+    const cached = cacheGetJson_(EK_ATT_INDEX_CACHE_KEY_);
+    if (cached && cached.byDate && cached.byMonth && cached.byKey && Number(cached.lastRow || 0) === row - 1) idx = cached;
+  }
+  if (!idx || !idx.byDate || !idx.byMonth || !idx.byKey || Number(idx.lastRow || 0) !== row - 1) {
+    // Unusual/manual sheet mutation: correctness first. The next lookup will
+    // rebuild once from source data rather than risking a stale row map.
+    invalidateAttendanceIndex_();
+    return;
+  }
+
+  const monthKey = dateKey.slice(0, 7);
+  const key = dateKey + '|' + email;
+  const pushUnique = (map, k) => {
+    const list = map[k] || (map[k] = []);
+    if (!list.includes(row)) list.push(row);
+  };
+  pushUnique(idx.byDate, dateKey);
+  pushUnique(idx.byMonth, monthKey);
+  pushUnique(idx.byKey, key);
+  idx.lastRow = row;
+  EK_RUNTIME_ATT_INDEX_ = idx;
+  cachePutJson_(EK_ATT_INDEX_CACHE_KEY_, idx, EK_ATT_INDEX_TTL_SEC_);
 }
 
 
@@ -75,12 +111,18 @@ function getAttendanceValuesForUserMonth_(email, monthKey) {
 }
 
 function findAttendanceRecord_(dateKey, email) {
+  dateKey = validateDateKey_(dateKey);
   email = normalizeEmail_(email);
-  const matches = getAttendanceByDate_(dateKey).filter(r => r.email === email);
+  if (!email) return null;
+  const sh = getSheetOrThrow_(EK.SHEETS.ATTENDANCE);
+  const idx = getAttendanceRowIndex_();
+  const rowNumbers = (idx.byKey && idx.byKey[dateKey + '|' + email]) || [];
+  if (!rowNumbers.length) return null;
+  const matches = readAttendanceRowsByRowNumbers_(sh, rowNumbers)
+    .filter(r => r.email === email && dateCellToKey_(r.values[0]) === dateKey);
   if (!matches.length) return null;
   if (matches.length === 1) return matches[0];
 
-  const sh = getSheetOrThrow_(EK.SHEETS.ATTENDANCE);
   const merged = mergeAttendanceDuplicateGroup_(sh, matches);
   audit_('AUTO_GABUNG_DUPLIKAT', `${email} ${dateKey}`, `${matches.length} rekod digabungkan menjadi 1`);
   return merged;
@@ -161,6 +203,7 @@ function mergeAttendanceDuplicateGroup_(sh, group) {
     .sort((a, b) => b - a)
     .forEach(row => sh.deleteRow(row));
 
+  invalidateAttendanceIndex_();
   SpreadsheetApp.flush();
   return {
     row: targetRow,
