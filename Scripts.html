@@ -70,7 +70,7 @@ const state = {
       userAgent:navigator.userAgent||'',
       platform:(navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||'',
       vendor:navigator.vendor||'',
-      timezone:'Asia/Kuala_Lumpur',
+      timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||''),
       browserTimezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||''),
       language:navigator.language||'',
       deviceType:inferClientDeviceType(),

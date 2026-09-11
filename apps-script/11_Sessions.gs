@@ -110,15 +110,15 @@ function trustedDeviceNetworkLabel_(ci) {
   ].filter(Boolean).join(' ').slice(0, 220);
 }
 
-function trustedDeviceTelemetryValues_(ci) {
+function trustedDeviceTelemetryValues_(ci, rec) {
+  rec = rec || {};
+  const pick = (incoming, existing) => incoming === '' || incoming == null ? (existing == null ? '' : existing) : incoming;
   return [
-    ci.clientInstanceId || '', ci.deviceType || '', ci.deviceModel || '',
-    ci.screen || '', ci.viewport || '', ci.pixelRatio === '' ? '' : ci.pixelRatio,
-    ci.touchPoints === '' ? '' : ci.touchPoints,
-    ci.hardwareConcurrency === '' ? '' : ci.hardwareConcurrency,
-    ci.deviceMemoryGb === '' ? '' : ci.deviceMemoryGb,
-    trustedDeviceNetworkLabel_(ci), ci.publicIpv4 || '', ci.publicIpv6 || '',
-    ci.userAgent || '', ci.timezone || '', ci.language || ''
+    pick(ci.clientInstanceId,rec.clientInstanceId), pick(ci.deviceType,rec.deviceType), pick(ci.deviceModel,rec.model),
+    pick(ci.screen,rec.screen), pick(ci.viewport,rec.viewport), pick(ci.pixelRatio,rec.pixelRatio),
+    pick(ci.touchPoints,rec.touchPoints), pick(ci.hardwareConcurrency,rec.cpu), pick(ci.deviceMemoryGb,rec.ramGb),
+    trustedDeviceNetworkLabel_(ci) || rec.network || '', pick(ci.publicIpv4,rec.publicIpv4), pick(ci.publicIpv6,rec.publicIpv6),
+    pick(ci.userAgent,rec.userAgent), pick(ci.timezone,rec.timezone), pick(ci.language,rec.language)
   ];
 }
 
@@ -204,19 +204,16 @@ function touchTrustedDevice_(rec, clientInfo, extendExpiry) {
   const nextBrowser = browserNameFromUa_(ci.userAgent);
   const nextName = `${nextPlatform} · ${nextBrowser}`;
   const nextIp = ci.ip || rec.lastIp || '';
-  const telemetry = trustedDeviceTelemetryValues_(ci);
+  const telemetry = trustedDeviceTelemetryValues_(ci, rec);
+  const [nextClientInstanceId,nextDeviceType,nextModel,nextScreen,nextViewport,nextPixelRatio,nextTouchPoints,nextCpu,nextRamGb,nextNetwork,nextIpv4,nextIpv6,nextUserAgent,nextTimezone,nextLanguage] = telemetry;
   const lastSeenMs = dateMillis_(rec.lastSeenAt);
   const recent = lastSeenMs > 0 && (now.getTime() - lastSeenMs) < EK_TRUSTED_TOUCH_MIN_INTERVAL_MS_;
   const sameFingerprint = nextName === String(rec.deviceName || '') &&
-    nextPlatform === String(rec.platform || '') &&
-    nextBrowser === String(rec.browser || '') &&
-    nextIp === String(rec.lastIp || '') &&
-    String(ci.clientInstanceId || '') === String(rec.clientInstanceId || '') &&
-    String(ci.deviceType || '') === String(rec.deviceType || '') &&
-    String(ci.deviceModel || '') === String(rec.model || '') &&
-    String(ci.screen || '') === String(rec.screen || '') &&
-    String(ci.publicIpv4 || '') === String(rec.publicIpv4 || '') &&
-    String(ci.publicIpv6 || '') === String(rec.publicIpv6 || '');
+    nextPlatform === String(rec.platform || '') && nextBrowser === String(rec.browser || '') &&
+    nextIp === String(rec.lastIp || '') && String(nextClientInstanceId || '') === String(rec.clientInstanceId || '') &&
+    String(nextDeviceType || '') === String(rec.deviceType || '') && String(nextModel || '') === String(rec.model || '') &&
+    String(nextScreen || '') === String(rec.screen || '') && String(nextIpv4 || '') === String(rec.publicIpv4 || '') &&
+    String(nextIpv6 || '') === String(rec.publicIpv6 || '');
 
   if (extendExpiry && recent && sameFingerprint) return rec;
 
@@ -228,30 +225,13 @@ function touchTrustedDevice_(rec, clientInfo, extendExpiry) {
     rec.createdAt || now, now, exp
   ]]);
   sh.getRange(rec.row, 14, 1, telemetry.length).setValues([telemetry]);
-  rec.deviceName = nextName;
-  rec.platform = nextPlatform;
-  rec.browser = nextBrowser;
-  rec.lastIp = nextIp;
-  rec.lastSeenAt = now;
-  rec.expiresAt = exp;
-  rec.clientInstanceId = ci.clientInstanceId || '';
-  rec.deviceType = ci.deviceType || '';
-  rec.model = ci.deviceModel || '';
-  rec.screen = ci.screen || '';
-  rec.viewport = ci.viewport || '';
-  rec.pixelRatio = ci.pixelRatio;
-  rec.touchPoints = ci.touchPoints;
-  rec.cpu = ci.hardwareConcurrency;
-  rec.ramGb = ci.deviceMemoryGb;
-  rec.network = trustedDeviceNetworkLabel_(ci);
-  rec.publicIpv4 = ci.publicIpv4 || '';
-  rec.publicIpv6 = ci.publicIpv6 || '';
-  rec.userAgent = ci.userAgent || '';
-  rec.timezone = ci.timezone || '';
-  rec.language = ci.language || '';
-  if (extendExpiry && previousExpiryMs && previousExpiryMs - now.getTime() < 5 * 60 * 1000) {
-    invalidateTrustedDevicesCache_();
-  }
+  rec.deviceName=nextName; rec.platform=nextPlatform; rec.browser=nextBrowser; rec.lastIp=nextIp;
+  rec.lastSeenAt=now; rec.expiresAt=exp; rec.clientInstanceId=nextClientInstanceId || '';
+  rec.deviceType=nextDeviceType || ''; rec.model=nextModel || ''; rec.screen=nextScreen || ''; rec.viewport=nextViewport || '';
+  rec.pixelRatio=nextPixelRatio; rec.touchPoints=nextTouchPoints; rec.cpu=nextCpu; rec.ramGb=nextRamGb;
+  rec.network=nextNetwork || ''; rec.publicIpv4=nextIpv4 || ''; rec.publicIpv6=nextIpv6 || '';
+  rec.userAgent=nextUserAgent || ''; rec.timezone=nextTimezone || ''; rec.language=nextLanguage || '';
+  if (extendExpiry && previousExpiryMs && previousExpiryMs - now.getTime() < 5 * 60 * 1000) invalidateTrustedDevicesCache_();
   return rec;
 }
 

@@ -183,9 +183,15 @@ function ensureTrustedDevicesSheet_() {
     setupTrustedDevicesSheet_(ss);
     sh = ss.getSheetByName(EK.SHEETS.TRUSTED_DEVICES);
   } else {
-    // Self-heal appended telemetry headers for an existing production sheet.
-    ensureHeaders_(sh, EK.TRUSTED_DEVICE_HEADERS);
-    styleHeader_(sh, EK.TRUSTED_DEVICE_HEADERS.length);
+    // Self-heal appended telemetry headers once per cache window, not on every
+    // login/resume. This keeps device telemetry off the hot path.
+    const schemaKey = 'EK_SCHEMA_TRUSTED_DEVICE_V2';
+    let ready = false;
+    try { ready = getScriptCache_().get(schemaKey) === '1'; } catch (e) {}
+    if (!ready) {
+      ensureHeaders_(sh, EK.TRUSTED_DEVICE_HEADERS);
+      try { getScriptCache_().put(schemaKey, '1', 21600); } catch (e) {}
+    }
   }
   EK_RUNTIME_SHEETS_[EK.SHEETS.TRUSTED_DEVICES] = sh;
   return sh;
