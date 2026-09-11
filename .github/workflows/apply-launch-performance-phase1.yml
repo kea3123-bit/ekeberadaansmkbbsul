@@ -1,0 +1,58 @@
+name: Apply launch performance phase 1
+
+on:
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - '.github/workflows/apply-launch-performance-phase1.yml'
+      - '.github/scripts/launch-performance-phase1.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply phase 1 performance patch
+        run: python3 .github/scripts/launch-performance-phase1.py
+      - name: Validate backend and performance contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat apps-script/*.gs > /tmp/apps-script.js
+          node --check /tmp/apps-script.js
+          python3 - <<'PY'
+          from pathlib import Path
+          core=Path('apps-script/00_Core.gs').read_text()
+          sess=Path('apps-script/11_Sessions.gs').read_text()
+          absn=Path('apps-script/61_Absence.gs').read_text()
+          rev=Path('apps-script/60_TimeReview.gs').read_text()
+          auth=Path('apps-script/10_Auth.gs').read_text()
+          bridge=Path('apps-script/Bridges.gs').read_text()
+          pages=Path('.github/workflows/github-pages.yml').read_text()
+          assert 'USERS_TTL_SEC: 300' in core and 'SETTINGS_TTL_SEC: 300' in core
+          assert 'TRUSTED_DEVICES_TTL_SEC: 60' in core
+          assert '60 * 60 * 1000' in sess
+          assert 'EK_ABSENCE_CACHE_KEY_' in absn and 'getScriptCache_().remove(EK_ABSENCE_CACHE_KEY_)' in absn
+          assert 'EK_TIME_REVIEW_CACHE_KEY_' in rev and 'getScriptCache_().remove(EK_TIME_REVIEW_CACHE_KEY_)' in rev
+          assert 'data.assumeNew' in rev
+          assert 'EK_SESSION_SECRET_CACHE_KEY_' in auth
+          assert 'EK_PAGES_ORIGINS_CACHE_KEY_' in bridge
+          assert 'git clean -fdx' in pages
+          assert Path('.gitignore').exists()
+          assert Path('docs/PERFORMANCE_AUDIT_100_USERS.md').exists()
+          PY
+      - name: Commit phase 1 app changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/scripts/launch-performance-phase1.py .github/workflows/apply-launch-performance-phase1.yml
+          git config user.name 'eKeberadaan Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'perf: reduce repeated Apps Script and Sheets work'
+          git push origin HEAD:refactor/performance-v2
