@@ -80,7 +80,10 @@ jobs:
           git config user.name 'eKeberadaan Bot'
           git config user.email 'actions@users.noreply.github.com'
           git checkout --orphan gh-pages
-          git rm -rf .
+          git rm -rf . || true
+          # Remove ignored/untracked build dependencies (especially node_modules)
+          # before copying only the generated static site into the orphan branch.
+          git clean -fdx
           cp -a /tmp/eke-gh-pages/. .
           git add -A
           git commit -m "deploy: optimized static web ${GITHUB_SHA}"
@@ -117,4 +120,4 @@ jobs:
           grep -q 'function startRequestButton' /tmp/gas-shim.js
           echo "LIVE_PAGES_EXACT_BUILD_OK mobile=${EXPECTED_MOBILE} shim=${EXPECTED_SHIM}"
 
-# deployment source: refactor/performance-v2 · absence names and notes refresh 2026-09-11
+# deployment source: refactor/performance-v2 · launch performance hardening 2026-09-11
