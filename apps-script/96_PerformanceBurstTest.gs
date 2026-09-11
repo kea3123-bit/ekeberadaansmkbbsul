@@ -103,38 +103,21 @@ function performanceBurstProbe(probeToken, runId, stage, requestNo, sentAtMs) {
   readAbsenceRows_();
   const preflightMs = Date.now() - preflightStarted;
 
-  let lease = null;
-  let lockWaitMs = 0;
-  let lockHeldMs = 0;
-  let writeMs = 0;
-  try {
-    lease = acquireAttendanceKeyLock_('PERF', runId + '|' + requestNo, 6000);
-    lockWaitMs = lease.waitMs || 0;
-    const acquiredAt = Date.now();
-    try {
-      const sh = getSpreadsheet_().getSheetByName(EK_PERF_BURST_SHEET_);
-      if (!sh) throw new Error('Sheet PERF_BURST_TEST belum disediakan. Jalankan suite dari editor.');
-      const row = performanceBurstReservedRow_(stage, requestNo);
-      const writeStarted = Date.now();
-      sh.getRange(row, 1, 1, 7).setValues([[
-        String(runId || ''), Number(stage)||0, Number(requestNo)||0,
-        new Date(started), lockWaitMs, preflightMs, 'WEB_APP_PARALLEL'
-      ]]);
-      writeMs = Date.now() - writeStarted;
-    } finally {
-      lockHeldMs = Date.now() - acquiredAt;
-      releaseAttendanceKeyLock_(lease);
-      lease = null;
-    }
-  } finally {
-    releaseAttendanceKeyLock_(lease);
-  }
+  const sh = getSpreadsheet_().getSheetByName(EK_PERF_BURST_SHEET_);
+  if (!sh) throw new Error('Sheet PERF_BURST_TEST belum disediakan. Jalankan suite dari editor.');
+  const row = performanceBurstReservedRow_(stage, requestNo);
+  const writeStarted = Date.now();
+  sh.getRange(row, 1, 1, 7).setValues([[
+    String(runId || ''), Number(stage)||0, Number(requestNo)||0,
+    new Date(started), 0, preflightMs, 'WEB_APP_PARALLEL_DIRECT_ROW'
+  ]]);
+  const writeMs = Date.now() - writeStarted;
 
   const finished = Date.now();
   return {
     ok:true, runId:String(runId||''), stage:Number(stage)||0, requestNo:Number(requestNo)||0,
     arrivalLagMs:Math.max(0, started-(Number(sentAtMs)||started)),
-    preflightMs, lockWaitMs, lockHeldMs, writeMs, totalMs:finished-started
+    preflightMs, lockWaitMs:0, lockHeldMs:0, writeMs, totalMs:finished-started
   };
 }
 
