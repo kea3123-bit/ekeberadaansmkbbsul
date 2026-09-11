@@ -1,0 +1,40 @@
+name: Apply automatic home session visibility
+
+on:
+  push:
+    paths:
+      - 'hotfixes/2026-09-11-home-session-visibility.trigger'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply home session patch
+        run: python scripts/fix-home-session-visibility.py
+
+      - name: Validate client script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp Scripts.html /tmp/ekeberadaan-client.js
+          node --check /tmp/ekeberadaan-client.js
+          grep -q 'id="homeSession2Schedule"' Index.html
+          grep -q "const hasSecondSession=!!(b.schedule.s2In||b.schedule.s2Out||a.inTime2||a.outTime2);" Scripts.html
+
+      - name: Commit fix and remove one-shot files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'eKeberadaan Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm -f scripts/fix-home-session-visibility.py .github/workflows/apply-home-session-visibility.yml hotfixes/2026-09-11-home-session-visibility.trigger
+          git add Index.html Scripts.html Styles.html
+          git commit -m 'feat: auto show configured sessions on home'
+          git push origin HEAD:refactor/performance-v2
