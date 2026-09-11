@@ -2,7 +2,7 @@ name: Performance refactor CI
 
 on:
   push:
-    branches:["refactor/performance-v2"]
+    branches: ["refactor/performance-v2"]
     paths:
       - 'Index.html'
       - 'Logo.html'
