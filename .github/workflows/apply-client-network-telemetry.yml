@@ -1,0 +1,48 @@
+name: Apply client network telemetry
+
+on:
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - '.github/workflows/apply-client-network-telemetry.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/performance-v2
+          fetch-depth: 0
+      - name: Apply patch
+        run: python3 .github/scripts/patch-client-network-telemetry.py
+      - name: Validate frontend and Apps Script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/build-pages.py
+          for f in _site/assets/*.js; do node --check "$f"; done
+          cat apps-script/*.gs > /tmp/apps-script-backend.js
+          node --check /tmp/apps-script-backend.js
+          grep -q "api6.ipify.org" Scripts.html
+          grep -q "syncClientTelemetry" Scripts.html
+          grep -q "function syncClientTelemetry" apps-script/11_Sessions.gs
+          grep -q "IPv4Awam" apps-script/00_Core.gs
+          grep -q "publicIpv6" apps-script/10_Auth.gs
+          grep -q "'syncClientTelemetry'" apps-script/Bridges.gs
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "eKeberadaan Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add Scripts.html apps-script/00_Core.gs apps-script/10_Auth.gs apps-script/11_Sessions.gs apps-script/90_Setup.gs apps-script/Bridges.gs
+          if git diff --cached --quiet; then
+            echo "No application changes needed"
+            exit 0
+          fi
+          git commit -m "feat: capture public IP and richer device telemetry"
+          git push origin HEAD:refactor/performance-v2
