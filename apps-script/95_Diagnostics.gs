@@ -1,7 +1,7 @@
 // ---------- Read-only runtime diagnostics ----------
 // Run manually from the Apps Script editor after a deployment.
 // This function is intentionally NOT exposed through the GitHub Pages bridge.
-// Launch-performance Phase 2 source marker: 2026-09-11.
+// Launch-performance Phase 3 source marker: 2026-09-11.
 function diagnosePerformanceBackend() {
   const started = Date.now();
   const marks = {};
@@ -43,10 +43,10 @@ function diagnosePerformanceBackend() {
     },
     launchReadiness: {
       targetDailyUsers: 100,
-      attendanceIndex: 'date+email direct lookup / incremental punch append',
-      ipCheck: 'hour registry cache',
-      punchLock: 'attendance write critical section only',
-      note: 'Run a staged 20/50/100-user burst against the deployed Web App before launch.'
+      attendanceIndex: 'date+email direct lookup / daily batched row slots',
+      ipCheck: 'hour registry cache; strict global ordering only for BLOCK policy',
+      punchLock: 'per-user keyed cache lease; Spreadsheet writes run in parallel',
+      note: 'Re-run the staged 20/50/100-user burst after deploying Phase 3.'
     },
     timingsMs: marks,
     totalMs: Date.now() - started
