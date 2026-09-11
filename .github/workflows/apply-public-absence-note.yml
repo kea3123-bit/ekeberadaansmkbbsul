@@ -27,11 +27,11 @@ jobs:
           node --check /tmp/frontend.js
           cat apps-script/*.gs > /tmp/apps-script.js
           node --check /tmp/apps-script.js
-          grep -q "note:String(r.note||'')" apps-script/61_Absence.gs
-          grep -q 'r.type,r.note,r.startDate' apps-script/61_Absence.gs
-          grep -q 'r.type,r.note,r.startDate' Scripts.html
-          grep -q 'String(r.note||'"'"').trim()' Scripts.html
-          ! grep -q 'catatan peribadi' Index.html
+          grep -Fq "note:String(r.note||'')" apps-script/61_Absence.gs
+          grep -Fq 'r.type,r.note,r.startDate' apps-script/61_Absence.gs
+          grep -Fq 'r.type,r.note,r.startDate' Scripts.html
+          grep -Fq "String(r.note||'').trim()" Scripts.html
+          ! grep -Fq 'catatan peribadi' Index.html
       - name: Commit app change and remove temporary patch files
         shell: bash
         run: |
