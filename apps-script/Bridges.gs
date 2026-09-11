@@ -92,6 +92,7 @@ function pagesBridgeMethodAllowed_(method) {
     'getTimeReviewData',
     'loginWithPin',
     'logoutApp',
+    'performanceBurstProbe',
     'punch',
     'resumeSession',
     'resumeTrustedDevice',
@@ -137,6 +138,7 @@ function invokePagesBridgeMethod_(method, args) {
     case 'getTimeReviewData': return getTimeReviewData.apply(null, args);
     case 'loginWithPin': return loginWithPin.apply(null, args);
     case 'logoutApp': return logoutApp.apply(null, args);
+    case 'performanceBurstProbe': return performanceBurstProbe.apply(null, args);
     case 'punch': return punch.apply(null, args);
     case 'resumeSession': return resumeSession.apply(null, args);
     case 'resumeTrustedDevice': return resumeTrustedDevice.apply(null, args);
