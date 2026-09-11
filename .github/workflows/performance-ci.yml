@@ -2,7 +2,7 @@ name: Performance refactor CI
 
 on:
   push:
-    branches: ["refactor/performance-v2"]
+    branches:["refactor/performance-v2"]
     paths:
       - 'Index.html'
       - 'Logo.html'
@@ -139,12 +139,12 @@ jobs:
           grep -R -q 'function loginWithPin(' apps-script
           grep -R -q 'function resumeSession(' apps-script
           grep -R -q 'function punch(' apps-script
-          grep -q "acquireAttendanceKeyLock_('PUNCH'" apps-script/20_UserApi.gs
-          grep -q 'function acquireAttendanceKeyLock_' apps-script/41_AttendanceData.gs
+          grep -q 'const slot = ensureAttendanceSlotForUser_' apps-script/20_UserApi.gs
+          ! grep -q "acquireAttendanceKeyLock_('PUNCH'" apps-script/20_UserApi.gs
           grep -q 'function ensureAttendanceSlotForUser_' apps-script/41_AttendanceData.gs
           grep -q 'function registerAttendanceRowsBatch_' apps-script/41_AttendanceData.gs
-          grep -q 'daily batched row slots' apps-script/95_Diagnostics.gs
-          grep -q 'WEB_APP_PARALLEL' apps-script/96_PerformanceBurstTest.gs
+          grep -q 'direct per-user row writes' apps-script/95_Diagnostics.gs
+          grep -q 'WEB_APP_PARALLEL_DIRECT_ROW' apps-script/96_PerformanceBurstTest.gs
           grep -R -q 'function getAdminData(' apps-script
           grep -R -q 'function getAttendanceRowIndex_' apps-script
           grep -R -q 'function getSuccessfulLoginEmails_' apps-script
