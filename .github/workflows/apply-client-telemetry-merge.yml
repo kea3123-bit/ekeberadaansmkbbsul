@@ -1,0 +1,47 @@
+name: Apply client telemetry merge hardening
+
+on:
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - '.github/workflows/apply-client-telemetry-merge.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/performance-v2
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install frontend dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Apply patch
+        run: python3 .github/scripts/patch-client-telemetry-merge.py
+      - name: Validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/build-pages.py
+          for f in _site/assets/*.js; do node --check "$f"; done
+          cat apps-script/*.gs > /tmp/apps-script-backend.js
+          node --check /tmp/apps-script-backend.js
+          grep -q "trustedDeviceTelemetryValues_(ci, rec)" apps-script/11_Sessions.gs
+          grep -q "EK_SCHEMA_TRUSTED_DEVICE_V2" apps-script/90_Setup.gs
+          grep -q "timezone:(Intl.DateTimeFormat" Scripts.html
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "eKeberadaan Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add Scripts.html apps-script/11_Sessions.gs apps-script/90_Setup.gs
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "perf: preserve trusted device telemetry on fast resume"
+          git push origin HEAD:refactor/performance-v2
