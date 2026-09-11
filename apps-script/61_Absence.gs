@@ -58,15 +58,17 @@ function getPublicAbsencePresenceData(token, fromDate, toDate) {
 }
 
 function publicAbsenceListItem_(r, fromDate, toDate) {
+  const email = normalizeEmail_(r && r.email || '');
+  const user = email ? getUserByEmail_(email, false) : null;
   let startDate = r.startDate || '';
   let endDate = r.endDate || startDate;
   if (fromDate && startDate < fromDate) startDate = fromDate;
   if (toDate && endDate > toDate) endDate = toDate;
   return {
     id:String(r.id||''),
-    name:String(r.name||''),
-    jobTitle:String(r.jobTitle||''),
-    category:String(r.category||''),
+    name:String(r.name||(user&&user.name)||''),
+    jobTitle:String(r.jobTitle||(user&&user.jobTitle)||''),
+    category:String(r.category||(user&&user.category)||''),
     mode:String(r.mode||'TIDAK_HADIR') === 'KEBERADAAN' ? 'KEBERADAAN' : 'TIDAK_HADIR',
     type:String(r.type||'TIDAK HADIR'),
     note:String(r.note||''),
