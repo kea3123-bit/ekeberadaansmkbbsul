@@ -1,0 +1,61 @@
+name: Apply optional session final status fix
+
+on:
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - 'scripts/fix-optional-session-final-status.py'
+      - '.github/workflows/apply-optional-session-final-status.yml'
+      - 'hotfixes/2026-09-11-optional-session-final-status.trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: optional-session-final-status-fix
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/performance-v2
+          fetch-depth: 0
+
+      - name: Apply optional session patch
+        run: python3 scripts/fix-optional-session-final-status.py
+
+      - name: Validate Apps Script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in apps-script/*.gs; do
+            cp "$f" /tmp/check.js
+            node --check /tmp/check.js >/dev/null
+          done
+          echo "Apps Script syntax OK"
+
+      - name: Verify expected semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'function repairAttendanceTimingStatuses_' apps-script/60_TimeReview.gs
+          grep -q "repairAttendanceTimingStatuses_({from:dateKey,to:dateKey,audit:false})" apps-script/21_AdminApi.gs
+          grep -q "Baiki status waktu tersimpan" apps-script/00_Core.gs
+          grep -q 'optional break/return workflow' apps-script/40_UsersData.gs
+          grep -q 'sambungan OPTIONAL' apps-script/41_AttendanceData.gs
+
+      - name: Commit fix and remove one-shot files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'eKeberadaan Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          rm -f scripts/fix-optional-session-final-status.py
+          rm -f .github/workflows/apply-optional-session-final-status.yml
+          rm -f hotfixes/2026-09-11-optional-session-final-status.trigger
+          git add -A
+          git commit -m 'fix: finalize optional session status from last departure'
+          git push origin HEAD:refactor/performance-v2
