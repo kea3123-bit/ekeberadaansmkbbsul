@@ -135,18 +135,42 @@
               <div><div class="eyebrow">Menu utama</div><h1>Perakam Waktu Digital</h1><p id="punchInstruction"></p></div>
               <span id="statusBadge" class="badge neutral">BELUM REKOD KEHADIRAN</span>
             </div>
-            <div class="schedule-grid home-schedule-grid">
-              <div><span>Waktu Masuk</span><b id="activeInRef">—</b></div>
-              <div><span>Waktu Balik</span><b id="activeOutRef">—</b></div>
-              <div><span>Radius</span><b id="radiusM">—</b></div>
+            <div id="homeScheduleGrid" class="schedule-grid home-schedule-grid single-session">
+              <div class="home-session-summary">
+                <span class="home-session-title">Sesi 1</span>
+                <div class="home-session-values">
+                  <div><span>Waktu Masuk</span><b id="s1InRef">—</b></div>
+                  <div><span>Waktu Balik</span><b id="s1OutRef">—</b></div>
+                </div>
+              </div>
+              <div id="homeSession2Schedule" class="home-session-summary hidden">
+                <span class="home-session-title">Sesi 2</span>
+                <div class="home-session-values">
+                  <div><span>Waktu Masuk</span><b id="s2InRef">—</b></div>
+                  <div><span>Waktu Balik</span><b id="s2OutRef">—</b></div>
+                </div>
+              </div>
+              <div class="home-radius-card"><span>Radius</span><b id="radiusM">—</b></div>
             </div>
             <div class="location-box">
               <div><b id="locationTitle">Lokasi semasa</b><div id="locationText" class="muted">Lokasi akan diperiksa semasa anda merakam waktu.</div></div>
               <span id="gpsDot" class="gps-dot"></span>
             </div>
-            <div class="punch-times home-punch-times">
-              <div class="time-card"><span>Rekod Masuk</span><strong id="activeInTime">—</strong></div>
-              <div class="time-card"><span>Rekod Balik</span><strong id="activeOutTime">—</strong></div>
+            <div id="homePunchTimes" class="punch-times home-punch-times single-session">
+              <div class="time-card home-session-time-card">
+                <span class="home-session-title">Sesi 1 · Rekod</span>
+                <div class="home-record-values">
+                  <div><span>Masuk</span><strong id="s1InTime">—</strong></div>
+                  <div><span>Balik</span><strong id="s1OutTime">—</strong></div>
+                </div>
+              </div>
+              <div id="homeSession2Times" class="time-card home-session-time-card hidden">
+                <span class="home-session-title">Sesi 2 · Rekod</span>
+                <div class="home-record-values">
+                  <div><span>Masuk</span><strong id="s2InTime">—</strong></div>
+                  <div><span>Balik</span><strong id="s2OutTime">—</strong></div>
+                </div>
+              </div>
             </div>
             <div class="button-row">
               <button id="btnIn" class="btn primary btn-large" onclick="startPunch('IN')">Rakam Waktu Masuk</button>

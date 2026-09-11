@@ -653,6 +653,34 @@
   .sort-indicator{display:inline-flex;align-items:center;justify-content:center;min-width:16px;font-size:14px;font-weight:900;line-height:1;color:var(--blue)}
   th[aria-sort="ascending"] .table-sort-btn,th[aria-sort="descending"] .table-sort-btn{color:var(--blue2)}
   @media(max-width:760px){.table-sort-btn{padding:11px 10px;gap:5px}.sort-indicator{font-size:13px}}
+
+
+  /* Home session visibility — automatic, no user toggle */
+  .home-schedule-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(150px,.65fr)}
+  .home-schedule-grid.single-session{grid-template-columns:minmax(0,1fr) minmax(150px,.65fr)}
+  .home-session-summary{border-top:4px solid var(--blue)!important}
+  .home-session-summary#homeSession2Schedule{border-top-color:var(--green)!important}
+  .home-session-title{display:block!important;color:var(--ink)!important;font-size:12px!important;font-weight:900;letter-spacing:.04em;text-transform:uppercase;margin-bottom:9px}
+  .home-session-values,.home-record-values{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .home-session-values>div+div,.home-record-values>div+div{border-left:1px solid var(--line);padding-left:12px}
+  .home-session-values span,.home-record-values span{display:block;color:var(--muted);font-size:11px}
+  .home-session-values b{display:block;margin-top:2px;font-size:19px}
+  .home-radius-card{display:flex;flex-direction:column;justify-content:center}
+  .home-punch-times{grid-template-columns:1fr 1fr}
+  .home-punch-times.single-session{grid-template-columns:1fr}
+  .home-session-time-card:first-child{border-top:4px solid var(--blue)}
+  .home-session-time-card#homeSession2Times{border-top:4px solid var(--green)}
+  .home-record-values strong{display:block;margin-top:2px;font-size:25px}
+  @media(max-width:760px){
+    .home-schedule-grid,.home-schedule-grid.single-session{grid-template-columns:1fr}
+    .home-punch-times,.home-punch-times.single-session{grid-template-columns:1fr}
+  }
+  @media(max-width:380px){
+    .home-session-values,.home-record-values{gap:8px}
+    .home-session-values>div+div,.home-record-values>div+div{padding-left:8px}
+    .home-record-values strong{font-size:22px}
+  }
+
 </style>
 
 .review-role-tag{display:inline-flex;width:max-content;margin-top:5px;padding:3px 8px;border-radius:999px;background:#eef4ff;color:#175cd3;font-size:11px;font-weight:800}.pc-time-alert{color:#b42318!important;font-weight:900!important;background:#fff1f0!important}.pc-row-lewat .pc-statement{color:#b42318;font-weight:800}.setting-subsection{margin-top:8px;padding:12px 14px;border:1px solid #d0d5dd;border-radius:12px;background:#f8fafc;display:flex;flex-direction:column;gap:3px}

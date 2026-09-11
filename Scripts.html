@@ -473,12 +473,20 @@ const state = {
     text('sideUserRole',[b.user.jobTitle,b.user.category,b.user.isAdmin?'Pentadbir Sistem':''].filter(Boolean).join(' · '));
     const initial=(b.user.name||'U').charAt(0).toUpperCase(); text('userInitial',initial); text('welcomeInitial',initial);
     text('topRole',b.user.category); text('topDate',b.today); text('welcomeName',b.user.name); text('welcomeSub',[b.user.email,b.user.jobTitle,b.user.category].filter(Boolean).join(' · '));
-    const hasSecondSession=!!(b.schedule.allowSecondSession||b.schedule.s2In||b.schedule.s2Out);
-    const visibleSession=step.complete?(hasSecondSession?2:1):(Number(step.session)||1);
-    const activeInRef=visibleSession===2?b.schedule.s2In:b.schedule.s1In, activeOutRef=visibleSession===2?b.schedule.s2Out:b.schedule.s1Out;
-    const activeInTime=visibleSession===2?a.inTime2:a.inTime, activeOutTime=visibleSession===2?a.outTime2:a.outTime;
-    text('activeInRef',activeInRef||'—'); text('activeOutRef',activeOutRef||'—'); text('radiusM',test?'DIABAIKAN':`${b.settings.radiusM} m`);
-    text('activeInTime',activeInTime||'—'); text('activeOutTime',activeOutTime||'—');
+    // Paparan sesi adalah automatik dan tiada toggle manual.
+    // Sesi 2 hanya dianggap wujud jika masa Sesi 2 dikonfigurasi atau rekod
+    // Sesi 2 memang sudah tercatat; ALLOW_OPTIONAL_SECOND_SESSION sahaja tidak
+    // memaksa kad Sesi 2 muncul untuk pengguna satu sesi.
+    const hasSecondSession=!!(b.schedule.s2In||b.schedule.s2Out||a.inTime2||a.outTime2);
+    text('s1InRef',b.schedule.s1In||'—'); text('s1OutRef',b.schedule.s1Out||'—');
+    text('s2InRef',b.schedule.s2In||'—'); text('s2OutRef',b.schedule.s2Out||'—');
+    text('s1InTime',a.inTime||'—'); text('s1OutTime',a.outTime||'—');
+    text('s2InTime',a.inTime2||'—'); text('s2OutTime',a.outTime2||'—');
+    text('radiusM',test?'DIABAIKAN':`${b.settings.radiusM} m`);
+    document.getElementById('homeSession2Schedule')?.classList.toggle('hidden',!hasSecondSession);
+    document.getElementById('homeSession2Times')?.classList.toggle('hidden',!hasSecondSession);
+    document.getElementById('homeScheduleGrid')?.classList.toggle('single-session',!hasSecondSession);
+    document.getElementById('homePunchTimes')?.classList.toggle('single-session',!hasSecondSession);
     setBadge('statusBadge',a.status||'BELUM REKOD'); setBadge('homeStatusBadge',a.status||'BELUM REKOD');
     const btnIn=document.getElementById('btnIn'),btnOut=document.getElementById('btnOut');
     const sessionLabel=`Sesi ${Number(step.session)||1}`;
