@@ -81,32 +81,42 @@ function adminSaveUser(token, payload) {
   return {ok: true, user: publicUser_(saved)};
 }
 
-function adminSaveAttendance(token, payload) {
-  const admin=requireSessionAdmin_(token); payload=payload||{};
-  const email=normalizeEmail_(payload.email), dateKey=validateDateKey_(payload.date);
-  assertSystemDate_(dateKey, getSettings_(), 'Tarikh rekod');
-  const inTime=normalizeOptionalTime_(payload.inTime), outTime=normalizeOptionalTime_(payload.outTime), inTime2=normalizeOptionalTime_(payload.inTime2), outTime2=normalizeOptionalTime_(payload.outTime2);
-  const reason=String(payload.reason||'').trim(); if(!reason)throw new Error('Sebab pembetulan wajib diisi untuk audit.');
-  const user=getUserByEmail_(email,false); if(!user)throw new Error('Pengguna tidak dijumpai.');
+function adminSaveAttendance(token,payload) {
+  const admin=requireSessionAdmin_(token);payload=payload||{};
+  const email=normalizeEmail_(payload.email),dateKey=validateDateKey_(payload.date);
+  assertSystemDate_(dateKey,getSettings_(),'Tarikh rekod');
+  const inTime=normalizeOptionalTime_(payload.inTime),outTime=normalizeOptionalTime_(payload.outTime),inTime2=normalizeOptionalTime_(payload.inTime2),outTime2=normalizeOptionalTime_(payload.outTime2);
+  const reason=String(payload.reason||'').trim();if(!reason)throw new Error('Sebab pembetulan wajib diisi untuk audit.');
+  const user=getUserByEmail_(email,false);if(!user)throw new Error('Pengguna tidak dijumpai.');
   const presenceRequest=inTime?findRelevantPresenceForDate_(email,dateKey,readAbsenceRows_()):null;
   if(outTime&&!inTime)throw new Error('Keluar Sesi 1 memerlukan Masuk Sesi 1.');
   if(inTime2&&!outTime)throw new Error('Masuk Sesi 2 hanya boleh selepas Keluar Sesi 1.');
   if(outTime2&&!inTime2)throw new Error('Keluar Sesi 2 memerlukan Masuk Sesi 2.');
-  const settings=getSettings_(), schedule=getEffectiveSchedule_(user,settings), flags=[];
-  if(inTime&&schedule.s1In&&timeToMinutes_(inTime)>timeToMinutes_(schedule.s1In))flags.push('LEWAT');
-  if(outTime&&schedule.s1Out&&timeToMinutes_(outTime)<timeToMinutes_(schedule.s1Out))flags.push('BALIK AWAL');
-  if(inTime2&&schedule.s2In&&timeToMinutes_(inTime2)>timeToMinutes_(schedule.s2In))flags.push('LEWAT');
-  if(outTime2&&schedule.s2Out&&timeToMinutes_(outTime2)<timeToMinutes_(schedule.s2Out))flags.push('BALIK AWAL');
-  const status=inTime?attendanceStatusFromFlags_(flags):'TIDAK HADIR', sh=getSheetOrThrow_(EK.SHEETS.ATTENDANCE), rec=findAttendanceRecord_(dateKey,email), now=new Date();
+
+  const settings=getSettings_(),schedule=getEffectiveSchedule_(user,settings),sh=getSheetOrThrow_(EK.SHEETS.ATTENDANCE),rec=findAttendanceRecord_(dateKey,email),now=new Date();
   const v=rec?padAttendanceValues_(rec.values):Array(EK.ATT_HEADERS.length).fill('');
-  v[0]=dateKey;v[1]=email;v[2]=user.name;v[3]=user.category;v[4]=inTime?dateAndTime_(dateKey,inTime):'';v[9]=outTime?dateAndTime_(dateKey,outTime):'';v[14]=status;v[15]='ADMIN';v[16]=admin.email;v[17]=presenceRequest?mergeAttendanceReason_(reason,presenceRequestReason_(presenceRequest,'CATATAN')):reason;v[18]=now;
-  v[22]=inTime2?dateAndTime_(dateKey,inTime2):'';v[27]=outTime2?dateAndTime_(dateKey,outTime2):'';v[34]=joinAttendanceFlags_(flags);
+  v[0]=dateKey;v[1]=email;v[2]=user.name;v[3]=user.category;
+  v[4]=inTime?dateAndTime_(dateKey,inTime):'';v[9]=outTime?dateAndTime_(dateKey,outTime):'';
+  v[22]=inTime2?dateAndTime_(dateKey,inTime2):'';v[27]=outTime2?dateAndTime_(dateKey,outTime2):'';
+  v[15]='ADMIN';v[16]=admin.email;v[17]=presenceRequest?mergeAttendanceReason_(reason,presenceRequestReason_(presenceRequest,'CATATAN')):reason;v[18]=now;
+
+  const flags=[];
+  if(inTime&&schedule.s1In&&timeToMinutes_(inTime)>timeToMinutes_(schedule.s1In))flags.push('LEWAT');
+  if(inTime2&&schedule.s2In&&timeToMinutes_(inTime2)>timeToMinutes_(schedule.s2In)&&!flags.includes('LEWAT'))flags.push('LEWAT');
+  const finalOutTime=inTime2?outTime2:outTime;
+  const finalSession=inTime2?2:1;
+  const finalOutRef=getFinalOutReference_(schedule,user,settings,dateKey,v);
+  if(finalOutTime&&finalOutRef&&timeToMinutes_(finalOutTime)<timeToMinutes_(finalOutRef))flags.push('BALIK AWAL');
+  const status=inTime?attendanceStatusFromFlags_(flags):'TIDAK HADIR';
+  v[14]=status;v[34]=joinAttendanceFlags_(flags);
+
   if(!rec){sh.appendRow(v);invalidateAttendanceIndex_();}else sh.getRange(rec.row,1,1,EK.ATT_HEADERS.length).setValues([v]);
+  if(inTime2){try{cleanupSupersededSession1EarlyReviews_(dateKey,dateKey);}catch(_e){}}
+
   const exceptionSpecs=[];
   if(inTime&&schedule.s1In&&timeToMinutes_(inTime)>timeToMinutes_(schedule.s1In))exceptionSpecs.push({type:'LEWAT',session:1,recordTime:inTime,referenceTime:schedule.s1In});
-  if(outTime&&schedule.s1Out&&timeToMinutes_(outTime)<timeToMinutes_(schedule.s1Out))exceptionSpecs.push({type:'BALIK AWAL',session:1,recordTime:outTime,referenceTime:schedule.s1Out});
   if(inTime2&&schedule.s2In&&timeToMinutes_(inTime2)>timeToMinutes_(schedule.s2In))exceptionSpecs.push({type:'LEWAT',session:2,recordTime:inTime2,referenceTime:schedule.s2In});
-  if(outTime2&&schedule.s2Out&&timeToMinutes_(outTime2)<timeToMinutes_(schedule.s2Out))exceptionSpecs.push({type:'BALIK AWAL',session:2,recordTime:outTime2,referenceTime:schedule.s2Out});
+  if(finalOutTime&&finalOutRef&&timeToMinutes_(finalOutTime)<timeToMinutes_(finalOutRef))exceptionSpecs.push({type:'BALIK AWAL',session:finalSession,recordTime:finalOutTime,referenceTime:finalOutRef});
   exceptionSpecs.forEach(x=>{
     let rr=createTimeReviewRecord_({date:dateKey,user,type:x.type,session:x.session,recordTime:x.recordTime,referenceTime:x.referenceTime});
     if(x.type==='LEWAT'&&presenceRequest&&presenceRequest.status==='DILULUSKAN')rr=autoAcknowledgeTimeReviewFromPresence_(rr,presenceRequest,admin);

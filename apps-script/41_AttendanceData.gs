@@ -482,28 +482,35 @@ function dateValueMs_(value) {
   return isNaN(d.getTime()) ? 0 : d.getTime();
 }
 
-function publicAttendance_(rec, schedule) {
-  if (!rec) return null;
-  const v = padAttendanceValues_(rec.values);
+function publicAttendance_(rec,schedule) {
+  if(!rec)return null;
+  const v=padAttendanceValues_(rec.values);
+  const dateKey=dateCellToKey_(v[0]);
+  const user=getUserByEmail_(normalizeEmail_(v[1]),false);
+  const settings=getSettings_();
+  const effectiveFlags=inferAttendanceFlags_(v,user,settings,dateKey);
+  const effectiveStatus=String(v[14]||'').toUpperCase()==='TIDAK HADIR'
+    ? 'TIDAK HADIR'
+    : (v[4]?attendanceStatusFromFlags_(effectiveFlags):String(v[14]||''));
   return {
-    date: dateCellToKey_(v[0]),
-    inTime: v[4] ? formatTime_(v[4]) : '',
-    outTime: v[9] ? formatTime_(v[9]) : '',
-    inTime2: v[22] ? formatTime_(v[22]) : '',
-    outTime2: v[27] ? formatTime_(v[27]) : '',
-    status: String(v[14] || ''),
-    statusFlags: splitAttendanceFlags_(v[34]),
-    inDistanceM: v[7] === '' ? null : Number(v[7]),
-    outDistanceM: v[12] === '' ? null : Number(v[12]),
-    inDistanceM2: v[25] === '' ? null : Number(v[25]),
-    outDistanceM2: v[30] === '' ? null : Number(v[30]),
-    source: String(v[15] || ''),
-    inIp: String(v[19] || ''),
-    outIp: String(v[20] || ''),
-    inIp2: String(v[32] || ''),
-    outIp2: String(v[33] || ''),
-    ipCheck: String(v[21] || ''),
-    nextRecord: nextAttendanceStep_(v, schedule)
+    date:dateKey,
+    inTime:v[4]?formatTime_(v[4]):'',
+    outTime:v[9]?formatTime_(v[9]):'',
+    inTime2:v[22]?formatTime_(v[22]):'',
+    outTime2:v[27]?formatTime_(v[27]):'',
+    status:effectiveStatus,
+    statusFlags:effectiveFlags,
+    inDistanceM:v[7]===''?null:Number(v[7]),
+    outDistanceM:v[12]===''?null:Number(v[12]),
+    inDistanceM2:v[25]===''?null:Number(v[25]),
+    outDistanceM2:v[30]===''?null:Number(v[30]),
+    source:String(v[15]||''),
+    inIp:String(v[19]||''),
+    outIp:String(v[20]||''),
+    inIp2:String(v[32]||''),
+    outIp2:String(v[33]||''),
+    ipCheck:String(v[21]||''),
+    nextRecord:nextAttendanceStep_(v,schedule)
   };
 }
 

@@ -113,8 +113,30 @@ function getThursdayWbfOutReference_(user,settings,dateKey,values) {
   if(![expected,outFrom,outTo].every(Number.isFinite)||expected<outFrom||expected>outTo) return '';
   return minutesToTime_(expected);
 }
+function hasSecondAttendanceSession_(schedule) {
+  return !!(schedule && (schedule.allowSecondSession || schedule.s2In || schedule.s2Out));
+}
+
+function getFinalOutReference_(schedule,user,settings,dateKey,values) {
+  const wbf=getThursdayWbfOutReference_(user,settings,dateKey,values);
+  if(wbf)return wbf;
+  return String((schedule&&(schedule.s2Out||schedule.s1Out))||'').trim();
+}
+
+function isProvisionalSession1Out_(dateKey,values,schedule,user,settings) {
+  const v=padAttendanceValues_(values);
+  if(!hasSecondAttendanceSession_(schedule)||v[22])return false;
+  const key=dateCellToKey_(dateKey||v[0])||todayKey_();
+  const today=todayKey_();
+  if(key<today)return false;
+  if(key>today)return true;
+  const ref=getFinalOutReference_(schedule,user,settings,key,v);
+  if(!ref)return true;
+  return minutesNow_(new Date())<timeToMinutes_(ref);
+}
+
 function getPunchReferenceTime_(type,session,schedule,user,settings,dateKey,values) {
-  if(type==='OUT'&&Number(session)===1){const wbf=getThursdayWbfOutReference_(user,settings,dateKey,values);if(wbf)return wbf;}
-  if(type==='IN') return Number(session)===1?schedule.s1In:schedule.s2In;
-  return Number(session)===1?schedule.s1Out:schedule.s2Out;
+  if(type==='IN')return Number(session)===1?schedule.s1In:schedule.s2In;
+  if(type==='OUT')return getFinalOutReference_(schedule,user,settings,dateKey,values);
+  return '';
 }

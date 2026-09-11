@@ -43,11 +43,15 @@ function buildPunchCardMonthForUser_(user, monthKey) {
       .map(v => {
         const dateKey = dateCellToKey_(v[0]);
         v = padAttendanceValues_(v);
+        const timingFlags = inferAttendanceFlags_(v, user, getSettings_(), dateKey);
+        const effectiveStatus = String(v[14] || '').toUpperCase() === 'TIDAK HADIR'
+          ? 'TIDAK HADIR'
+          : (v[4] ? attendanceStatusFromFlags_(timingFlags) : String(v[14] || ''));
         return {
-          day: Number(dateKey.slice(8, 10)), date: dateKey, status: String(v[14] || ''),
+          day: Number(dateKey.slice(8, 10)), date: dateKey, status: effectiveStatus,
           inTime: v[4] ? formatTime_(v[4]) : '', outTime: v[9] ? formatTime_(v[9]) : '',
           inTime2: v[22] ? formatTime_(v[22]) : '', outTime2: v[27] ? formatTime_(v[27]) : '',
-          statusFlags: inferAttendanceFlags_(v, user, getSettings_()),
+          statusFlags: timingFlags,
           source: String(v[15] || ''), editedBy: String(v[16] || ''), reason: String(v[17] || '')
         };
       }).sort((a, b) => a.day - b.day);
@@ -238,10 +242,11 @@ function punch(token, type, location, clientInfo) {
         throw new Error(`Tempoh Rekod Waktu Masuk Sesi ${session} telah tamat pada ${latestAllowed}.`);
       }
     }
+    const provisionalSession1Out = type === 'OUT' && session === 1 && hasSecondAttendanceSession_(schedule);
     if (!isTestMode && refTime) {
       const refMinutes = timeToMinutes_(refTime);
       if (type === 'IN' && nowMinutes > refMinutes) exceptionType = 'LEWAT';
-      if (type === 'OUT' && nowMinutes < refMinutes) exceptionType = 'BALIK AWAL';
+      if (type === 'OUT' && !provisionalSession1Out && nowMinutes < refMinutes) exceptionType = 'BALIK AWAL';
     }
 
     // Only BLOCK requires strict cross-user ordering. WARN/OFF are advisory and
@@ -265,7 +270,7 @@ function punch(token, type, location, clientInfo) {
       values[27]=now; values[28]=loc.lat; values[29]=loc.lng; values[30]=loc.distanceM; values[31]=loc.accuracyM; values[33]=recordIp || '';
     }
 
-    const flags = splitAttendanceFlags_(values[34]);
+    const flags = inferAttendanceFlags_(values,user,settings,dateKey);
     if (exceptionType && !flags.includes(exceptionType)) flags.push(exceptionType);
     values[34]=joinAttendanceFlags_(flags);
     values[14]=attendanceStatusFromFlags_(flags);
@@ -279,6 +284,9 @@ function punch(token, type, location, clientInfo) {
     const writeStarted = Date.now();
     sh.getRange(rec.row,1,1,EK.ATT_HEADERS.length).setValues([values]);
     writeMs = Date.now() - writeStarted;
+    if(session===2&&type==='IN'){
+      try{cleanupSupersededSession1EarlyReviews_(dateKey,dateKey);}catch(_e){}
+    }
 
     // For WARN/OFF this cache registry is best-effort advisory state. Losing a
     // simultaneous advisory update is preferable to serializing every staff

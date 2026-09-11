@@ -20,7 +20,7 @@ function buildDailyReport_(dateKey, users, settings) {
     if (v && String(v[14] || '').toUpperCase() === 'TIDAK HADIR') {
       status = 'TIDAK HADIR';
     } else if (v && v[4]) {
-      status = String(v[14] || attendanceStatusFromFlags_(v[34]));
+      status = effectiveAttendanceStatus_(v,u,settings,dateKey);
     } else if (presenceRequest) {
       // Keberadaan aktif mengatasi ABSENT_AFTER. Status hanya bertukar
       // TIDAK HADIR selepas alert Pengurusan berjaya dan rekod fizikal ditulis.
@@ -39,7 +39,7 @@ function buildDailyReport_(dateKey, users, settings) {
       jobTitle: u.jobTitle || '',
       category: u.category,
       status,
-      statusFlags: v ? splitAttendanceFlags_(v[34]) : [],
+      statusFlags: v ? inferAttendanceFlags_(v,u,settings,dateKey) : [],
       inTime: v && v[4] ? formatTime_(v[4]) : '',
       outTime: v && v[9] ? formatTime_(v[9]) : '',
       inTime2: v && v[22] ? formatTime_(v[22]) : '',
@@ -135,7 +135,7 @@ function buildAttendancePresencePeriodReport_(fromDate, toDate) {
       let status = '';
       const presenceRequest = (!v || !v[4]) ? findRelevantPresenceForDate_(u.email, dateKey, absenceRows) : null;
       if (v && String(v[14] || '').toUpperCase() === 'TIDAK HADIR') status = 'TIDAK HADIR';
-      else if (v && v[4]) status = String(v[14] || attendanceStatusFromFlags_(v[34]));
+      else if (v && v[4]) status = effectiveAttendanceStatus_(v,u,settings,dateKey);
       else if (presenceRequest) status = 'BELUM HADIR';
       else if (working && (dateKey < today || (dateKey === today && nowMins >= absentMins))) status = 'TIDAK HADIR';
       else status = 'BELUM HADIR';
