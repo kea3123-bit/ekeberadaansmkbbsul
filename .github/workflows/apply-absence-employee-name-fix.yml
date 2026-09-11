@@ -27,10 +27,16 @@ jobs:
           node --check /tmp/frontend.js
           cat apps-script/*.gs > /tmp/apps-script.js
           node --check /tmp/apps-script.js
-          grep -Fq "const user = email ? getUserByEmail_(email, false) : null;" apps-script/61_Absence.gs
-          grep -Fq "name:String(r.name||(user&&user.name)||'')" apps-script/61_Absence.gs
-          grep -Fq "<b>${esc(r.name || '—')}</b><small" web/config.js
-          grep -Fq "<b>${esc(r.name||'—')}</b><small" Scripts.html
+          python3 - <<'PY'
+          from pathlib import Path
+          backend = Path('apps-script/61_Absence.gs').read_text()
+          config = Path('web/config.js').read_text()
+          frontend = Path('Scripts.html').read_text()
+          assert "const user = email ? getUserByEmail_(email, false) : null;" in backend
+          assert "name:String(r.name||(user&&user.name)||'')" in backend
+          assert "<b>${esc(r.name || '—')}</b><small" in config
+          assert "<b>${esc(r.name||'—')}</b><small" in frontend
+          PY
       - name: Commit app change and remove temporary patch files
         shell: bash
         run: |
