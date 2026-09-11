@@ -121,3 +121,4 @@ jobs:
           echo "LIVE_PAGES_EXACT_BUILD_OK mobile=${EXPECTED_MOBILE} shim=${EXPECTED_SHIM}"
 
 # deployment source: refactor/performance-v2 · Urusan Peperiksaan dropdown 2026-09-11
+# redeploy: session-1-session-2 home cards 2026-09-11T21:04+08:00
