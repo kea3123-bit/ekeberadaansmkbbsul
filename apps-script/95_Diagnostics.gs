@@ -1,7 +1,7 @@
 // ---------- Read-only runtime diagnostics ----------
 // Run manually from the Apps Script editor after a deployment.
 // This function is intentionally NOT exposed through the GitHub Pages bridge.
-// Launch-performance Phase 4 source marker: 2026-09-11.
+// Launch-performance Phase 4 + client telemetry source marker: 2026-09-11.
 function diagnosePerformanceBackend() {
   const started = Date.now();
   const marks = {};
@@ -44,7 +44,8 @@ function diagnosePerformanceBackend() {
       attendanceIndex: 'date+email direct lookup / daily batched row slots',
       ipCheck: 'hour registry cache; strict global ordering only for BLOCK policy',
       punchLock: 'daily batched row slots + direct per-user row writes; global lock only for one-time slot allocation and strict BLOCK IP policy',
-      note: 'Re-run the staged 20/50/100-user burst after deploying Phase 4.'
+      clientTelemetry: 'GitHub Pages public IPv4/IPv6 lookup + trusted-device background metadata sync',
+      note: 'Phase 4 burst harness is the launch gate; client telemetry is best-effort and does not block app entry.'
     },
     timingsMs: marks,
     totalMs: Date.now() - started
