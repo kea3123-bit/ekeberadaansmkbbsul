@@ -490,7 +490,7 @@ const state = {
     setBadge('statusBadge',a.status||'BELUM REKOD'); setBadge('homeStatusBadge',a.status||'BELUM REKOD');
     const btnIn=document.getElementById('btnIn'),btnOut=document.getElementById('btnOut');
     const sessionLabel=`Sesi ${Number(step.session)||1}`;
-    if(btnIn){btnIn.disabled=step.complete||step.type!=='IN';btnIn.textContent=step.complete?'Rekod Waktu Lengkap':`Rakam Waktu Masuk · ${sessionLabel}${Number(step.session)===2?' (jika ada)':''}`;}
+    if(btnIn){btnIn.disabled=step.complete||step.type!=='IN';btnIn.textContent=step.complete?'Rekod Waktu Lengkap':`Rakam Waktu Masuk · ${sessionLabel}${Number(step.session)===2?' ':''}`;}
     if(btnOut){btnOut.disabled=step.complete||step.type!=='OUT';btnOut.textContent=step.complete?'Rekod Waktu Lengkap':`Rakam Waktu Balik · ${sessionLabel}`;}
     document.getElementById('adminMenu').classList.toggle('hidden',!b.user.isAdmin); document.getElementById('adminQuick').classList.toggle('hidden',!b.user.isAdmin);
     document.getElementById('timeReviewMenu')?.classList.toggle('hidden',!b.user.isAdmin);
