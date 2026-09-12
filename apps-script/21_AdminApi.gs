@@ -50,6 +50,9 @@ function adminSaveUser(token, payload) {
     email: existing.email, name: existing.name, category: existing.category,
     active: !!existing.active, isAdmin: !!existing.isAdmin
   } : null;
+  const scheduleChangedAt = new Date();
+  const scheduleSettings = getSettings_();
+  const scheduleBefore = existing ? makeScheduleSnapshot_(existing, scheduleSettings) : null;
 
   if (existing) {
     // A:I intentionally retains the historical layout. F/H mirror Sesi 1 so
@@ -80,6 +83,10 @@ function adminSaveUser(token, payload) {
   invalidateUsersCache_();
   SpreadsheetApp.flush();
   const saved = getUserByEmail_(email, false);
+  try {
+    if (saved && scheduleBefore) recordScheduleTransition_(email, scheduleBefore, makeScheduleSnapshot_(saved, scheduleSettings), scheduleChangedAt, admin.email, 'ADMIN_UI');
+    else if (saved) ensureScheduleHistoryBaseline_(saved, scheduleSettings, scheduleChangedAt, 'AKAUN_BAHARU');
+  } catch (e) { audit_('SEJARAH_JADUAL_GAGAL', email, String(e && e.message ? e.message : e), admin.email); }
   audit_('SIMPAN_PENGGUNA', email, `Oleh ${admin.email}; kategori=${category}; jawatan=${jobTitle || '-'}; admin=${isAdmin}`, admin.email);
   notifyUserAccountChange_(before, saved, admin);
   return {ok: true, user: publicUser_(saved)};
@@ -168,6 +175,8 @@ function adminSaveSettings(token, payload) {
   const admin = requireSessionAdmin_(token);
   payload = payload || {};
   const currentSettings = getSettings_();
+  const scheduleSettingsChangedAt = new Date();
+  const scheduleSettingsBefore = getAllUsers_().map(user => ({user, before:makeScheduleSnapshot_(user,currentSettings)}));
 
   const next = {
     SCHOOL_NAME: String(payload.schoolName || '').trim(),
@@ -222,12 +231,15 @@ function adminSaveSettings(token, payload) {
   });
   if (existingRows.length) sh.getRange(2, 1, existingRows.length, 3).setValues(existingRows);
   invalidateSettingsCache_();
+  const updatedSettings = getSettings_();
+  try { recordScheduleSettingsTransitions_(scheduleSettingsBefore, updatedSettings, scheduleSettingsChangedAt, admin.email, 'ADMIN_TETAPAN'); }
+  catch (e) { audit_('SEJARAH_JADUAL_GAGAL', EK.SHEETS.SETTINGS, String(e && e.message ? e.message : e), admin.email); }
   // Cuba pasang semula trigger jika masa/aktif reminder berubah. Kegagalan trigger
   // tidak membatalkan simpanan tetapan; pemilik boleh guna menu Aktifkan / baiki notifikasi emel.
   try { installEmailNotifications_({silent: true}); }
   catch (e) { audit_('TRIGGER_NOTIFIKASI_GAGAL', EK.SHEETS.SETTINGS, String(e && e.message ? e.message : e), admin.email); }
   audit_('SIMPAN_TETAPAN', EK.SHEETS.SETTINGS, `Oleh ${admin.email}; mode=${next.SYSTEM_MODE}; S1=${next.DEFAULT_S1_IN}-${next.DEFAULT_S1_OUT}; S2=${next.DEFAULT_S2_IN || '-'}-${next.DEFAULT_S2_OUT || '-'}; radius=${next.RADIUS_M}m; reminder=${next.PUNCH_REMINDER_ENABLED}@${next.PUNCH_REMINDER_TIME}; hari=${next.WORKING_DAYS}; IP=${next.IP_TRACKING_ENABLED}/${next.IP_PUNCH_POLICY}`, admin.email);
-  return {ok: true, settings: publicSettings_(getSettings_())};
+  return {ok: true, settings: publicSettings_(updatedSettings)};
 }
 
 function generateReportSheet(token, dateStr) {

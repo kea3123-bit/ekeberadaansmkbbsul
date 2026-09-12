@@ -70,37 +70,47 @@ function inferAttendanceFlags_(values,user,settings,dateKey) {
   const status=String(v[14]||'').toUpperCase();
   if(status==='TIDAK HADIR')return [];
 
-  if(!user||String(v[15]||'').toUpperCase()==='TEST') {
-    const fallback=stored.slice();
-    if(!fallback.length){
-      if(status.includes('LEWAT'))fallback.push('LEWAT');
-      if(status.includes('BALIK AWAL'))fallback.push('BALIK AWAL');
-    }
-    return fallback;
+  const fallback=stored.slice();
+  if(!fallback.length){
+    if(status.includes('LEWAT'))fallback.push('LEWAT');
+    if(status.includes('BALIK AWAL'))fallback.push('BALIK AWAL');
   }
+  if(!user||String(v[15]||'').toUpperCase()==='TEST')return fallback;
 
   settings=settings||getSettings_();
   dateKey=dateCellToKey_(dateKey||v[0])||todayKey_();
-  const schedule=getEffectiveSchedule_(user,settings);
   const flags=[];
   const add=flag=>{if(flag&&!flags.includes(flag))flags.push(flag);};
 
-  // LEWAT kekal sebagai pengecualian pada mana-mana sesi.
-  if(stored.includes('LEWAT')||status.includes('LEWAT'))add('LEWAT');
-  if(v[4]&&schedule.s1In&&timeToMinutes_(formatTime_(v[4]))>timeToMinutes_(schedule.s1In))add('LEWAT');
-  if(v[22]&&schedule.s2In&&timeToMinutes_(formatTime_(v[22]))>timeToMinutes_(schedule.s2In))add('LEWAT');
+  // LEWAT can only be recalculated when every recorded IN has a schedule
+  // version that already existed at that exact punch timestamp. Otherwise the
+  // stored historical status remains authoritative.
+  const inChecks=[];
+  if(v[4])inChecks.push({value:v[4],key:'s1In'});
+  if(v[22])inChecks.push({value:v[22],key:'s2In'});
+  let lateKnown=inChecks.length>0, isLate=false;
+  inChecks.forEach(x=>{
+    const ctx=getScheduleTimingContext_(user,settings,x.value);
+    if(!ctx.known){lateKnown=false;return;}
+    const ref=String(ctx.schedule[x.key]||'').trim();
+    if(!ref){lateKnown=false;return;}
+    const actual=timeToMinutes_(formatTime_(x.value)), expected=timeToMinutes_(ref);
+    if(Number.isFinite(actual)&&Number.isFinite(expected)&&actual>expected)isLate=true;
+  });
+  if(lateKnown){if(isLate)add('LEWAT');}
+  else if(fallback.includes('LEWAT'))add('LEWAT');
 
-  // BALIK AWAL hanya dinilai pada pergerakan keluar TERAKHIR hari tersebut.
-  // Keluar Sesi 1 dianggap keluar rehat selagi Sesi 2 masih boleh disambung.
-  const usesSession2=!!v[22];
-  const finalOutValue=usesSession2?v[27]:v[9];
-  const provisional=!usesSession2&&isProvisionalSession1Out_(dateKey,v,schedule,user,settings);
-  const finalRef=getFinalOutReference_(schedule,user,settings,dateKey,v);
-  if(finalOutValue&&finalRef&&!provisional){
-    const outMins=timeToMinutes_(formatTime_(finalOutValue));
-    const refMins=timeToMinutes_(finalRef);
-    if(Number.isFinite(outMins)&&Number.isFinite(refMins)&&outMins<refMins)add('BALIK AWAL');
-  }
+  // BALIK AWAL is based only on the final departure. A versioned snapshot also
+  // freezes the WBF Thursday settings and eligibility that applied then.
+  const usesSession2=!!v[22], finalOutValue=usesSession2?v[27]:v[9];
+  if(finalOutValue){
+    const ctx=getScheduleTimingContext_(user,settings,finalOutValue);
+    if(ctx.known){
+      const ref=getFinalOutReferenceFromTimingContext_(ctx,dateKey,v);
+      const actual=timeToMinutes_(formatTime_(finalOutValue)), expected=timeToMinutes_(ref);
+      if(ref&&Number.isFinite(actual)&&Number.isFinite(expected)&&actual<expected)add('BALIK AWAL');
+    }else if(fallback.includes('BALIK AWAL'))add('BALIK AWAL');
+  }else if(fallback.includes('BALIK AWAL'))add('BALIK AWAL');
   return flags;
 }
 
@@ -119,21 +129,27 @@ function ensureTimeReviewRowsForRange_(from,to) {
   getAttendanceValuesInDateRange_(from,to).forEach(raw=>{
     const v=padAttendanceValues_(raw),date=dateCellToKey_(v[0]),email=normalizeEmail_(v[1]),user=usersByEmail[email];
     if(!date||!user||String(v[14]||'').toUpperCase()==='TIDAK HADIR'||String(v[15]||'').toUpperCase()==='TEST')return;
-    const schedule=getEffectiveSchedule_(user,settings);
-    const checks=[
-      {type:'LEWAT',session:1,value:v[4],ref:schedule.s1In,cmp:(a,b)=>a>b},
-      {type:'LEWAT',session:2,value:v[22],ref:schedule.s2In,cmp:(a,b)=>a>b}
-    ];
-    const usesSession2=!!v[22];
-    const finalOutValue=usesSession2?v[27]:v[9];
-    const finalSession=usesSession2?2:1;
-    const finalRef=getFinalOutReference_(schedule,user,settings,date,v);
-    const provisional=!usesSession2&&isProvisionalSession1Out_(date,v,schedule,user,settings);
-    if(finalOutValue&&finalRef&&!provisional)checks.push({type:'BALIK AWAL',session:finalSession,value:finalOutValue,ref:finalRef,cmp:(a,b)=>a<b});
+    const effectiveFlags=inferAttendanceFlags_(v,user,settings,date);
+    if(!effectiveFlags.length)return;
+
+    const checks=[];
+    if(effectiveFlags.includes('LEWAT')){
+      if(v[4])checks.push({type:'LEWAT',session:1,value:v[4],key:'s1In',cmp:(a,b)=>a>b});
+      if(v[22])checks.push({type:'LEWAT',session:2,value:v[22],key:'s2In',cmp:(a,b)=>a>b});
+    }
+    if(effectiveFlags.includes('BALIK AWAL')){
+      const usesSession2=!!v[22], value=usesSession2?v[27]:v[9], session=usesSession2?2:1;
+      if(value)checks.push({type:'BALIK AWAL',session,value,key:'FINAL_OUT',cmp:(a,b)=>a<b});
+    }
 
     checks.forEach(x=>{
-      if(!x.value||!x.ref)return;
-      const recordTime=formatTime_(x.value),mins=timeToMinutes_(recordTime),refMins=timeToMinutes_(x.ref);
+      const ctx=getScheduleTimingContext_(user,settings,x.value);
+      // No timestamped historical version = do not invent a reference from the
+      // user's current schedule. Existing legacy status is preserved instead.
+      if(!ctx.known)return;
+      const ref=x.key==='FINAL_OUT'?getFinalOutReferenceFromTimingContext_(ctx,date,v):String(ctx.schedule[x.key]||'').trim();
+      if(!ref)return;
+      const recordTime=formatTime_(x.value),mins=timeToMinutes_(recordTime),refMins=timeToMinutes_(ref);
       if(!Number.isFinite(mins)||!Number.isFinite(refMins)||!x.cmp(mins,refMins))return;
       const id=timeReviewId_(user,date,x.type,x.session);if(existingIds.has(id))return;
       existingIds.add(id);const now=new Date();
@@ -141,21 +157,16 @@ function ensureTimeReviewRowsForRange_(from,to) {
       if(x.type==='LEWAT'){
         const approvedPresence=absenceRows.find(r=>r.email===email&&r.mode==='KEBERADAAN'&&r.status==='DILULUSKAN'&&r.startDate<=date&&r.endDate>=date&&r.endTime&&mins>=timeToMinutes_(r.endTime))||null;
         if(approvedPresence){
-          reviewedBy=normalizeEmail_(approvedPresence.reviewedBy||'');
-          reviewerName=getReviewerNameFromEmail_(reviewedBy);
-          reviewedAt=approvedPresence.reviewedAt||now;
-          reviewStatus='DIAMBIL MAKLUM';
+          reviewedBy=normalizeEmail_(approvedPresence.reviewedBy||'');reviewerName=getReviewerNameFromEmail_(reviewedBy);reviewedAt=approvedPresence.reviewedAt||now;reviewStatus='DIAMBIL MAKLUM';
           comment=`Diambil maklum melalui Keberadaan ${approvedPresence.id}: ${approvedPresence.type}${approvedPresence.note?` — ${approvedPresence.note}`:''}`;
         }
       }
-      toAppend.push([id,now,date,user.email,user.name,user.jobTitle||'',user.category,x.type,x.session,recordTime,x.ref,reviewStatus,reviewedBy,reviewerName,reviewedAt,comment]);
+      toAppend.push([id,now,date,user.email,user.name,user.jobTitle||'',user.category,x.type,x.session,recordTime,ref,reviewStatus,reviewedBy,reviewerName,reviewedAt,comment]);
     });
   });
   if(toAppend.length){
-    const sh=getTimeReviewSheet_();
-    sh.getRange(sh.getLastRow()+1,1,toAppend.length,EK.TIME_REVIEW_HEADERS.length).setValues(toAppend);
-    invalidateTimeReviewRows_();
-    audit_('MIGRASI_SEMAKAN_WAKTU',`${from}..${to}`,`${toAppend.length} rekod semakan lama diwujudkan`,'SISTEM');
+    const sh=getTimeReviewSheet_();sh.getRange(sh.getLastRow()+1,1,toAppend.length,EK.TIME_REVIEW_HEADERS.length).setValues(toAppend);invalidateTimeReviewRows_();
+    audit_('MIGRASI_SEMAKAN_WAKTU',`${from}..${to}`,`${toAppend.length} rekod semakan diwujudkan menggunakan sejarah jadual bertimestamp`,'SISTEM');
   }
   return toAppend.length;
 }
@@ -186,8 +197,24 @@ function cleanupSupersededSession1EarlyReviews_(from,to) {
  * written by pre-fix deployments. Only columns O (Status) and AI (StatusWaktu)
  * are touched, so GPS/IP/timestamps are never rewritten.
  */
-function repairAttendanceTimingStatuses_(options) {
-  options=options||{};
+function cleanupUnconfirmedTimeReviews_(from,to) {
+  const pending=readTimeReviewRows_().filter(r=>r.date>=from&&r.date<=to&&r.reviewStatus==='BELUM DIAMBIL MAKLUM');
+  if(!pending.length)return 0;
+  const usersByEmail={};getAllUsers_().forEach(u=>usersByEmail[u.email]=u);
+  const settings=getSettings_(), stale=[];
+  pending.forEach(r=>{
+    const rec=findAttendanceRecord_(r.date,r.email), user=usersByEmail[r.email];
+    if(!rec||!user)return;
+    const flags=inferAttendanceFlags_(rec.values,user,settings,r.date);
+    if(!flags.includes(String(r.type||'').toUpperCase()))stale.push(r);
+  });
+  if(!stale.length)return 0;
+  const sh=getTimeReviewSheet_();stale.sort((a,b)=>b.row-a.row).forEach(r=>sh.deleteRow(r.row));invalidateTimeReviewRows_();
+  audit_('AUTO_BATAL_SEMAKAN_WAKTU_TIDAK_SAH',`${from}..${to}`,`${stale.length} semakan belum diputuskan dibuang kerana tidak sepadan dengan status sejarah`,'SISTEM');
+  return stale.length;
+}
+
+function repairAttendanceTimingStatuses_(options) {  options=options||{};
   const settings=getSettings_();
   let from=clampToSystemStart_(options.from||options.fromDate||getSystemStartDate_(settings),settings);
   let to=validateDateKey_(options.to||options.toDate||todayKey_());
@@ -269,6 +296,7 @@ function getTimeReviewData(token,fromDate,toDate) {
   if(to<systemStartDate)throw new Error(`Tiada data sistem sebelum ${systemStartDate}. Ubah SYSTEM_START_DATE di sheet TETAPAN jika perlu.`);
   from=clampToSystemStart_(from,settings);
   cleanupSupersededSession1EarlyReviews_(from,to);
+  cleanupUnconfirmedTimeReviews_(from,to);
   ensureTimeReviewRowsForRange_(from,to);
   const rows=readTimeReviewRows_().filter(r=>r.date>=from&&r.date<=to).map(publicTimeReview_).sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt));
   return {fromDate:from,toDate:to,rows};

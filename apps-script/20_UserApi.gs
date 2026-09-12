@@ -2,6 +2,8 @@
 
 function getBootstrapData(token) {
   const user = requireSessionUser_(token);
+  try { ensureScheduleHistoryBaseline_(user, getSettings_(), new Date(), 'BOOTSTRAP'); }
+  catch (e) { try { audit_('SEJARAH_JADUAL_BASELINE_GAGAL', user.email, String(e && e.message ? e.message : e), 'SISTEM'); } catch (_e) {} }
   // Migrasi selamat untuk deployment sedia ada: trigger Keberadaan baharu
   // dipasang sekali pada login pertama selepas versi ini tanpa menggagalkan login
   // jika akaun pemilik belum memberi permission ScriptApp.
@@ -200,6 +202,8 @@ function punch(token, type, location, clientInfo) {
   const now = new Date();
   const dateKey = todayKey_();
   const schedule = getEffectiveSchedule_(user,settings);
+  try { ensureScheduleHistoryBaseline_(user, settings, now, 'PUNCH'); }
+  catch (e) { try { audit_('SEJARAH_JADUAL_BASELINE_GAGAL', user.email, String(e && e.message ? e.message : e), 'SISTEM'); } catch (_e) {} }
   const nowMinutes = minutesNow_(now);
   const presenceRequest = type === 'IN'
     ? findRelevantPresenceForDate_(user.email,dateKey,readAbsenceRows_())
