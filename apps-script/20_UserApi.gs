@@ -307,7 +307,7 @@ function punch(token, type, location, clientInfo) {
   }
 
   const action = `REKOD_${type === 'IN' ? 'MASUK' : 'KELUAR'}_SESI_${session}`;
-  audit_(action,user.email,`${exceptionType || 'TEPAT MASA'}; mod=${isTestMode ? 'TEST' : 'REAL'}; jarak ${loc.distanceM}m; IP=${recordIp || '-'}; ${ipCheck.note || 'IP tiada isu'}; writeMs=${writeMs}; slotWaitMs=${slot.slotWaitMs}; slotsCreated=${slot.createdSlots}`,user.email);
+  audit_(action,user.email,`${exceptionType || 'TEPAT MASA'}; mod=${isTestMode ? 'TEST' : 'REAL'}; jarak=${loc.distanceM}m; akurasi=±${loc.accuracyM}m; radius=${settings.RADIUS_M}m; IP=${recordIp || '-'}; ${ipCheck.note || 'IP tiada isu'}; writeMs=${writeMs}; slotWaitMs=${slot.slotWaitMs}; slotsCreated=${slot.createdSlots}`,user.email);
 
   let timeReviewRecord = null;
   if (exceptionType) {
@@ -329,6 +329,8 @@ function punch(token, type, location, clientInfo) {
     message:`Rekod waktu ${label} berjaya${exceptionType ? ` — status ${exceptionType}` : ''}.`,
     attendance:publicAttendance_({values},schedule),
     distanceM:loc.distanceM,
+    accuracyM:loc.accuracyM,
+    radiusM:Number(settings.RADIUS_M),
     ip:recordIp || '',
     ipWarning:ipCheck.warning || '',
     timeException:timeReviewRecord ? publicTimeReview_(timeReviewRecord) : null,

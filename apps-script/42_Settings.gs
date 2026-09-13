@@ -18,7 +18,10 @@ function validateAndMeasureLocation_(location, settings) {
   const distance = Math.round(haversineMeters_(lat, lng, schoolLat, schoolLng));
   const radius = Number(settings.RADIUS_M);
   if (distance > radius) {
-    throw new Error(`Anda berada kira-kira ${distance}m dari lokasi yang ditetapkan. Rekod waktu hanya dibenarkan dalam radius ${radius}m.`);
+    if (distance - accuracy <= radius) {
+      throw new Error(`Bacaan GPS belum cukup stabil untuk menentukan kedudukan dengan yakin (jarak bacaan ${distance}m, ketepatan ±${Math.round(accuracy)}m, radius ${radius}m). Tunggu beberapa saat dan cuba semula.`);
+    }
+    throw new Error(`Anda berada kira-kira ${distance}m dari lokasi yang ditetapkan (GPS ±${Math.round(accuracy)}m). Rekod waktu hanya dibenarkan dalam radius ${radius}m.`);
   }
   return {lat, lng, accuracyM: Math.round(accuracy), distanceM: distance};
 }

@@ -537,16 +537,76 @@ const state = {
   }
 
   // ---------- Punch on Home ----------
+  function punchGpsPolicy(){
+    const s=state.boot?.settings||{};
+    const radiusM=Math.max(1,Number(s.radiusM)||200);
+    const configuredMaxAccuracyM=Math.max(1,Number(s.maxGpsAccuracyM)||120);
+    const targetAccuracyM=Math.min(configuredMaxAccuracyM,Math.max(25,Math.min(40,radiusM*0.5)));
+    const usableAccuracyM=Math.min(configuredMaxAccuracyM,Math.max(45,Math.min(65,radiusM*0.8)));
+    return {radiusM,configuredMaxAccuracyM,targetAccuracyM,usableAccuracyM,timeoutMs:8000};
+  }
+
+  function clientHaversineMeters(lat1,lon1,lat2,lon2){
+    const rad=x=>x*Math.PI/180,R=6371000,dLat=rad(lat2-lat1),dLon=rad(lon2-lon1);
+    const a=Math.sin(dLat/2)**2+Math.cos(rad(lat1))*Math.cos(rad(lat2))*Math.sin(dLon/2)**2;
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  }
+
+  function punchGpsDistance(pos){
+    const s=state.boot?.settings||{},lat=Number(s.schoolLat),lng=Number(s.schoolLng);
+    if(!pos?.coords||!Number.isFinite(lat)||!Number.isFinite(lng))return NaN;
+    return clientHaversineMeters(Number(pos.coords.latitude),Number(pos.coords.longitude),lat,lng);
+  }
+
+  function bestPunchPosition(){
+    const policy=punchGpsPolicy();
+    return new Promise((resolve,reject)=>{
+      if(!navigator.geolocation)return reject(new Error('Pelayar ini tidak menyokong geolocation.'));
+      let best=null,watchId=null,settled=false;
+      const finish=(err,pos)=>{
+        if(settled)return;settled=true;
+        if(watchId!==null)try{navigator.geolocation.clearWatch(watchId);}catch(_e){}
+        clearTimeout(timer);
+        err?reject(err):resolve(pos);
+      };
+      const timer=setTimeout(()=>{
+        if(!best)return finish(new Error('Lokasi GPS belum dapat dikesan. Cuba aktifkan Location/GPS dan cuba semula.'));
+        const accuracy=Math.round(Number(best.coords.accuracy)||0),distance=Math.round(punchGpsDistance(best));
+        if(accuracy>policy.usableAccuracyM){
+          return finish(new Error(`Ketepatan GPS masih ±${accuracy}m selepas beberapa bacaan. Untuk radius ${Math.round(policy.radiusM)}m, tunggu GPS lebih stabil dan cuba semula.${Number.isFinite(distance)?` Anggaran lokasi semasa ${distance}m dari pusat.`:''}`));
+        }
+        finish(null,best);
+      },policy.timeoutMs);
+      watchId=navigator.geolocation.watchPosition(pos=>{
+        const accuracy=Number(pos?.coords?.accuracy);
+        if(!Number.isFinite(accuracy)||accuracy<0)return;
+        if(!best||accuracy<Number(best.coords.accuracy))best=pos;
+        const chosen=best||pos,bestAccuracy=Math.round(Number(chosen.coords.accuracy)||0),distance=Math.round(punchGpsDistance(chosen));
+        gps('busy',`Menstabilkan GPS… ±${bestAccuracy}m${Number.isFinite(distance)?` · anggaran ${distance}m / ${Math.round(policy.radiusM)}m`:''}`);
+        if(bestAccuracy<=policy.targetAccuracyM)finish(null,chosen);
+      },err=>{
+        if(err?.code===1)return finish(new Error('Akses lokasi ditolak. Benarkan Location untuk laman ini.'));
+        if(!best&&err?.code===2)gps('busy','GPS belum mendapat lokasi. Mencuba lagi…');
+      },{enableHighAccuracy:true,timeout:policy.timeoutMs,maximumAge:0});
+    });
+  }
+
   async function startPunch(type){
     const test=String(state.boot?.settings?.systemMode||'REAL')==='TEST';
-    setPunchBusy(true); gps('busy',test?'MOD TEST — merakam waktu dan IP…':'Mendapatkan lokasi GPS dan IP awam…');
+    const gpsPolicy=punchGpsPolicy();
+    setPunchBusy(true); gps('busy',test?'MOD TEST — merakam waktu dan IP…':'Mencari bacaan GPS terbaik…');
     try{
       const ipPromise=getClientNetworkInfo(false); let loc=null;
-      if(!test){const pos=await currentPosition();loc={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy};gps('ok',`GPS ±${Math.round(loc.accuracy)}m · menyemak radius dan IP…`);}
+      if(!test){
+        const pos=await bestPunchPosition();
+        loc={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy};
+        const estimated=Math.round(punchGpsDistance(pos));
+        gps('ok',`GPS ±${Math.round(loc.accuracy)}m${Number.isFinite(estimated)?` · anggaran ${estimated}m / ${Math.round(gpsPolicy.radiusM)}m`:''} · menyemak server…`);
+      }
       const clientInfo=await ipPromise, res=await runServer('punch',state.token,type,loc,clientInfo);
       if(res&&res.attendance){state.boot.attendance=res.attendance;renderBoot();}else await refreshBoot();
       const ipText=res.ip?` · IP ${res.ip}`:' · IP tidak dikesan';
-      gps('ok',test?`Rekod MOD TEST diterima${ipText}.`:`Rekod waktu diterima · jarak ${res.distanceM}m${ipText}.`);
+      gps('ok',test?`Rekod MOD TEST diterima${ipText}.`:`Rekod waktu diterima · GPS ±${Number(res.accuracyM)||Math.round(loc?.accuracy||0)}m · jarak ${res.distanceM}m / ${Number(res.radiusM)||Math.round(gpsPolicy.radiusM)}m${ipText}.`);
       toast(res.ipWarning||res.message,res.ipWarning?6000:4500); state.myCardLoaded=false; state.myCardData=null;
       if(res.timeException) state.timeReview=null;
     }catch(e){gps('',e.message);handleServerError(e,false);}finally{setPunchBusy(false);}
@@ -912,7 +972,14 @@ const state = {
   }
 
   // ---------- Settings / visual map ----------
-  function fillSettings(s){const f=document.getElementById('settingsForm');if(!f)return;Object.keys(s).forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]??'';});updateModeSettingHint();if(state.locationMap)setTimeout(syncMapFromInputs,30);}
+  function fillSettings(s){const f=document.getElementById('settingsForm');if(!f)return;Object.keys(s).forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]??'';});updateModeSettingHint();updateGpsSettingWarning();if(state.locationMap)setTimeout(syncMapFromInputs,30);}
+  function updateGpsSettingWarning(){
+    const radius=Number(document.getElementById('settingRadius')?.value||0),accuracy=Number(document.getElementById('settingGpsAccuracy')?.value||0),hint=document.getElementById('gpsSettingWarning');
+    if(!hint)return;
+    const risky=radius>0&&accuracy>radius;
+    hint.classList.toggle('hidden',!risky);
+    if(risky)hint.textContent=`⚠ Had ketepatan GPS ${Math.round(accuracy)}m lebih besar daripada radius ${Math.round(radius)}m. Semasa punch, app akan menunggu bacaan yang lebih tepat supaya staf dalam radius tidak tersalah ditolak.`;
+  }
   async function saveSettings(ev){ev.preventDefault();const p=Object.fromEntries(new FormData(ev.target).entries());try{const r=await runServer('adminSaveSettings',state.token,p);state.admin.settings=r.settings;state.boot.settings=r.settings;renderBoot();fillSettings(r.settings);toast('Tetapan disimpan.');}catch(e){handleServerError(e);}}
   function updateModeSettingHint(){const mode=document.getElementById('systemModeSelect')?.value||'REAL';const hint=document.getElementById('modeSettingHint');if(hint){hint.textContent=mode==='TEST'?'MOD TEST: rekod waktu boleh dibuat tanpa semakan lokasi dan status waktu. Gunakan hanya untuk ujian sistem.':'MOD SEBENAR: lokasi/radius dikuatkuasakan; masa tidak menyekat rekod tetapi menentukan status LEWAT / BALIK AWAL.';hint.className='setting-hint '+(mode==='TEST'?'test-hint':'real-hint');}}
 
@@ -949,7 +1016,7 @@ const state = {
   }
   function setSettingCoords(lat,lng,recenter){document.getElementById('settingLat').value=Number(lat).toFixed(7);document.getElementById('settingLng').value=Number(lng).toFixed(7);syncMapFromInputs(recenter);}
   function syncMapFromInputs(recenter=false){if(!state.locationMap)return;const lat=parseFloat(document.getElementById('settingLat')?.value),lng=parseFloat(document.getElementById('settingLng')?.value),radius=Math.max(1,parseFloat(document.getElementById('settingRadius')?.value)||200);if(!Number.isFinite(lat)||!Number.isFinite(lng))return;const ll=[lat,lng];state.locationMarker?.setLatLng(ll);state.locationCircle?.setLatLng(ll).setRadius(radius);if(recenter)state.locationMap.setView(ll,Math.max(state.locationMap.getZoom(),16));syncMapReadout(lat,lng,radius);}
-  function syncMapRadius(){if(!state.locationMap)return;const radius=Math.max(1,parseFloat(document.getElementById('settingRadius')?.value)||200);state.locationCircle?.setRadius(radius);const ll=state.locationMarker?.getLatLng();if(ll)syncMapReadout(ll.lat,ll.lng,radius);}
+  function syncMapRadius(){updateGpsSettingWarning();if(!state.locationMap)return;const radius=Math.max(1,parseFloat(document.getElementById('settingRadius')?.value)||200);state.locationCircle?.setRadius(radius);const ll=state.locationMarker?.getLatLng();if(ll)syncMapReadout(ll.lat,ll.lng,radius);}
   function syncMapReadout(lat,lng,radius){text('mapCoordReadout',`${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`);text('mapRadiusReadout',`${Math.round(radius)} m`);}
   async function useCurrentLocationForSetting(){try{const pos=await currentPosition();setSettingCoords(pos.coords.latitude,pos.coords.longitude,true);toast(`Lokasi peranti digunakan (±${Math.round(pos.coords.accuracy)}m).`);}catch(e){toast(e.message,4500);}}
 

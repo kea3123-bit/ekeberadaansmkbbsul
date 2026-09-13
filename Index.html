@@ -349,7 +349,8 @@
                 <label>Latitude pusat<input id="settingLat" name="schoolLat" type="number" step="any" oninput="syncMapFromInputs()"></label>
                 <label>Longitude pusat<input id="settingLng" name="schoolLng" type="number" step="any" oninput="syncMapFromInputs()"></label>
                 <label>Radius (meter)<input id="settingRadius" name="radiusM" type="number" min="1" max="5000" required oninput="syncMapRadius()"></label>
-                <label>Had ketepatan GPS (m)<input name="maxGpsAccuracyM" type="number" min="1" max="2000" required></label>
+                <label>Had ketepatan GPS (m)<input id="settingGpsAccuracy" name="maxGpsAccuracyM" type="number" min="1" max="2000" required oninput="updateGpsSettingWarning()"></label>
+                <div id="gpsSettingWarning" class="span-2 setting-hint test-hint hidden"></div>
                 <div class="span-2 map-setting-block">
                   <div class="map-setting-head"><div><b>Tetapkan lokasi secara visual</b><small>Klik pada peta untuk pindahkan pusat radius atau gunakan lokasi peranti.</small></div><button class="btn ghost small" type="button" onclick="useCurrentLocationForSetting()">Gunakan lokasi saya</button></div>
                   <div id="locationPickerMap" class="location-picker-map"></div>
