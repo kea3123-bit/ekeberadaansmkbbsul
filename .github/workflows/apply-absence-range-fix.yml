@@ -1,0 +1,36 @@
+name: Apply absence range display fix
+on:
+  push:
+    branches: [refactor/performance-v2]
+    paths: ['hotfixes/2026-09-13-preserve-absence-range.trigger']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply patch
+        run: python3 .github/patches/2026-09-13-preserve-absence-range.py
+      - name: Validate backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat apps-script/*.gs > /tmp/ek-backend.js
+          node --check /tmp/ek-backend.js
+          grep -q 'Keep the original request period intact' apps-script/61_Absence.gs
+          grep -q 'Filter by overlap only' apps-script/61_Absence.gs
+          if grep -q 'if (fromDate && startDate < fromDate) startDate = fromDate' apps-script/61_Absence.gs; then exit 1; fi
+          if grep -q 'if(x.startDate<from)x.startDate=from' apps-script/61_Absence.gs; then exit 1; fi
+      - name: Commit source fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps-script/61_Absence.gs
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'fix: preserve original absence request periods in filtered tables'
+          git push origin HEAD:refactor/performance-v2
