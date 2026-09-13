@@ -9,6 +9,40 @@
 // deploying this version. It only rewrites Status/StatusWaktu and stale time
 // reviews; punch timestamps, GPS and IP data are never changed.
 
+function assertScheduleHistoryRuntimeForLegacyRepair_() {
+  const missing = [];
+  if (typeof makeScheduleSnapshot_ !== 'function') missing.push('makeScheduleSnapshot_');
+  if (typeof getScheduleHistoryForUser_ !== 'function') missing.push('getScheduleHistoryForUser_');
+  if (typeof scheduleSnapshotSignature_ !== 'function') missing.push('scheduleSnapshotSignature_');
+  if (typeof scheduleHistoryRow_ !== 'function') missing.push('scheduleHistoryRow_');
+  if (typeof appendScheduleHistoryRows_ !== 'function') missing.push('appendScheduleHistoryRows_');
+  if (typeof getScheduleTimingContext_ !== 'function') missing.push('getScheduleTimingContext_');
+  if (missing.length) {
+    throw new Error(
+      'Modul Sejarah Jadual belum lengkap dalam project Apps Script ini. ' +
+      'Sync fail berikut daripada branch refactor/performance-v2: ' +
+      '20_UserApi.gs, 21_AdminApi.gs, 43_ScheduleHistory.gs, 44_LegacyScheduleRepair.gs dan 60_TimeReview.gs. ' +
+      'Helper yang belum ditemui: ' + missing.join(', ')
+    );
+  }
+  return true;
+}
+
+function verifyScheduleHistoryFeatureInstallation() {
+  assertScheduleHistoryRuntimeForLegacyRepair_();
+  return {
+    ok: true,
+    message: 'Modul Sejarah Jadual lengkap dan repair Farhan boleh dijalankan.',
+    requiredFiles: [
+      '20_UserApi.gs',
+      '21_AdminApi.gs',
+      '43_ScheduleHistory.gs',
+      '44_LegacyScheduleRepair.gs',
+      '60_TimeReview.gs'
+    ]
+  };
+}
+
 function cleanupInvalidTimeReviewsForUserHistory_(email, fromDate, toDate) {
   email = normalizeEmail_(email);
   fromDate = validateDateKey_(fromDate);
@@ -43,6 +77,7 @@ function cleanupInvalidTimeReviewsForUserHistory_(email, fromDate, toDate) {
 }
 
 function repairLegacyScheduleHistoryForUser_(email, oldS1In, changeDate, actor) {
+  assertScheduleHistoryRuntimeForLegacyRepair_();
   email = normalizeEmail_(email);
   oldS1In = normalizeTime_(oldS1In);
   changeDate = validateDateKey_(changeDate);
@@ -125,6 +160,7 @@ function repairLegacyScheduleHistoryForUser_(email, oldS1In, changeDate, actor) 
 }
 
 function repairFarhanScheduleHistorySep2026() {
+  assertScheduleHistoryRuntimeForLegacyRepair_();
   const admin = requireGoogleAdmin_();
   let user = getUserByEmail_(normalizeEmail_(EK.EMAIL.OWNER_EMAIL), false);
   if (!user || String(user.name || '').trim().toUpperCase() !== 'MUHAMMAD FARHAN BIN SHOFFI') {
