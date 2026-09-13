@@ -626,6 +626,29 @@ const state = {
     catch(e){handleServerError(e);}
   }
 
+  // Cross-platform HH:MM entry for Android/WebView compatibility.
+  function formatClockInput(el){
+    if(!el)return;
+    const digits=String(el.value||'').replace(/\D/g,'').slice(0,4);
+    if(digits.length<=2){el.value=digits;return;}
+    if(digits.length===3&&Number(digits.slice(0,2))>23){
+      el.value=`0${digits.charAt(0)}:${digits.slice(1)}`;
+      return;
+    }
+    el.value=`${digits.slice(0,2)}:${digits.slice(2)}`;
+  }
+
+  function normalizeClockInput(el){
+    if(!el)return;
+    const digits=String(el.value||'').replace(/\D/g,'').slice(0,4);
+    if(!digits){el.value='';return;}
+    let d=digits;
+    if(d.length===3&&Number(d.slice(0,2))>23)d='0'+d;
+    if(d.length!==4)return;
+    const hour=Number(d.slice(0,2)),minute=Number(d.slice(2));
+    if(hour>=0&&hour<=23&&minute>=0&&minute<=59)el.value=`${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`;
+  }
+
   function updateAbsenceModeUi(){
     const mode=document.getElementById('absenceMode')?.value||'TIDAK_HADIR',d=state.absence||{};
     const typeSel=document.getElementById('absenceType');

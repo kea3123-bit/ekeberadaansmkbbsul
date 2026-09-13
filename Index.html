@@ -220,8 +220,8 @@
               <label>Jenis<select id="absenceType" name="type" required></select></label>
               <label>Tarikh mula<input id="absenceStartDate" name="startDate" type="date" required></label>
               <label>Tarikh akhir<input id="absenceEndDate" name="endDate" type="date" required></label>
-              <label id="absenceStartTimeWrap" class="hidden">Masa mula<input id="absenceStartTime" name="startTime" type="time"></label>
-              <label id="absenceEndTimeWrap" class="hidden">Masa akhir<input id="absenceEndTime" name="endTime" type="time"></label>
+              <label id="absenceStartTimeWrap" class="hidden">Masa mula<input id="absenceStartTime" name="startTime" type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="08:30" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" title="Taip 4 digit masa, contoh 0830" oninput="formatClockInput(this)" onblur="normalizeClockInput(this)"></label>
+              <label id="absenceEndTimeWrap" class="hidden">Masa akhir<input id="absenceEndTime" name="endTime" type="text" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="16:30" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" title="Taip 4 digit masa, contoh 1630" oninput="formatClockInput(this)" onblur="normalizeClockInput(this)"></label>
               <label class="span-2 absence-note-field">Catatan / tujuan <small>(Sila isi tajuk aktiviti yang terlibat)</small><textarea id="absenceNote" name="note" rows="6" placeholder="Contoh: Kejohanan Merentas Desa Daerah / Bengkel PPD"></textarea></label>
               <div class="span-2"><button class="btn primary" type="submit">Hantar Permohonan</button></div>
             </form>
