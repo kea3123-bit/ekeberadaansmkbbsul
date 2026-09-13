@@ -3,6 +3,7 @@
 // This function is intentionally NOT exposed through the GitHub Pages bridge.
 // Launch-performance Phase 4 + client telemetry source marker: 2026-09-11.
 // Schedule-history CI marker: 2026-09-13.
+// Punchcard-history sync CI marker: 2026-09-13.
 function diagnosePerformanceBackend() {
   const started = Date.now();
   const marks = {};
