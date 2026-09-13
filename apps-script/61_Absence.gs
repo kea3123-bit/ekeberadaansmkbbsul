@@ -60,10 +60,11 @@ function getPublicAbsencePresenceData(token, fromDate, toDate) {
 function publicAbsenceListItem_(r, fromDate, toDate) {
   const email = normalizeEmail_(r && r.email || '');
   const user = email ? getUserByEmail_(email, false) : null;
-  let startDate = r.startDate || '';
-  let endDate = r.endDate || startDate;
-  if (fromDate && startDate < fromDate) startDate = fromDate;
-  if (toDate && endDate > toDate) endDate = toDate;
+  // Keep the original request period intact. The date filter decides whether
+  // a record overlaps the requested window; it must not rewrite the period
+  // shown in the table/PDF (e.g. 13-16 Sep filtered on 14 Sep stays 13-16 Sep).
+  const startDate = r.startDate || '';
+  const endDate = r.endDate || startDate;
   return {
     id:String(r.id||''),
     name:String(r.name||(user&&user.name)||''),
@@ -184,12 +185,10 @@ function getAbsenceManagementData(token, fromDate, toDate) {
   from = clampToSystemStart_(from, settings);
   const rawRequests = readAbsenceRows_();
   const attTo=to>today?today:to; const context={settings,users:getAllUsers_(),requests:rawRequests,attendanceValues:from<=attTo?getAttendanceValuesInDateRange_(from,attTo):[]};
-  const requests = rawRequests.filter(r=>r.endDate>=from&&r.startDate<=to).map(r=>{
-    const x=publicAbsenceManagement_(r);
-    if(x.startDate<from)x.startDate=from;
-    if(x.endDate>to)x.endDate=to;
-    return x;
-  });
+  // Filter by overlap only; preserve the original request start/end dates for display.
+  const requests = rawRequests
+    .filter(r=>r.endDate>=from&&r.startDate<=to)
+    .map(r=>publicAbsenceManagement_(r));
   const unexplained = buildUnexplainedAbsenceEntries_(from,to,'',context).map(publicUnexplainedAbsenceManagement_);
   return {manager:publicUser_(manager),types:EK.ABSENCE_TYPES.slice(),presenceTypes:EK.PRESENCE_TYPES.slice(),fromDate:from,toDate:to,
     requests:requests.concat(unexplained).sort((a,b)=>String(b.startDate||'').localeCompare(String(a.startDate||''))||String(b.submittedAt||'').localeCompare(String(a.submittedAt||'')))};
