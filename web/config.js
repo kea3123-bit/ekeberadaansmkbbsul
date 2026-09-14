@@ -389,7 +389,7 @@ window.EK_CONFIG = Object.freeze({
   }
 
   function beginPreview() {
-    setPreview('Mendapatkan lokasi…', 'GPS sedang mencari titik terbaik untuk Punch Masuk.', false);
+    setPreview('Mendapatkan lokasi…', 'GPS bermula pada sasaran ±80m dan dilonggarkan bertahap hingga ±140m.', false);
     document.getElementById('punchLocationMap')?.classList.add('hidden');
   }
 
