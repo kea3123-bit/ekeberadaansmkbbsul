@@ -11,7 +11,6 @@ permissions:
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,20 +24,10 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('web/config.js')
           text = path.read_text(encoding='utf-8')
-          old = """      const hasPresence = String(r.reason || '').toUpperCase().includes('KEBERADAAN') || String(r.source || '').toUpperCase() === 'KEBERADAAN';
-      const presenceStatement = hasPresence ? 'KEBERADAAN — Maklum from Pengetua' : '';
-"""
-          new = """      const rawPresenceReason = String(r.reason || '').trim();
-      const reasonMatch = rawPresenceReason.match(/(?:^|[·|])\\s*KEBERADAAN:\\s*([^·|]+)/i);
-      const presenceType = String(r.presenceType || (reasonMatch ? reasonMatch[1] : '') || '').trim();
-      const hasPresence = !!presenceType || rawPresenceReason.toUpperCase().includes('KEBERADAAN') || String(r.source || '').toUpperCase() === 'KEBERADAAN';
-      const presenceStatement = hasPresence
-        ? `${presenceType || 'Keberadaan'} — Maklum from Pengetua`
-        : '';
-"""
+          old = "      const hasPresence = String(r.reason || '').toUpperCase().includes('KEBERADAAN') || String(r.source || '').toUpperCase() === 'KEBERADAAN';\n      const presenceStatement = hasPresence ? 'KEBERADAAN — Maklum from Pengetua' : '';\n"
+          new = "      const rawPresenceReason = String(r.reason || '').trim();\n      const reasonMatch = rawPresenceReason.match(/(?:^|[·|])\\s*KEBERADAAN:\\s*([^·|]+)/i);\n      const presenceType = String(r.presenceType || (reasonMatch ? reasonMatch[1] : '') || '').trim();\n      const hasPresence = !!presenceType || rawPresenceReason.toUpperCase().includes('KEBERADAAN') || String(r.source || '').toUpperCase() === 'KEBERADAAN';\n      const presenceStatement = hasPresence\n        ? `${presenceType || 'Keberadaan'} — Maklum from Pengetua`\n        : '';\n"
           if old not in text:
               raise SystemExit('Expected punch-card presence block not found')
           path.write_text(text.replace(old, new, 1), encoding='utf-8')
