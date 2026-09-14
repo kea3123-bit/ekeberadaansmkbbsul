@@ -1,4 +1,4 @@
-// Punch Card Digital: show a compact Keberadaan note in Kenyataan.
+// Punch Card Digital: show the selected Keberadaan type in Kenyataan.
 // This wraps the existing monthly card builder without changing punch logic.
 
 const buildPunchCardMonthForUserBase_ = buildPunchCardMonthForUser_;
@@ -18,8 +18,11 @@ buildPunchCardMonthForUser_ = function(user, monthKey) {
     const presence = presenceRows.find(p => p.startDate <= dateKey && p.endDate >= dateKey);
     if (!presence) return;
 
-    // Keep actual attendance status/times untouched. Only enrich Kenyataan.
-    r.reason = 'KEBERADAAN — Maklum from Pengetua';
+    // Keep actual attendance status/times untouched. Enrich both own/admin cards
+    // with the exact Keberadaan type selected by the user.
+    const presenceType = String(presence.type || '').trim() || 'Keberadaan';
+    r.presenceType = presenceType;
+    r.reason = `${presenceType} — Maklum from Pengetua`;
   });
 
   return data;
