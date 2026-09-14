@@ -171,8 +171,13 @@ window.EK_CONFIG = Object.freeze({
       const early2 = has('BALIK AWAL', 2) || (!hasExact && flags.includes('BALIK AWAL') && !r.outTime && !!r.outTime2);
       const hasException = late1 || early1 || late2 || early2 || flags.includes('LEWAT') || flags.includes('BALIK AWAL');
       const reviewStatement = reviewStatusForCard(dateReviews, hasException, r.reviewState);
-      const hasPresence = String(r.reason || '').toUpperCase().includes('KEBERADAAN') || String(r.source || '').toUpperCase() === 'KEBERADAAN';
-      const presenceStatement = hasPresence ? 'KEBERADAAN — Maklum from Pengetua' : '';
+      const rawPresenceReason = String(r.reason || '').trim();
+      const reasonMatch = rawPresenceReason.match(/(?:^|[·|])\s*KEBERADAAN:\s*([^·|]+)/i);
+      const presenceType = String(r.presenceType || (reasonMatch ? reasonMatch[1] : '') || '').trim();
+      const hasPresence = !!presenceType || rawPresenceReason.toUpperCase().includes('KEBERADAAN') || String(r.source || '').toUpperCase() === 'KEBERADAAN';
+      const presenceStatement = hasPresence
+        ? `${presenceType || 'Keberadaan'} — Maklum from Pengetua`
+        : '';
       const signature = reviewerTagsForCard(dateReviews);
       const timeCell = (value, exceptional) => `<td class="${exceptional ? 'pc-time-exception' : ''}">${esc(shortTime(value))}</td>`;
       const statementHtml = `${reviewStatement ? `<span class="pc-statement-status">${esc(reviewStatement)}</span>` : ''}${presenceStatement ? `<span class="pc-presence-note">${esc(presenceStatement)}</span>` : ''}`;
