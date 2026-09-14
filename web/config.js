@@ -28,6 +28,7 @@ window.EK_CONFIG = Object.freeze({
     /* Punch-card exception emphasis: only the actual exceptional time is red. */
     .pc-time-exception{color:#b42318!important;font-weight:800!important}
     .pc-statement-status{font-weight:800;line-height:1.2}
+    .pc-presence-note{display:block;margin-top:1px;font-size:7px;line-height:1.05;font-weight:700;white-space:normal;color:#475467}
     .pc-sign-tags{display:flex;flex-direction:column;align-items:center;gap:3px}
 
     /* Reusable approver job-title tag for all review screens and punch cards. */
@@ -169,11 +170,14 @@ window.EK_CONFIG = Object.freeze({
       const late2 = has('LEWAT', 2) || (!hasExact && flags.includes('LEWAT') && !r.inTime && !!r.inTime2);
       const early2 = has('BALIK AWAL', 2) || (!hasExact && flags.includes('BALIK AWAL') && !r.outTime && !!r.outTime2);
       const hasException = late1 || early1 || late2 || early2 || flags.includes('LEWAT') || flags.includes('BALIK AWAL');
-      const statement = reviewStatusForCard(dateReviews, hasException, r.reviewState);
+      const reviewStatement = reviewStatusForCard(dateReviews, hasException, r.reviewState);
+      const hasPresence = String(r.reason || '').toUpperCase().includes('KEBERADAAN') || String(r.source || '').toUpperCase() === 'KEBERADAAN';
+      const presenceStatement = hasPresence ? 'KEBERADAAN — Maklum from Pengetua' : '';
       const signature = reviewerTagsForCard(dateReviews);
       const timeCell = (value, exceptional) => `<td class="${exceptional ? 'pc-time-exception' : ''}">${esc(shortTime(value))}</td>`;
+      const statementHtml = `${reviewStatement ? `<span class="pc-statement-status">${esc(reviewStatement)}</span>` : ''}${presenceStatement ? `<span class="pc-presence-note">${esc(presenceStatement)}</span>` : ''}`;
 
-      html += `<tr class="${cls}"><td class="pc-day">${day}</td>${timeCell(r.inTime, late1)}${timeCell(r.outTime, early1)}${timeCell(r.inTime2, late2)}${timeCell(r.outTime2, early2)}<td class="pc-statement"><span class="pc-statement-status">${esc(statement)}</span></td><td class="pc-sign">${signature}</td></tr>`;
+      html += `<tr class="${cls}"><td class="pc-day">${day}</td>${timeCell(r.inTime, late1)}${timeCell(r.outTime, early1)}${timeCell(r.inTime2, late2)}${timeCell(r.outTime2, early2)}<td class="pc-statement">${statementHtml}</td><td class="pc-sign">${signature}</td></tr>`;
     }
     return html;
   }
@@ -316,6 +320,164 @@ window.EK_CONFIG = Object.freeze({
       }
     } catch (err) {
       console.error('[eKeberadaan review polish]', err);
+    }
+  }, {once:true});
+})();
+
+// Lightweight Punch Masuk location preview. No map dependency is loaded during
+// normal app startup: CSS radar is immediate, Leaflet + map tiles are requested
+// only after a successful GPS fix. Save-Data/2G stays animation-only.
+(() => {
+  const STYLE_ID = 'ek-punch-location-preview-style';
+  let activeType = '';
+  let map = null, userMarker = null, schoolMarker = null, radiusCircle = null, tileLayer = null;
+
+  function installStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      .ek-punch-location-preview{margin:10px 0 14px;border:1px solid #d0d5dd;border-radius:14px;background:#f8fafc;overflow:hidden;box-shadow:0 4px 14px rgba(16,24,40,.04)}
+      .ek-punch-location-head{display:flex;align-items:center;gap:11px;padding:10px 12px;min-height:58px}
+      .ek-punch-location-copy{min-width:0;flex:1}.ek-punch-location-copy b,.ek-punch-location-copy small{display:block}.ek-punch-location-copy b{font-size:12px}.ek-punch-location-copy small{margin-top:2px;color:#667085;font-size:10px;line-height:1.3}
+      .ek-punch-radar{position:relative;width:36px;height:36px;flex:0 0 36px;border-radius:50%;background:rgba(7,83,185,.08);display:grid;place-items:center}
+      .ek-punch-radar:before,.ek-punch-radar:after{content:'';position:absolute;inset:5px;border:1px solid rgba(7,83,185,.32);border-radius:50%;animation:ekPunchRadar 1.6s ease-out infinite}.ek-punch-radar:after{animation-delay:.8s}
+      .ek-punch-radar-dot{width:9px;height:9px;border-radius:50%;background:#0753b9;box-shadow:0 0 0 4px rgba(7,83,185,.12);z-index:2}
+      .ek-punch-location-preview.is-fixed .ek-punch-radar:before,.ek-punch-location-preview.is-fixed .ek-punch-radar:after{animation:none;opacity:.18}.ek-punch-location-preview.is-fixed .ek-punch-radar-dot{background:#00a65a;box-shadow:0 0 0 4px rgba(0,166,90,.12)}
+      .ek-punch-location-map{height:156px;border-top:1px solid #e4e7ec;background:#eef2f6}.ek-punch-location-map.hidden{display:none!important}.ek-punch-location-map .leaflet-control-attribution{font-size:7px!important;line-height:1.1!important}
+      @keyframes ekPunchRadar{0%{transform:scale(.45);opacity:.9}100%{transform:scale(1.45);opacity:0}}
+      @media(max-width:520px){.ek-punch-location-map{height:138px}.ek-punch-location-head{padding:9px 10px}}
+      @media(prefers-reduced-motion:reduce){.ek-punch-radar:before,.ek-punch-radar:after{animation:none!important}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function ensurePreview() {
+    installStyle();
+    let el = document.getElementById('punchLocationPreview');
+    if (el) return el;
+    const anchor = document.querySelector('#screen-home .location-box');
+    if (!anchor) return null;
+    el = document.createElement('div');
+    el.id = 'punchLocationPreview';
+    el.className = 'ek-punch-location-preview hidden';
+    el.innerHTML = `<div class="ek-punch-location-head"><div class="ek-punch-radar"><span class="ek-punch-radar-dot"></span></div><div class="ek-punch-location-copy"><b id="punchLocationPreviewTitle">Mendapatkan lokasi…</b><small id="punchLocationPreviewText">GPS sedang mencari titik terbaik untuk Punch Masuk.</small></div></div><div id="punchLocationMap" class="ek-punch-location-map hidden" aria-label="Peta lokasi Punch Masuk"></div>`;
+    anchor.insertAdjacentElement('afterend', el);
+    return el;
+  }
+
+  function setPreview(title, detail, fixed = false) {
+    const el = ensurePreview();
+    if (!el) return;
+    el.classList.remove('hidden');
+    el.classList.toggle('is-fixed', !!fixed);
+    const titleEl = document.getElementById('punchLocationPreviewTitle');
+    const textEl = document.getElementById('punchLocationPreviewText');
+    if (titleEl) titleEl.textContent = title;
+    if (textEl) textEl.textContent = detail;
+  }
+
+  function constrainedNetwork() {
+    const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection || {};
+    const type = String(c.effectiveType || '').toLowerCase();
+    return !!c.saveData || type === 'slow-2g' || type === '2g';
+  }
+
+  function beginPreview() {
+    setPreview('Mendapatkan lokasi…', 'GPS sedang mencari titik terbaik untuk Punch Masuk.', false);
+    document.getElementById('punchLocationMap')?.classList.add('hidden');
+  }
+
+  function failPreview(message) {
+    setPreview('Lokasi belum disahkan', String(message || 'GPS tidak dapat mendapatkan lokasi.'), false);
+  }
+
+  async function renderMap(pos) {
+    const mapEl = document.getElementById('punchLocationMap');
+    if (!mapEl || !pos?.coords || constrainedNetwork()) return;
+    if (typeof ensureLeaflet !== 'function') return;
+    try { await ensureLeaflet(); } catch (_e) { return; }
+    if (typeof L === 'undefined') return;
+
+    const lat = Number(pos.coords.latitude), lng = Number(pos.coords.longitude);
+    const schoolLat = Number(state.boot?.settings?.schoolLat), schoolLng = Number(state.boot?.settings?.schoolLng);
+    const radius = Math.max(1, Number(state.boot?.settings?.radiusM) || 200);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    mapEl.classList.remove('hidden');
+    if (!map) {
+      map = L.map(mapEl, {
+        preferCanvas:true, zoomControl:false, scrollWheelZoom:false,
+        doubleClickZoom:false, boxZoom:false, keyboard:false, dragging:false,
+        tap:false, attributionControl:true
+      }).setView([lat,lng], 17);
+      tileLayer = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom:19,
+        attribution:'Tiles &copy; Esri, Maxar, Earthstar Geographics'
+      }).addTo(map);
+      userMarker = L.circleMarker([lat,lng], {radius:7,weight:3,fillOpacity:1}).addTo(map).bindTooltip('Lokasi anda');
+      if (Number.isFinite(schoolLat) && Number.isFinite(schoolLng)) {
+        schoolMarker = L.circleMarker([schoolLat,schoolLng], {radius:5,weight:2,fillOpacity:.7}).addTo(map).bindTooltip('Pusat sekolah');
+        radiusCircle = L.circle([schoolLat,schoolLng], {radius,weight:1,fillOpacity:.06}).addTo(map);
+      }
+    } else {
+      userMarker?.setLatLng([lat,lng]);
+      if (Number.isFinite(schoolLat) && Number.isFinite(schoolLng)) {
+        schoolMarker?.setLatLng([schoolLat,schoolLng]);
+        radiusCircle?.setLatLng([schoolLat,schoolLng]).setRadius(radius);
+      }
+    }
+
+    if (Number.isFinite(schoolLat) && Number.isFinite(schoolLng)) {
+      const bounds = L.latLngBounds([[lat,lng],[schoolLat,schoolLng]]).pad(.35);
+      map.fitBounds(bounds, {maxZoom:18, animate:true, duration:.35});
+    } else map.setView([lat,lng], 17, {animate:true});
+    setTimeout(() => map?.invalidateSize(false), 0);
+  }
+
+  function showFixedPosition(pos) {
+    const accuracy = Math.round(Number(pos?.coords?.accuracy) || 0);
+    let distance = NaN;
+    try { distance = typeof punchGpsDistance === 'function' ? Math.round(punchGpsDistance(pos)) : NaN; } catch (_e) {}
+    const radius = Math.max(1, Number(state.boot?.settings?.radiusM) || 200);
+    const netNote = constrainedNetwork() ? ' · peta tidak dimuat untuk jimat data' : '';
+    setPreview(
+      'Lokasi Punch Masuk dikunci',
+      `Ketepatan ±${accuracy}m${Number.isFinite(distance) ? ` · ${distance}m dari pusat / radius ${Math.round(radius)}m` : ''}${netNote}`,
+      true
+    );
+    if (!constrainedNetwork()) renderMap(pos).catch(() => {});
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    try {
+      if (typeof startPunch !== 'function' || typeof bestPunchPosition !== 'function') return;
+      const originalStartPunch = startPunch;
+      const originalBestPunchPosition = bestPunchPosition;
+
+      bestPunchPosition = async function() {
+        try {
+          const pos = await originalBestPunchPosition();
+          if (activeType === 'IN') showFixedPosition(pos);
+          return pos;
+        } catch (err) {
+          if (activeType === 'IN') failPreview(err?.message || err);
+          throw err;
+        }
+      };
+
+      const patchedStartPunch = async function(type) {
+        activeType = String(type || '').toUpperCase();
+        const test = String(state.boot?.settings?.systemMode || 'REAL').toUpperCase() === 'TEST';
+        if (activeType === 'IN' && !test) beginPreview();
+        try { return await originalStartPunch(type); }
+        finally { activeType = ''; }
+      };
+
+      startPunch = patchedStartPunch;
+      window.startPunch = patchedStartPunch;
+    } catch (err) {
+      console.error('[eKeberadaan punch location preview]', err);
     }
   }, {once:true});
 })();
