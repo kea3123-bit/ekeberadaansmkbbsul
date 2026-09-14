@@ -8,7 +8,7 @@ function validateAndMeasureLocation_(location, settings) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Koordinat GPS tidak sah.');
   if (!Number.isFinite(accuracy) || accuracy < 0) throw new Error('Ketepatan GPS tidak sah.');
 
-  const maxAccuracy = Number(settings.MAX_GPS_ACCURACY_M);
+  const maxAccuracy = Math.max(140, Number(settings.MAX_GPS_ACCURACY_M) || 0);
   if (accuracy > maxAccuracy) {
     throw new Error(`Isyarat GPS terlalu lemah (±${Math.round(accuracy)}m). Had sistem ialah ±${Math.round(maxAccuracy)}m. Cuba di kawasan terbuka dan tekan semula.`);
   }
@@ -127,7 +127,7 @@ function publicSettings_(s) {
     schoolLat: s.SCHOOL_LAT,
     schoolLng: s.SCHOOL_LNG,
     radiusM: Number(s.RADIUS_M),
-    maxGpsAccuracyM: Number(s.MAX_GPS_ACCURACY_M),
+    maxGpsAccuracyM: Math.max(140, Number(s.MAX_GPS_ACCURACY_M) || 0),
     defaultLateAfter: s.DEFAULT_LATE_AFTER,
     defaultMaxPunchIn: s.DEFAULT_MAX_PUNCH_IN,
     defaultPunchOutFrom: s.DEFAULT_PUNCH_OUT_FROM,

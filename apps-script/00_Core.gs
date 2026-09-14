@@ -26,7 +26,7 @@ const EK = Object.freeze({
     SCHOOL_LAT: '',
     SCHOOL_LNG: '',
     RADIUS_M: '200',
-    MAX_GPS_ACCURACY_M: '120',
+    MAX_GPS_ACCURACY_M: '140',
     DEFAULT_LATE_AFTER: '07:30',
     DEFAULT_MAX_PUNCH_IN: '10:00',
     DEFAULT_PUNCH_OUT_FROM: '14:00',

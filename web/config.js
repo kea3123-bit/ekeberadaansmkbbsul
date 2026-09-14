@@ -366,7 +366,7 @@ window.EK_CONFIG = Object.freeze({
     el = document.createElement('div');
     el.id = 'punchLocationPreview';
     el.className = 'ek-punch-location-preview hidden';
-    el.innerHTML = `<div class="ek-punch-location-head"><div class="ek-punch-radar"><span class="ek-punch-radar-dot"></span></div><div class="ek-punch-location-copy"><b id="punchLocationPreviewTitle">Mendapatkan lokasi…</b><small id="punchLocationPreviewText">GPS sedang mencari titik terbaik untuk Punch Masuk.</small></div></div><div id="punchLocationMap" class="ek-punch-location-map hidden" aria-label="Peta lokasi Punch Masuk"></div>`;
+    el.innerHTML = `<div class="ek-punch-location-head"><div class="ek-punch-radar"><span class="ek-punch-radar-dot"></span></div><div class="ek-punch-location-copy"><b id="punchLocationPreviewTitle">Mendapatkan lokasi…</b><small id="punchLocationPreviewText">GPS bermula pada sasaran ±80m dan dilonggarkan bertahap hingga ±140m.</small></div></div><div id="punchLocationMap" class="ek-punch-location-map hidden" aria-label="Peta lokasi Punch Masuk"></div>`;
     anchor.insertAdjacentElement('afterend', el);
     return el;
   }
