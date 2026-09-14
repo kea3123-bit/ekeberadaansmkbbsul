@@ -1,0 +1,171 @@
+name: Apply progressive GPS acquisition
+
+'on':
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - '.github/workflows/apply-progressive-gps.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/performance-v2
+          fetch-depth: 0
+
+      - name: Patch progressive GPS flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          scripts = Path('Scripts.html')
+          text = scripts.read_text(encoding='utf-8')
+
+          policy_pattern = re.compile(r"  function punchGpsPolicy\(\)\{.*?\n  \}\n\n  function clientHaversineMeters", re.S)
+          policy_replacement = """  function punchGpsPolicy(){
+    const s=state.boot?.settings||{};
+    const radiusM=Math.max(1,Number(s.radiusM)||200);
+    const thresholdsM=[80,100,120,140];
+    return {
+      radiusM,
+      configuredMaxAccuracyM:Math.max(140,Number(s.maxGpsAccuracyM)||140),
+      thresholdsM,
+      stageMs:2000,
+      timeoutMs:8000
+    };
+  }
+
+  function clientHaversineMeters"""
+          text, n = policy_pattern.subn(policy_replacement, text, count=1)
+          if n != 1:
+              raise SystemExit(f'Expected one punchGpsPolicy block, found {n}')
+
+          best_pattern = re.compile(r"  function bestPunchPosition\(\)\{.*?\n  \}\n\n  async function startPunch\(type\)\{", re.S)
+          best_replacement = """  function bestPunchPosition(){
+    const policy=punchGpsPolicy();
+    return new Promise((resolve,reject)=>{
+      if(!navigator.geolocation)return reject(new Error('Pelayar ini tidak menyokong geolocation.'));
+      let best=null,watchId=null,settled=false,stageIndex=0;
+      const timers=[];
+      const threshold=()=>policy.thresholdsM[stageIndex];
+      const clearAll=()=>{
+        timers.forEach(t=>clearTimeout(t));
+        if(watchId!==null)try{navigator.geolocation.clearWatch(watchId);}catch(e){}
+      };
+      const finish=(err,pos)=>{
+        if(settled)return;
+        settled=true; clearAll();
+        err?reject(err):resolve(pos);
+      };
+      const describe=(prefix,pos)=>{
+        const acc=pos?.coords?Math.round(Number(pos.coords.accuracy)||0):0;
+        const distance=pos?.coords?Math.round(punchGpsDistance(pos)):NaN;
+        return `${prefix} · sasaran ±${threshold()}m${acc?` · bacaan ±${acc}m`:''}${Number.isFinite(distance)?` · anggaran ${distance}m / ${Math.round(policy.radiusM)}m`:''}`;
+      };
+      const tryAccept=pos=>{
+        if(!pos?.coords)return false;
+        const accuracy=Number(pos.coords.accuracy);
+        if(!Number.isFinite(accuracy)||accuracy<0)return false;
+        if(accuracy<=threshold()){
+          gps('busy',describe('Lokasi diterima',pos));
+          finish(null,pos);
+          return true;
+        }
+        return false;
+      };
+      const advanceStage=()=>{
+        if(settled)return;
+        if(stageIndex>=policy.thresholdsM.length-1)return;
+        const previous=threshold();
+        stageIndex++;
+        gps('busy',describe(`Belum capai ±${previous}m. Melonggarkan ketepatan`,best));
+        if(best)tryAccept(best);
+      };
+
+      gps('busy','Mengesan lokasi… sasaran GPS ±80m');
+      for(let i=1;i<policy.thresholdsM.length;i++){
+        timers.push(setTimeout(advanceStage,policy.stageMs*i));
+      }
+      timers.push(setTimeout(()=>{
+        if(settled)return;
+        if(best&&tryAccept(best))return;
+        if(!best)return finish(new Error('Lokasi GPS belum dapat dikesan selepas 8 saat. Aktifkan Location/GPS dan cuba semula.'));
+        const accuracy=Math.round(Number(best.coords.accuracy)||0),distance=Math.round(punchGpsDistance(best));
+        finish(new Error(`Ketepatan GPS masih ±${accuracy}m selepas cuba bertahap 80m → 100m → 120m → 140m. Had akhir ialah ±140m.${Number.isFinite(distance)?` Anggaran lokasi semasa ${distance}m dari pusat.`:''}`));
+      },policy.timeoutMs));
+
+      watchId=navigator.geolocation.watchPosition(pos=>{
+        const accuracy=Number(pos?.coords?.accuracy);
+        if(!Number.isFinite(accuracy)||accuracy<0)return;
+        if(!best||accuracy<Number(best.coords.accuracy))best=pos;
+        if(tryAccept(pos))return;
+        const chosen=best||pos;
+        gps('busy',describe('Mengesan lokasi',chosen));
+      },err=>{
+        if(err?.code===1)return finish(new Error('Akses lokasi ditolak. Benarkan Location untuk laman ini.'));
+        if(!best&&err?.code===2)gps('busy',`GPS belum mendapat lokasi · sasaran ±${threshold()}m · mencuba lagi…`);
+      },{enableHighAccuracy:true,timeout:policy.timeoutMs+1000,maximumAge:0});
+    });
+  }
+
+  async function startPunch(type){"""
+          text, n = best_pattern.subn(best_replacement, text, count=1)
+          if n != 1:
+              raise SystemExit(f'Expected one bestPunchPosition block, found {n}')
+
+          old_status = "setPunchBusy(true); gps('busy',test?'MOD TEST — merakam waktu dan IP…':'Mencari bacaan GPS terbaik…');"
+          new_status = "setPunchBusy(true); gps('busy',test?'MOD TEST — merakam waktu dan IP…':'Mengesan lokasi… sasaran GPS ±80m');"
+          if old_status not in text:
+              raise SystemExit('Expected startPunch GPS status not found')
+          text = text.replace(old_status, new_status, 1)
+          scripts.write_text(text, encoding='utf-8')
+
+          core = Path('apps-script/00_Core.gs')
+          text = core.read_text(encoding='utf-8')
+          old = "MAX_GPS_ACCURACY_M: '120'"
+          if old not in text:
+              raise SystemExit('Expected default MAX_GPS_ACCURACY_M 120 not found')
+          core.write_text(text.replace(old, "MAX_GPS_ACCURACY_M: '140'", 1), encoding='utf-8')
+
+          settings = Path('apps-script/42_Settings.gs')
+          text = settings.read_text(encoding='utf-8')
+          old = "const maxAccuracy = Number(settings.MAX_GPS_ACCURACY_M);"
+          new = "const maxAccuracy = Math.max(140, Number(settings.MAX_GPS_ACCURACY_M) || 0);"
+          if old not in text:
+              raise SystemExit('Expected server maxAccuracy line not found')
+          text = text.replace(old, new, 1)
+          old = "maxGpsAccuracyM: Number(s.MAX_GPS_ACCURACY_M),"
+          new = "maxGpsAccuracyM: Math.max(140, Number(s.MAX_GPS_ACCURACY_M) || 0),"
+          if old not in text:
+              raise SystemExit('Expected public maxGpsAccuracyM line not found')
+          text = text.replace(old, new, 1)
+          settings.write_text(text, encoding='utf-8')
+
+          config = Path('web/config.js')
+          text = config.read_text(encoding='utf-8')
+          old = 'GPS sedang mencari titik terbaik untuk Punch Masuk.'
+          new = 'GPS bermula pada sasaran ±80m dan dilonggarkan bertahap hingga ±140m.'
+          if old not in text:
+              raise SystemExit('Expected location preview copy not found')
+          config.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Commit patch and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/apply-progressive-gps.yml
+          git config user.name 'eKeberadaan Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add Scripts.html web/config.js apps-script/00_Core.gs apps-script/42_Settings.gs .github/workflows/apply-progressive-gps.yml
+          git commit -m "feat: use progressive 80-140m GPS acquisition"
+          git push origin HEAD:refactor/performance-v2
