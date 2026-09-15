@@ -223,7 +223,10 @@ function punch(token, type, location, clientInfo) {
 
   try {
     const sh = getSheetOrThrow_(EK.SHEETS.ATTENDANCE);
-    const rec = findAttendanceRecord_(dateKey,user.email);
+    // ensureAttendanceSlotForUser_ already resolves the current user's row.
+    // Reuse it instead of performing a second attendance-index lookup + Sheet read
+    // on every punch. The fallback protects unusual/manual sheet mutations.
+    const rec = slot.record || findAttendanceRecord_(dateKey,user.email);
     if (!rec) throw new Error('Rekod waktu hari ini tidak dapat dikenal pasti. Cuba semula.');
     values = padAttendanceValues_(rec.values);
 
