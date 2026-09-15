@@ -93,6 +93,19 @@ const EK_PERF = Object.freeze({
   TRUSTED_DEVICES_TTL_SEC: 60
 });
 
+// CacheService limits each individual value. Large JSON structures (especially
+// the attendance date/email index) used to silently stop being cached once they
+// crossed ~90k characters, forcing full-sheet rebuilds on later executions.
+// Store larger payloads as versioned shards and publish the tiny manifest last,
+// so readers either see a complete cache generation or safely fall back to the
+// source Sheet. Old shards expire naturally with the same short TTL.
+const EK_CACHE_JSON_ = Object.freeze({
+  INLINE_MAX_CHARS: 50000,
+  SHARD_CHARS: 50000,
+  MAX_SHARDS: 16,
+  MANIFEST_PREFIX: '__EK_JSON_SHARDS_V1__|'
+});
+
 // Per-execution runtime cache. This avoids repeatedly resolving the active
 // Spreadsheet, sheet handles and script timezone during one server call.
 let EK_RUNTIME_SS_ = null;
@@ -105,18 +118,56 @@ let EK_RUNTIME_ABSENCE_ROWS_ = null;
 let EK_RUNTIME_TIME_REVIEW_ROWS_ = null;
 
 function getScriptCache_() { return CacheService.getScriptCache(); }
+function cacheJsonShardKey_(key, version, index) {
+  return `${key}:S:${version}:${index}`;
+}
 function cacheGetJson_(key) {
   try {
-    const raw = getScriptCache_().get(key);
-    return raw ? JSON.parse(raw) : null;
+    const cache = getScriptCache_();
+    const raw = cache.get(key);
+    if (!raw) return null;
+    if (!raw.startsWith(EK_CACHE_JSON_.MANIFEST_PREFIX)) return JSON.parse(raw);
+
+    const meta = raw.slice(EK_CACHE_JSON_.MANIFEST_PREFIX.length).split('|');
+    const version = String(meta[0] || '');
+    const count = Number(meta[1] || 0);
+    if (!version || !Number.isInteger(count) || count < 1 || count > EK_CACHE_JSON_.MAX_SHARDS) return null;
+
+    const keys = [];
+    for (let i = 0; i < count; i++) keys.push(cacheJsonShardKey_(key, version, i));
+    const found = cache.getAll(keys);
+    const chunks = [];
+    for (let i = 0; i < keys.length; i++) {
+      if (!Object.prototype.hasOwnProperty.call(found, keys[i])) return null;
+      chunks.push(found[keys[i]]);
+    }
+    return JSON.parse(chunks.join(''));
   } catch (e) { return null; }
 }
 function cachePutJson_(key, value, ttlSec) {
   try {
+    const cache = getScriptCache_();
     const raw = JSON.stringify(value);
-    // Apps Script Cache items are limited in size. Skip caching oversized data.
-    if (raw.length < 90000) getScriptCache_().put(key, raw, ttlSec);
-  } catch (e) {}
+    const ttl = Math.max(1, Number(ttlSec) || 60);
+    if (raw.length <= EK_CACHE_JSON_.INLINE_MAX_CHARS) {
+      cache.put(key, raw, ttl);
+      return true;
+    }
+
+    const count = Math.ceil(raw.length / EK_CACHE_JSON_.SHARD_CHARS);
+    if (count > EK_CACHE_JSON_.MAX_SHARDS) return false;
+    const version = Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+    const shards = {};
+    for (let i = 0; i < count; i++) {
+      shards[cacheJsonShardKey_(key, version, i)] = raw.slice(
+        i * EK_CACHE_JSON_.SHARD_CHARS,
+        (i + 1) * EK_CACHE_JSON_.SHARD_CHARS
+      );
+    }
+    cache.putAll(shards, ttl);
+    cache.put(key, `${EK_CACHE_JSON_.MANIFEST_PREFIX}${version}|${count}`, ttl);
+    return true;
+  } catch (e) { return false; }
 }
 function invalidateUsersCache_() { EK_RUNTIME_USERS_ = null; try { getScriptCache_().remove(EK_PERF.USERS_CACHE_KEY); } catch (e) {} }
 function invalidateSettingsCache_() { EK_RUNTIME_SETTINGS_ = null; try { getScriptCache_().remove(EK_PERF.SETTINGS_CACHE_KEY); } catch (e) {} }
