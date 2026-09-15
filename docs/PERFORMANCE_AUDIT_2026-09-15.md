@@ -8,6 +8,8 @@ The app is already substantially modularized. The backend no longer lives in one
 
 Therefore, reducing source-file line count by itself will not materially accelerate the app. The current build loads all generated JavaScript bundles on every visit, so merely moving the same code into more source files changes maintainability, not first-load bytes or parse work. The larger performance wins are fewer Apps Script RPC round trips, fewer Spreadsheet service reads/writes, scalable indexes/caches, and keeping contention off the punch path.
 
+The validated build at this audit produced 46,444 bytes HTML, 219,496 bytes JavaScript including Bootstrap, 304,835 bytes CSS including Bootstrap, and 654,255 bytes total static output before transport compression. The application-specific optional `absence` and `admin` bundles are about 53 KB combined, so lazy loading them is useful but still secondary to avoiding Google Sheets service work.
+
 ## Current architecture audited
 
 - Browser: GitHub Pages static frontend.
@@ -39,6 +41,14 @@ This change automatically protects users, settings, trusted devices, attendance 
 
 The punch path now reuses `slot.record`, with `findAttendanceRecord_()` retained only as a defensive fallback. Normal punch therefore removes one Spreadsheet row read per request.
 
+### P0 — monthly punch card read amplified by total staff count
+
+The previous `getAttendanceValuesForUserMonth_()` path took the month index, read every full attendance row for that month, and only then filtered to the requested email. For roughly 100 staff, a normal 30-day punch-card request could read about 3,000 attendance rows (roughly 105,000 cells at 35 columns) when the user only needs about 30 rows.
+
+### Applied fix
+
+`getAttendanceValuesForUserMonthFast_()` now performs at most 31 date+email index lookups and reads only the row numbers belonging to that user. `buildPunchCardMonthForUser_()` uses the narrow path for both the employee and admin punch-card views. The Sheet read now scales with days in the month, not with staff count × days.
+
 ### P1 — frontend is split but not lazy-loaded
 
 The build generates multiple cacheable JavaScript assets, but all of them are emitted as deferred scripts in `index.html`. Admin, absence and reporting code is therefore downloaded and parsed even for a normal user who only opens Home and punches.
@@ -65,13 +75,17 @@ Both collections are currently read/cached as whole arrays and filtered in memor
 
 Run it from the Apps Script editor after publishing the matching backend version. It is intentionally not exposed through the public Pages bridge.
 
+## Verification performed in repository CI
+
+The branch CI passed backend/frontend syntax validation, modular static build, desktop/mobile headless-Chrome runtime smoke, Bootstrap contracts, async-loading regression contracts, static performance budgets and canonical backend contracts after the cache and punch-path changes.
+
 ## Recommended launch verification
 
-After copying the updated `apps-script/` files into the existing Apps Script project and publishing a new Web App version, run `diagnosePerformanceBackend()` twice and retain both outputs. Then use the existing burst harness at 20, 50 and 100 concurrent/near-concurrent users. Compare total punch time, slot wait, Sheet write time, Apps Script errors and duplicate attendance rows.
+After copying the updated `apps-script/` files into the existing Apps Script project and publishing a new Web App version, run `diagnosePerformanceBackend()` twice and retain both outputs. Then use the existing burst harness at 20, 50 and 100 concurrent/near-concurrent users. Compare total punch time, slot wait, Sheet write time, Apps Script errors and duplicate attendance rows. Also compare `getMyPunchCardMonth` timing before/after deployment because it now uses a user-scoped monthly Sheet read.
 
 ## Priority order from here
 
-1. Deploy and measure the sharded-cache + punch-read changes.
+1. Deploy and measure the sharded-cache, punch-read and narrow monthly-card changes.
 2. If attendance cache approaches its shard cap, convert the global attendance index to month/day shards.
 3. Lazy-load `absence` and `admin` browser bundles so line/module splitting produces a real first-load improvement.
 4. If trusted-device or schedule-history tables grow materially, move them to per-user cache keys.
