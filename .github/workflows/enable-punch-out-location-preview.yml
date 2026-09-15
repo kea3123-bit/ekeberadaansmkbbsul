@@ -1,0 +1,66 @@
+name: Enable progressive GPS preview for punch out
+
+'on':
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - '.github/workflows/enable-punch-out-location-preview.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/performance-v2
+          fetch-depth: 0
+      - name: Enable preview for IN and OUT
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('web/config.js')
+          s = p.read_text(encoding='utf-8')
+
+          replacements = [
+            ("if (activeType === 'IN') showFixedPosition(pos);", "if (activeType === 'IN' || activeType === 'OUT') showFixedPosition(pos);"),
+            ("if (activeType === 'IN') failPreview(err?.message || err);", "if (activeType === 'IN' || activeType === 'OUT') failPreview(err?.message || err);"),
+            ("if (activeType === 'IN' && !test) beginPreview();", "if ((activeType === 'IN' || activeType === 'OUT') && !test) beginPreview();"),
+            ("aria-label=\"Peta lokasi Punch Masuk\"", "aria-label=\"Peta lokasi rekod waktu\""),
+          ]
+          for old, new in replacements:
+            if old not in s:
+              raise SystemExit(f'Missing expected text: {old}')
+            s = s.replace(old, new, 1)
+
+          old = "setPreview('Mendapatkan lokasi…', 'GPS bermula pada sasaran ±80m dan dilonggarkan bertahap hingga ±140m.', false);"
+          new = "setPreview('Mendapatkan lokasi…', `GPS ${activeType === 'OUT' ? 'Punch Keluar' : 'Punch Masuk'} bermula pada sasaran ±80m dan dilonggarkan bertahap hingga ±140m.`, false);"
+          if old not in s:
+            old = "setPreview('Mendapatkan lokasi…', 'GPS sedang mencari titik terbaik untuk Punch Masuk.', false);"
+          if old not in s:
+            raise SystemExit('Missing beginPreview text')
+          s = s.replace(old, new, 1)
+
+          old = "'Lokasi Punch Masuk dikunci',"
+          new = "`Lokasi ${activeType === 'OUT' ? 'Punch Keluar' : 'Punch Masuk'} dikunci`,"
+          if old not in s:
+            raise SystemExit('Missing locked-location title')
+          s = s.replace(old, new, 1)
+
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit patch and remove workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/enable-punch-out-location-preview.yml
+          git config user.name 'eKeberadaan Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add web/config.js .github/workflows/enable-punch-out-location-preview.yml
+          git commit -m "fix: show progressive GPS preview for punch out"
+          git push origin HEAD:refactor/performance-v2
