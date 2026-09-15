@@ -40,7 +40,7 @@ function buildPunchCardMonthForUser_(user, monthKey) {
   const daysInMonth = new Date(year, month, 0).getDate();
   let records = [];
   {
-    const rows = getAttendanceValuesForUserMonth_(user.email, monthKey);
+    const rows = getAttendanceValuesForUserMonthFast_(user.email, monthKey);
     records = rows
       .map(v => {
         const dateKey = dateCellToKey_(v[0]);
