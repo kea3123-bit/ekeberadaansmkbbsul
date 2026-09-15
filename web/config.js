@@ -366,7 +366,7 @@ window.EK_CONFIG = Object.freeze({
     el = document.createElement('div');
     el.id = 'punchLocationPreview';
     el.className = 'ek-punch-location-preview hidden';
-    el.innerHTML = `<div class="ek-punch-location-head"><div class="ek-punch-radar"><span class="ek-punch-radar-dot"></span></div><div class="ek-punch-location-copy"><b id="punchLocationPreviewTitle">Mendapatkan lokasi…</b><small id="punchLocationPreviewText">GPS bermula pada sasaran ±80m dan dilonggarkan bertahap hingga ±140m.</small></div></div><div id="punchLocationMap" class="ek-punch-location-map hidden" aria-label="Peta lokasi Punch Masuk"></div>`;
+    el.innerHTML = `<div class="ek-punch-location-head"><div class="ek-punch-radar"><span class="ek-punch-radar-dot"></span></div><div class="ek-punch-location-copy"><b id="punchLocationPreviewTitle">Mendapatkan lokasi…</b><small id="punchLocationPreviewText">GPS bermula pada sasaran ±80m dan dilonggarkan bertahap hingga ±140m.</small></div></div><div id="punchLocationMap" class="ek-punch-location-map hidden" aria-label="Peta lokasi rekod waktu"></div>`;
     anchor.insertAdjacentElement('afterend', el);
     return el;
   }
@@ -389,7 +389,7 @@ window.EK_CONFIG = Object.freeze({
   }
 
   function beginPreview() {
-    setPreview('Mendapatkan lokasi…', 'GPS bermula pada sasaran ±80m dan dilonggarkan bertahap hingga ±140m.', false);
+    setPreview('Mendapatkan lokasi…', `GPS ${activeType === 'OUT' ? 'Punch Keluar' : 'Punch Masuk'} bermula pada sasaran ±80m dan dilonggarkan bertahap hingga ±140m.`, false);
     document.getElementById('punchLocationMap')?.classList.add('hidden');
   }
 
@@ -447,7 +447,7 @@ window.EK_CONFIG = Object.freeze({
     const radius = Math.max(1, Number(state.boot?.settings?.radiusM) || 200);
     const netNote = constrainedNetwork() ? ' · peta tidak dimuat untuk jimat data' : '';
     setPreview(
-      'Lokasi Punch Masuk dikunci',
+      `Lokasi ${activeType === 'OUT' ? 'Punch Keluar' : 'Punch Masuk'} dikunci`,
       `Ketepatan ±${accuracy}m${Number.isFinite(distance) ? ` · ${distance}m dari pusat / radius ${Math.round(radius)}m` : ''}${netNote}`,
       true
     );
@@ -463,10 +463,10 @@ window.EK_CONFIG = Object.freeze({
       bestPunchPosition = async function() {
         try {
           const pos = await originalBestPunchPosition();
-          if (activeType === 'IN') showFixedPosition(pos);
+          if (activeType === 'IN' || activeType === 'OUT') showFixedPosition(pos);
           return pos;
         } catch (err) {
-          if (activeType === 'IN') failPreview(err?.message || err);
+          if (activeType === 'IN' || activeType === 'OUT') failPreview(err?.message || err);
           throw err;
         }
       };
@@ -474,7 +474,7 @@ window.EK_CONFIG = Object.freeze({
       const patchedStartPunch = async function(type) {
         activeType = String(type || '').toUpperCase();
         const test = String(state.boot?.settings?.systemMode || 'REAL').toUpperCase() === 'TEST';
-        if (activeType === 'IN' && !test) beginPreview();
+        if ((activeType === 'IN' || activeType === 'OUT') && !test) beginPreview();
         try { return await originalStartPunch(type); }
         finally { activeType = ''; }
       };
