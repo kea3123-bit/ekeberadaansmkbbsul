@@ -1,0 +1,200 @@
+name: Integrate public holiday calendar
+
+on:
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - '.github/workflows/public-holiday-integration.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/performance-v2
+          fetch-depth: 0
+
+      - name: Apply public holiday integration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text()
+              found = text.count(old)
+              if found < count:
+                  raise SystemExit(f"{path}: expected at least {count} occurrence(s), found {found}: {old[:120]!r}")
+              text = text.replace(old, new, count)
+              p.write_text(text)
+
+          # setupSystem creates/seeds the central holiday sheet for fresh installs.
+          replace('apps-script/00_Core.gs',
+              "  setupTrustedDevicesSheet_(ss);\n  getSessionSecret_();",
+              "  setupTrustedDevicesSheet_(ss);\n  setupPublicHolidaySheet_(ss);\n  seedKedahPublicHolidays2026_(ss.getSheetByName(EK_PUBLIC_HOLIDAY_SHEET_));\n  try { PropertiesService.getScriptProperties().setProperty(EK_PUBLIC_HOLIDAY_SEED_PROPERTY_, 'TRUE'); } catch (e) {}\n  getSessionSecret_();")
+
+          # A public holiday is not an expected working day for absence/reminder logic.
+          replace('apps-script/61_Absence.gs',
+              "  if (!isOnOrAfterSystemStart_(dateKey, settings)) return false;\n  const codes = ['SUN','MON','TUE','WED','THU','FRI','SAT'];",
+              "  if (!isOnOrAfterSystemStart_(dateKey, settings)) return false;\n  if (isPublicHolidayDate_(dateKey)) return false;\n  const codes = ['SUN','MON','TUE','WED','THU','FRI','SAT'];")
+
+          # Never derive LEWAT/BALIK AWAL on a configured public holiday.
+          replace('apps-script/60_TimeReview.gs',
+              "  const status=String(v[14]||'').toUpperCase();\n  if(status==='TIDAK HADIR')return [];\n\n  const fallback=stored.slice();",
+              "  const status=String(v[14]||'').toUpperCase();\n  if(status==='TIDAK HADIR')return [];\n  dateKey=dateCellToKey_(dateKey||v[0])||todayKey_();\n  if(isPublicHolidayDate_(dateKey))return [];\n\n  const fallback=stored.slice();")
+          replace('apps-script/60_TimeReview.gs',
+              "  settings=settings||getSettings_();\n  dateKey=dateCellToKey_(dateKey||v[0])||todayKey_();\n  const flags=[];",
+              "  settings=settings||getSettings_();\n  const flags=[];")
+
+          # Digital punch card: holiday marker applies to all users, but real punch wins.
+          replace('apps-script/20_UserApi.gs',
+              "  const existingByDay = new Map(records.map(r => [Number(r.day), r]));\n  for (let day = 1; day <= daysInMonth; day++) {",
+              "  const existingByDay = new Map(records.map(r => [Number(r.day), r]));\n\n  // Cuti umum berpusat digunakan untuk Kad Perakam pengguna dan Pentadbir.\n  // Rekod punch sebenar sentiasa mengatasi label cuti.\n  const monthHolidays = getPublicHolidaysInRange_(`${monthKey}-01`, `${monthKey}-${String(daysInMonth).padStart(2,'0')}`);\n  monthHolidays.forEach(holiday => {\n    if (holiday.date < systemStartDate) return;\n    const day = Number(holiday.date.slice(8,10));\n    const existing = existingByDay.get(day);\n    if (existing && (existing.inTime || existing.outTime || existing.inTime2 || existing.outTime2)) return;\n    if (existing) {\n      existing.status = 'PUBLIC_HOLIDAY';\n      existing.source = 'CUTI_UMUM';\n      existing.editedBy = 'SISTEM';\n      existing.reason = holiday.name;\n      existing.holiday = holiday;\n    } else {\n      const added = {\n        day, date: holiday.date, status: 'PUBLIC_HOLIDAY',\n        inTime: '', outTime: '', inTime2: '', outTime2: '',\n        source: 'CUTI_UMUM', editedBy: 'SISTEM', reason: holiday.name, holiday\n      };\n      records.push(added);\n      existingByDay.set(day, added);\n    }\n  });\n\n  for (let day = 1; day <= daysInMonth; day++) {")
+          replace('apps-script/20_UserApi.gs',
+              "    const existing = existingByDay.get(day);\n    if (existing && (existing.inTime || existing.outTime)) continue;",
+              "    const existing = existingByDay.get(day);\n    if (existing && existing.status === 'PUBLIC_HOLIDAY') continue;\n    if (existing && (existing.inTime || existing.outTime)) continue;")
+
+          replace('apps-script/20_UserApi.gs',
+              "  const dateKey = todayKey_();\n  const schedule = getEffectiveSchedule_(user,settings);",
+              "  const dateKey = todayKey_();\n  const publicHoliday = getPublicHolidayByDate_(dateKey);\n  const schedule = getEffectiveSchedule_(user,settings);")
+          replace('apps-script/20_UserApi.gs',
+              "    if (String(values[15] || '').toUpperCase() === 'TIDAK_HADIR' && !values[4]) {",
+              "    if (!publicHoliday && String(values[15] || '').toUpperCase() === 'TIDAK_HADIR' && !values[4]) {")
+          replace('apps-script/20_UserApi.gs',
+              "    if (!isTestMode && type === 'IN') {",
+              "    if (!isTestMode && !publicHoliday && type === 'IN') {")
+          replace('apps-script/20_UserApi.gs',
+              "    if (!isTestMode && refTime) {",
+              "    if (!isTestMode && !publicHoliday && refTime) {")
+          replace('apps-script/20_UserApi.gs',
+              "    message:`Rekod waktu ${label} berjaya${exceptionType ? ` — status ${exceptionType}` : ''}.`,",
+              "    message:`Rekod waktu ${label} berjaya${publicHoliday ? ` — ${publicHoliday.name}` : (exceptionType ? ` — status ${exceptionType}` : '')}.`,")
+
+          # Admin daily data includes the central calendar for Settings UI.
+          replace('apps-script/21_AdminApi.gs',
+              "  const report = buildDailyReport_(dateKey, activeUsers, settings);\n\n  return {",
+              "  const report = buildDailyReport_(dateKey, activeUsers, settings);\n  const publicHolidays = readPublicHolidays_().filter(r => r.active).sort((a,b) => a.date.localeCompare(b.date)).map(publicHoliday_);\n\n  return {")
+          replace('apps-script/21_AdminApi.gs',
+              "    settings: publicSettings_(settings),\n    report,",
+              "    settings: publicSettings_(settings),\n    publicHolidays,\n    report,")
+
+          # Manual admin attendance on a holiday is valid attendance without timing exceptions.
+          replace('apps-script/21_AdminApi.gs',
+              "  const email=normalizeEmail_(payload.email),dateKey=validateDateKey_(payload.date);\n  assertSystemDate_(dateKey,getSettings_(),'Tarikh rekod');",
+              "  const email=normalizeEmail_(payload.email),dateKey=validateDateKey_(payload.date);\n  assertSystemDate_(dateKey,getSettings_(),'Tarikh rekod');\n  const publicHoliday=getPublicHolidayByDate_(dateKey);")
+          replace('apps-script/21_AdminApi.gs',
+              "  if(inTime&&schedule.s1In&&timeToMinutes_(inTime)>timeToMinutes_(schedule.s1In))flags.push('LEWAT');\n  if(inTime2&&schedule.s2In&&timeToMinutes_(inTime2)>timeToMinutes_(schedule.s2In)&&!flags.includes('LEWAT'))flags.push('LEWAT');",
+              "  if(!publicHoliday&&inTime&&schedule.s1In&&timeToMinutes_(inTime)>timeToMinutes_(schedule.s1In))flags.push('LEWAT');\n  if(!publicHoliday&&inTime2&&schedule.s2In&&timeToMinutes_(inTime2)>timeToMinutes_(schedule.s2In)&&!flags.includes('LEWAT'))flags.push('LEWAT');")
+          replace('apps-script/21_AdminApi.gs',
+              "  if(finalOutTime&&finalOutRef&&timeToMinutes_(finalOutTime)<timeToMinutes_(finalOutRef))flags.push('BALIK AWAL');",
+              "  if(!publicHoliday&&finalOutTime&&finalOutRef&&timeToMinutes_(finalOutTime)<timeToMinutes_(finalOutRef))flags.push('BALIK AWAL');")
+          replace('apps-script/21_AdminApi.gs',
+              "  if(inTime&&schedule.s1In&&timeToMinutes_(inTime)>timeToMinutes_(schedule.s1In))exceptionSpecs.push({type:'LEWAT',session:1,recordTime:inTime,referenceTime:schedule.s1In});\n  if(inTime2&&schedule.s2In&&timeToMinutes_(inTime2)>timeToMinutes_(schedule.s2In))exceptionSpecs.push({type:'LEWAT',session:2,recordTime:inTime2,referenceTime:schedule.s2In});\n  if(finalOutTime&&finalOutRef&&timeToMinutes_(finalOutTime)<timeToMinutes_(finalOutRef))exceptionSpecs.push({type:'BALIK AWAL',session:finalSession,recordTime:finalOutTime,referenceTime:finalOutRef});",
+              "  if(!publicHoliday&&inTime&&schedule.s1In&&timeToMinutes_(inTime)>timeToMinutes_(schedule.s1In))exceptionSpecs.push({type:'LEWAT',session:1,recordTime:inTime,referenceTime:schedule.s1In});\n  if(!publicHoliday&&inTime2&&schedule.s2In&&timeToMinutes_(inTime2)>timeToMinutes_(schedule.s2In))exceptionSpecs.push({type:'LEWAT',session:2,recordTime:inTime2,referenceTime:schedule.s2In});\n  if(!publicHoliday&&finalOutTime&&finalOutRef&&timeToMinutes_(finalOutTime)<timeToMinutes_(finalOutRef))exceptionSpecs.push({type:'BALIK AWAL',session:finalSession,recordTime:finalOutTime,referenceTime:finalOutRef});")
+
+          # Daily report shows CUTI UMUM for everyone with no punch. Punches win.
+          replace('apps-script/30_Reporting.gs',
+              "  const absentMins = timeToMinutes_(settings.ABSENT_AFTER);\n\n  return users.map(u => {",
+              "  const absentMins = timeToMinutes_(settings.ABSENT_AFTER);\n  const publicHoliday = getPublicHolidayByDate_(dateKey);\n\n  return users.map(u => {")
+          replace('apps-script/30_Reporting.gs',
+              "    const presenceRequest = (!v || !v[4]) ? findRelevantPresenceForDate_(u.email, dateKey, absenceRows) : null;\n    let status;\n    if (v && String(v[14] || '').toUpperCase() === 'TIDAK HADIR') {\n      status = 'TIDAK HADIR';\n    } else if (v && v[4]) {\n      status = effectiveAttendanceStatus_(v,u,settings,dateKey);\n    } else if (presenceRequest) {",
+              "    const hasPunch = !!(v && v[4]);\n    const presenceRequest = !hasPunch ? findRelevantPresenceForDate_(u.email, dateKey, absenceRows) : null;\n    let status;\n    if (hasPunch) {\n      status = effectiveAttendanceStatus_(v,u,settings,dateKey);\n    } else if (publicHoliday) {\n      status = 'CUTI UMUM';\n    } else if (v && String(v[14] || '').toUpperCase() === 'TIDAK HADIR') {\n      status = 'TIDAK HADIR';\n    } else if (presenceRequest) {")
+          replace('apps-script/30_Reporting.gs',
+              "      source: v ? String(v[15] || '') : (coveringRequest ? 'TIDAK_HADIR' : (presenceRequest ? 'KEBERADAAN' : '')),\n      editedBy: v ? String(v[16] || '') : (presenceRequest ? String(presenceRequest.reviewedBy || '') : ''),\n      reason: v ? String(v[17] || '') : (coveringRequest ? `${coveringRequest.type}${coveringRequest.status === 'MENUNGGU' ? ' — MENUNGGU KELULUSAN' : ''}` : (presenceRequest ? presenceRequestReason_(presenceRequest, '') : ''))",
+              "      source: hasPunch ? String(v[15] || '') : (publicHoliday ? 'CUTI_UMUM' : (coveringRequest ? 'TIDAK_HADIR' : (presenceRequest ? 'KEBERADAAN' : ''))),\n      editedBy: hasPunch ? String(v[16] || '') : (presenceRequest ? String(presenceRequest.reviewedBy || '') : ''),\n      reason: hasPunch ? String(v[17] || '') : (publicHoliday ? publicHoliday.name : (coveringRequest ? `${coveringRequest.type}${coveringRequest.status === 'MENUNGGU' ? ' — MENUNGGU KELULUSAN' : ''}` : (presenceRequest ? presenceRequestReason_(presenceRequest, '') : ''))) ")
+          replace('apps-script/30_Reporting.gs',
+              "  const s = {total: report.length, hadir: 0, lewat: 0, balikAwal: 0, tidakHadir: 0, belumHadir: 0};",
+              "  const s = {total: report.length, hadir: 0, lewat: 0, balikAwal: 0, tidakHadir: 0, belumHadir: 0, cutiUmum: 0};")
+          replace('apps-script/30_Reporting.gs',
+              "    if (st === 'TIDAK HADIR') s.tidakHadir++;\n    else if (st === 'BELUM HADIR') s.belumHadir++;",
+              "    if (st === 'TIDAK HADIR') s.tidakHadir++;\n    else if (st === 'BELUM HADIR') s.belumHadir++;\n    else if (st === 'CUTI UMUM') s.cutiUmum++;")
+          replace('apps-script/30_Reporting.gs',
+              "      if (working) {\n        if (st === 'TIDAK HADIR') s.absent++;",
+              "      if (working || (v && v[4])) {\n        if (st === 'TIDAK HADIR') s.absent++;")
+
+          # GitHub Pages bridge allowlist for add/remove/list holiday admin actions.
+          replace('apps-script/Bridges.gs',
+              "    'adminBulkResetPasswords',\n    'adminGetPunchCardMonth',",
+              "    'adminAddPublicHoliday',\n    'adminBulkResetPasswords',\n    'adminDeletePublicHoliday',\n    'adminGetPunchCardMonth',\n    'adminListPublicHolidays',")
+          replace('apps-script/Bridges.gs',
+              "  switch (method) {\n    case 'adminBulkResetPasswords': return adminBulkResetPasswords.apply(null, args);",
+              "  switch (method) {\n    case 'adminAddPublicHoliday': return adminAddPublicHoliday.apply(null, args);\n    case 'adminBulkResetPasswords': return adminBulkResetPasswords.apply(null, args);\n    case 'adminDeletePublicHoliday': return adminDeletePublicHoliday.apply(null, args);")
+          replace('apps-script/Bridges.gs',
+              "    case 'adminGetPunchCardMonth': return adminGetPunchCardMonth.apply(null, args);\n    case 'adminListTrustedDevices':",
+              "    case 'adminGetPunchCardMonth': return adminGetPunchCardMonth.apply(null, args);\n    case 'adminListPublicHolidays': return adminListPublicHolidays.apply(null, args);\n    case 'adminListTrustedDevices':")
+
+          # Index: keep 7-day wording consistent and add holiday controls to Settings.
+          p = Path('Index.html')
+          text = p.read_text().replace('sesi 30 hari', 'sesi 7 hari').replace('diingati selama 30 hari', 'diingati selama 7 hari').replace('sesi peranti aktif sehingga 30 hari', 'sesi peranti aktif sehingga 7 hari')
+          holiday_marker = '                <label class="span-2">Hari bekerja<input name="workingDays" placeholder="SUN,MON,TUE,WED,THU" required><small>Gunakan kod SUN, MON, TUE, WED, THU, FRI, SAT. Default Kedah: SUN–THU.</small></label>'
+          if holiday_marker not in text:
+              raise SystemExit('Index.html: workingDays marker not found')
+          holiday_html = holiday_marker + '''\n                <div class="span-2 public-holiday-settings">\n                  <div class="holiday-settings-head"><div><b>Cuti Umum</b><small>Satu senarai pusat untuk semua pengguna. Hari cuti tidak dikira Tidak Hadir; jika staf tetap punch, rekod sebenar dikira sebagai hadir.</small></div></div>\n                  <div class="holiday-add-grid">\n                    <label>Tarikh cuti<input id="publicHolidayDate" type="date"></label>\n                    <label>Nama cuti<input id="publicHolidayName" type="text" maxlength="120" placeholder="Contoh: Hari Malaysia"></label>\n                    <button class="btn primary" type="button" onclick="addPublicHoliday()">+ Tambah cuti</button>\n                  </div>\n                  <div id="publicHolidayList" class="public-holiday-list"></div>\n                </div>'''
+          text = text.replace(holiday_marker, holiday_html, 1)
+          text = text.replace('<option>TIDAK HADIR</option><option>BELUM HADIR</option>', '<option>TIDAK HADIR</option><option>BELUM HADIR</option><option>CUTI UMUM</option>', 1)
+          p.write_text(text)
+
+          # Frontend behavior: settings list/add/delete + punch-card holiday row.
+          p = Path('Scripts.html')
+          text = p.read_text()
+          old = "document.getElementById('summaryCards').innerHTML=[['Jumlah',a.summary.total],['Hadir',a.summary.hadir],['Lewat',a.summary.lewat],['Balik Awal',a.summary.balikAwal||0],['Tidak hadir',a.summary.tidakHadir],['Belum hadir',a.summary.belumHadir]].map"
+          new = "document.getElementById('summaryCards').innerHTML=[['Jumlah',a.summary.total],['Hadir',a.summary.hadir],['Lewat',a.summary.lewat],['Balik Awal',a.summary.balikAwal||0],['Tidak hadir',a.summary.tidakHadir],['Belum hadir',a.summary.belumHadir],['Cuti Umum',a.summary.cutiUmum||0]].map"
+          if old not in text: raise SystemExit('Scripts.html: summaryCards marker not found')
+          text = text.replace(old,new,1)
+          text = text.replace("fillSettings(a.settings);applyReportFilters();applyUserFilters();", "fillSettings(a.settings);renderPublicHolidays();applyReportFilters();applyUserFilters();", 1)
+
+          old = "const cls=status==='TIDAK HADIR'?'pc-row-absent':status==='WEEKEND'?'pc-row-weekend':(status.includes('LEWAT')||status.includes('BALIK AWAL'))?'pc-row-lewat':status==='HADIR'?'pc-row-hadir':'';"
+          new = "const cls=status==='PUBLIC_HOLIDAY'?'pc-row-holiday':status==='TIDAK HADIR'?'pc-row-absent':status==='WEEKEND'?'pc-row-weekend':(status.includes('LEWAT')||status.includes('BALIK AWAL'))?'pc-row-lewat':status==='HADIR'?'pc-row-hadir':'';"
+          if old not in text: raise SystemExit('Scripts.html: card row class marker not found')
+          text = text.replace(old,new,1)
+          old = "if(status==='WEEKEND'){const label=String(r.reason||'').trim().toUpperCase()||'CUTI';html+=`<tr class=\"${cls}\"><td class=\"pc-day\">${day}</td><td colspan=\"6\" class=\"pc-weekend-full\"><span>${esc(label)}</span></td></tr>`;continue;}"
+          new = "if(status==='PUBLIC_HOLIDAY'){const label=String(r.reason||'CUTI UMUM').trim();html+=`<tr class=\"${cls}\"><td class=\"pc-day\">${day}</td><td colspan=\"6\" class=\"pc-holiday-full\"><span class=\"pc-holiday-label\">CUTI UMUM</span><span class=\"pc-holiday-reason\">${esc(label)}</span></td></tr>`;continue;}if(status==='WEEKEND'){const label=String(r.reason||'').trim().toUpperCase()||'CUTI';html+=`<tr class=\"${cls}\"><td class=\"pc-day\">${day}</td><td colspan=\"6\" class=\"pc-weekend-full\"><span>${esc(label)}</span></td></tr>`;continue;}"
+          if old not in text: raise SystemExit('Scripts.html: WEEKEND row marker not found')
+          text = text.replace(old,new,1)
+
+          settings_marker = "  // ---------- Settings / visual map ----------\n  function fillSettings(s){"
+          if settings_marker not in text: raise SystemExit('Scripts.html: settings marker not found')
+          holiday_js = '''  // ---------- Settings / visual map ----------\n  function renderPublicHolidays(){\n    const host=document.getElementById('publicHolidayList');if(!host)return;\n    const rows=(state.admin?.publicHolidays||[]).slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));\n    host.innerHTML=rows.length?rows.map(h=>`<div class="public-holiday-item"><div class="public-holiday-date">${esc(h.date||'')}</div><div><b>${esc(h.name||'Cuti Umum')}</b><small>${esc([h.type,h.source].filter(Boolean).join(' · '))}</small></div><button class="action-link warn-link" type="button" onclick='deletePublicHoliday(${JSON.stringify(h.date)},${JSON.stringify(h.name||'Cuti Umum')})'>Buang</button></div>`).join(''):'<div class="public-holiday-empty">Tiada cuti umum ditetapkan.</div>';\n  }\n  async function addPublicHoliday(){\n    const date=document.getElementById('publicHolidayDate')?.value||'',name=String(document.getElementById('publicHolidayName')?.value||'').trim();\n    if(!date||!name)return toast('Pilih tarikh dan masukkan nama cuti umum.',4200);\n    try{\n      const r=await runServer('adminAddPublicHoliday',state.token,{date,name,type:'MANUAL'});\n      if(state.admin)state.admin.publicHolidays=r.holidays||[];\n      const n=document.getElementById('publicHolidayName');if(n)n.value='';\n      renderPublicHolidays();state.myCardLoaded=false;state.myCardData=null;state.adminCardData=null;\n      toast(`Cuti umum ${date} ditambah untuk semua pengguna.`,4200);\n    }catch(e){handleServerError(e);}\n  }\n  async function deletePublicHoliday(date,name){\n    if(!confirm(`Buang ${name||'cuti umum'} pada ${date}?\\n\\nPerubahan ini akan digunakan untuk semua pengguna.`))return;\n    try{\n      const r=await runServer('adminDeletePublicHoliday',state.token,date);\n      if(state.admin)state.admin.publicHolidays=r.holidays||[];\n      renderPublicHolidays();state.myCardLoaded=false;state.myCardData=null;state.adminCardData=null;\n      toast(`Cuti umum ${date} dibuang.`,4200);\n    }catch(e){handleServerError(e);}\n  }\n\n  function fillSettings(s){'''
+          text = text.replace(settings_marker,holiday_js,1)
+
+          export_marker = "    saveSettings,\n    updateModeSettingHint,"
+          if export_marker not in text: raise SystemExit('Scripts.html: export marker not found')
+          text = text.replace(export_marker,"    saveSettings,\n    addPublicHoliday,\n    deletePublicHoliday,\n    updateModeSettingHint,",1)
+          p.write_text(text)
+
+          # Styling for settings list and full-row holiday display in both cards.
+          p = Path('Styles.html')
+          text = p.read_text()
+          if '/* Public holiday calendar */' not in text:
+              text += '''\n\n/* Public holiday calendar */\n.public-holiday-settings{border:1px solid #e4e7ec;border-radius:16px;padding:16px;background:#fffdf7}\n.holiday-settings-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:12px}\n.holiday-settings-head b{display:block;font-size:15px}\n.holiday-settings-head small{display:block;color:#667085;margin-top:4px;line-height:1.45}\n.holiday-add-grid{display:grid;grid-template-columns:180px minmax(220px,1fr) auto;gap:10px;align-items:end}\n.public-holiday-list{display:grid;gap:8px;margin-top:14px;max-height:360px;overflow:auto}\n.public-holiday-item{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid #eaecf0;border-radius:12px;background:#fff}\n.public-holiday-item small{display:block;color:#667085;margin-top:2px;white-space:normal}\n.public-holiday-date{font-weight:800;font-variant-numeric:tabular-nums}\n.public-holiday-empty{padding:12px;color:#667085;text-align:center;border:1px dashed #d0d5dd;border-radius:12px}\n.pc-row-holiday td{background:#fff7d6!important}\n.pc-holiday-full{text-align:center!important;font-weight:800;letter-spacing:.02em}\n.pc-holiday-label{display:inline-block;margin-right:8px;font-size:11px;padding:3px 7px;border-radius:999px;background:#f5d34f;color:#4a3a00}\n.pc-holiday-reason{color:#5d4a00}\n@media(max-width:700px){.holiday-add-grid{grid-template-columns:1fr}.public-holiday-item{grid-template-columns:1fr auto}.public-holiday-date{grid-column:1/-1}}\n'''
+          p.write_text(text)
+          PY
+
+      - name: Validate changed sources
+        shell: bash
+        run: |
+          python3 scripts/build-pages.py
+          node --check web/dist/assets/*.js
+          for f in apps-script/*.gs; do cp "$f" /tmp/ek-check.js; node --check /tmp/ek-check.js >/dev/null; done
+          grep -q "PUBLIC_HOLIDAY" Scripts.html
+          grep -q "2026-09-16','Hari Malaysia" apps-script/45_PublicHolidays.gs
+          grep -q "adminAddPublicHoliday" apps-script/Bridges.gs
+
+      - name: Commit integration
+        shell: bash
+        run: |
+          git config user.name "kea3123-bit"
+          git config user.email "kea3123@moe.edu.my"
+          git add Index.html Scripts.html Styles.html apps-script/00_Core.gs apps-script/20_UserApi.gs apps-script/21_AdminApi.gs apps-script/30_Reporting.gs apps-script/60_TimeReview.gs apps-script/61_Absence.gs apps-script/Bridges.gs
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "feat: apply public holidays across attendance"
+          git push origin HEAD:refactor/performance-v2
