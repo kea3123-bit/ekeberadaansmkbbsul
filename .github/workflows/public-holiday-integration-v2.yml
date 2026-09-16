@@ -1,0 +1,56 @@
+name: Integrate public holiday calendar v2
+
+on:
+  push:
+    branches: ["refactor/performance-v2"]
+    paths:
+      - '.github/workflows/public-holiday-integration-v2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/performance-v2
+          fetch-depth: 0
+
+      - name: Reapply validated integration patch
+        shell: bash
+        run: |
+          python3 - <<'PYRUN'
+          from pathlib import Path
+          workflow = Path('.github/workflows/public-holiday-integration.yml').read_text()
+          marker = "          python3 - <<'PY'\n"
+          start = workflow.index(marker) + len(marker)
+          end = workflow.index("\n          PY", start)
+          lines = workflow[start:end].splitlines()
+          code = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
+          exec(compile(code, 'public-holiday-integration.py', 'exec'))
+          PYRUN
+
+      - name: Install build dependencies
+        run: npm ci
+
+      - name: Validate changed sources
+        shell: bash
+        run: |
+          python3 scripts/build-pages.py
+          for f in web/dist/assets/*.js; do node --check "$f"; done
+          for f in apps-script/*.gs; do cp "$f" /tmp/ek-check.js; node --check /tmp/ek-check.js >/dev/null; done
+          grep -q "PUBLIC_HOLIDAY" Scripts.html
+          grep -q "2026-09-16','Hari Malaysia" apps-script/45_PublicHolidays.gs
+          grep -q "adminAddPublicHoliday" apps-script/Bridges.gs
+
+      - name: Commit integration
+        shell: bash
+        run: |
+          git config user.name "kea3123-bit"
+          git config user.email "kea3123@moe.edu.my"
+          git add Index.html Scripts.html Styles.html apps-script/00_Core.gs apps-script/20_UserApi.gs apps-script/21_AdminApi.gs apps-script/30_Reporting.gs apps-script/60_TimeReview.gs apps-script/61_Absence.gs apps-script/Bridges.gs
+          git diff --cached --check
+          git commit -m "feat: apply public holidays across attendance"
+          git push origin HEAD:refactor/performance-v2
