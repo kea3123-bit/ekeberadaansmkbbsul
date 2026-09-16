@@ -1,4 +1,4 @@
-// ---------- Trusted-device session (30-day rolling, max 2 devices) ----------
+// ---------- Trusted-device session (7-day rolling, max 2 devices) ----------
 const EK_TRUSTED_TOUCH_MIN_INTERVAL_MS_ = 60 * 60 * 1000;
 
 function trustedDeviceCredentialParts_(credential) {
@@ -132,6 +132,22 @@ function dateMillis_(v) {
   return d && !isNaN(d.getTime()) ? d.getTime() : 0;
 }
 
+// Effective expiry is capped by the current rolling policy, even for
+// trusted-device rows created when REMEMBER_DAYS used to be longer.
+function trustedDevicePolicyExpiryMs_(rec) {
+  rec = rec || {};
+  const anchorMs = dateMillis_(rec.lastSeenAt || rec.createdAt);
+  const policyMs = anchorMs ? anchorMs + Math.max(1, Number(EK.SESSION.REMEMBER_DAYS || 7)) * 24 * 60 * 60 * 1000 : 0;
+  const storedMs = dateMillis_(rec.expiresAt);
+  if (policyMs && storedMs) return Math.min(policyMs, storedMs);
+  return policyMs || storedMs;
+}
+
+function trustedDevicePolicyExpired_(rec, nowMs) {
+  const expiryMs = trustedDevicePolicyExpiryMs_(rec);
+  return !!(expiryMs && Number(nowMs || Date.now()) > expiryMs);
+}
+
 function verifyTrustedDeviceCredential_(credential, expectedEmail, expectedDeviceId) {
   const parts = trustedDeviceCredentialParts_(credential);
   if (expectedDeviceId && parts.deviceId !== String(expectedDeviceId || '').trim().toLowerCase()) {
@@ -140,8 +156,8 @@ function verifyTrustedDeviceCredential_(credential, expectedEmail, expectedDevic
   const rec = findTrustedDeviceById_(parts.deviceId);
   if (!rec || !rec.active) throw new Error('Trusted device ini telah dibatalkan. Sila log masuk semula.');
   if (expectedEmail && rec.email !== normalizeEmail_(expectedEmail)) throw new Error('Trusted device tidak sepadan dengan akaun.');
-  if (dateMillis_(rec.expiresAt) && Date.now() > dateMillis_(rec.expiresAt)) {
-    revokeTrustedDeviceById_(rec.deviceId, rec.email, 'TAMAT_30_HARI');
+  if (trustedDevicePolicyExpired_(rec)) {
+    revokeTrustedDeviceById_(rec.deviceId, rec.email, 'TAMAT_7_HARI');
     throw new Error('Trusted device telah tamat. Sila log masuk semula.');
   }
   const actual = hashTrustedDeviceSecret_(rec.deviceId, parts.secret);
@@ -237,8 +253,8 @@ function touchTrustedDevice_(rec, clientInfo, extendExpiry) {
 
 function cleanupTrustedDevices_(email) {
   getTrustedDevices_(email, false).forEach(d => {
-    if ((dateMillis_(d.expiresAt) && Date.now() > dateMillis_(d.expiresAt))) {
-      revokeTrustedDeviceById_(d.deviceId, d.email, 'TAMAT_30_HARI');
+    if (trustedDevicePolicyExpired_(d)) {
+      revokeTrustedDeviceById_(d.deviceId, d.email, 'TAMAT_7_HARI');
     }
   });
 }
@@ -270,8 +286,8 @@ function assertSessionDeviceActive_(session, user) {
   const rec = findTrustedDeviceById_(session.d);
   if (!rec || !rec.active || rec.email !== user.email) throw new Error('Sesi peranti ini telah dibatalkan. Sila log masuk semula.');
   if (Number(rec.sessionVersion || 0) !== Math.max(1, Number(user.sessionVersion || 1))) throw new Error('Sesi peranti ini telah dibatalkan kerana PIN atau tetapan akaun berubah. Sila log masuk semula.');
-  if (dateMillis_(rec.expiresAt) && Date.now() > dateMillis_(rec.expiresAt)) {
-    revokeTrustedDeviceById_(rec.deviceId, rec.email, 'TAMAT_30_HARI');
+  if (trustedDevicePolicyExpired_(rec)) {
+    revokeTrustedDeviceById_(rec.deviceId, rec.email, 'TAMAT_7_HARI');
     throw new Error('Sesi peranti telah tamat. Sila log masuk semula.');
   }
 }
@@ -295,6 +311,7 @@ function syncClientTelemetry(token, deviceCredential, clientInfo) {
 }
 
 function publicTrustedDevice_(d) {
+  const effectiveExpiryMs = trustedDevicePolicyExpiryMs_(d);
   return {
     deviceId:d.deviceId,
     deviceName:d.deviceName || 'Peranti',
@@ -307,7 +324,7 @@ function publicTrustedDevice_(d) {
     timezone:d.timezone || '', language:d.language || '',
     createdAt:d.createdAt ? formatDateTime_(d.createdAt) : '',
     lastSeenAt:d.lastSeenAt ? formatDateTime_(d.lastSeenAt) : '',
-    expiresAt:d.expiresAt ? formatDateTime_(d.expiresAt) : '',
+    expiresAt:effectiveExpiryMs ? formatDateTime_(new Date(effectiveExpiryMs)) : '',
     active:!!d.active,
     revokeReason:d.revokeReason || ''
   };

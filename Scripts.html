@@ -179,7 +179,7 @@ const state = {
     });
   }
 
-  // ---------- Login (v12: DELIMa email + 6-digit PIN + 30-day trusted device) ----------
+  // ---------- Login (v12: DELIMa email + 6-digit PIN + 7-day trusted device) ----------
   async function initApp(){
     try{
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')renewSessionIfNeeded(false).catch(()=>{});});
@@ -351,7 +351,7 @@ const state = {
       text('pinSetupTitle',res.setupPurpose==='ADMIN_RESET'?'Cipta PIN baharu':'Cipta PIN anda');
       text('pinSetupCopy',res.setupPurpose==='ADMIN_RESET'
         ? 'Pentadbir telah mereset akses anda. Cipta PIN 6 digit baharu untuk meneruskan.'
-        : 'Cipta PIN 6 digit. Selepas berjaya, peranti ini akan kekal log masuk sehingga 30 hari.');
+        : 'Cipta PIN 6 digit. Selepas berjaya, peranti ini akan kekal log masuk sehingga 7 hari.');
       showLoginStep('setpin');
       setTimeout(()=>document.getElementById('newPin')?.focus(),80);
       return;
@@ -398,7 +398,7 @@ const state = {
       const res=await runServer('setFirstPin',state.changeTicket,p1,p2,clientInfo,loadStoredDevice());
       state.changeTicket=''; state.setupPurpose=''; applySessionResult(res);
       rememberLastAccount(res.boot?.user||state.selectedAccount);
-      toast('PIN berjaya ditetapkan. Peranti ini diingati selama 30 hari.',4200);
+      toast('PIN berjaya ditetapkan. Peranti ini diingati selama 7 hari.',4200);
       enterApp();
     }catch(e){showLoginError(e.message);}
     finally{setButtonBusy(btn,false,'');}
@@ -425,8 +425,8 @@ const state = {
     if(token){
       safeLocalSet('ek_session',token);
       try{sessionStorage.setItem('ek_session',token);}catch(e){}
-      writeCookie('ek_session',token,30*24*60*60,false);
-      writeCookie('ek_session_p',token,30*24*60*60,true);
+      writeCookie('ek_session',token,7*24*60*60,false);
+      writeCookie('ek_session_p',token,7*24*60*60,true);
     }
     if(deviceToken)saveTrustedDevice(deviceToken);
   }
@@ -434,8 +434,8 @@ const state = {
     if(!deviceToken)return;
     state.deviceToken=deviceToken;
     safeLocalSet('ek_device',deviceToken);
-    writeCookie('ek_device',deviceToken,30*24*60*60,false);
-    writeCookie('ek_device_p',deviceToken,30*24*60*60,true);
+    writeCookie('ek_device',deviceToken,7*24*60*60,false);
+    writeCookie('ek_device_p',deviceToken,7*24*60*60,true);
   }
   function loadStoredSession(){
     try{return safeLocalGet('ek_session')||sessionStorage.getItem('ek_session')||readCookie('ek_session')||readCookie('ek_session_p')||'';}catch(e){return safeLocalGet('ek_session')||readCookie('ek_session')||readCookie('ek_session_p')||'';}
@@ -989,7 +989,7 @@ const state = {
     try{
       const r=await runServer('adminListTrustedDevices',state.token,email),devices=r.devices||[];
       const rows=devices.length?devices.map(d=>{const meta=[d.deviceType,d.model,d.platform,d.browser].filter(Boolean).join(' · '),tech=[d.screen,d.network].filter(Boolean).join(' · '),ip4=d.publicIpv4||(!String(d.lastIp||'').includes(':')?d.lastIp:''),ip6=d.publicIpv6||(String(d.lastIp||'').includes(':')?d.lastIp:'');return `<tr><td><b>${esc(d.deviceName||'Peranti')}</b><small class="table-sub">${esc(meta||'Maklumat peranti terhad')}</small>${tech?`<small class="table-sub">${esc(tech)}</small>`:''}</td><td>${esc(d.lastSeenAt||'—')}<small class="table-sub">IPv4: ${esc(ip4||'—')}</small><small class="table-sub">IPv6: ${esc(ip6||'—')}</small></td><td>${esc(d.expiresAt||'—')}</td><td><button class="action-link warn-link" onclick='revokeTrustedDevice(${JSON.stringify(d.deviceId)},${JSON.stringify(email)},${JSON.stringify(name||email)})'>Logout peranti</button></td></tr>`;}).join(''):'<tr><td colspan="4" class="empty-cell">Tiada trusted device aktif.</td></tr>';
-      showModal(`<h3>Trusted Device</h3><p><b>${esc(name||r.user?.name||email)}</b><br><span class="muted">${esc(email)} · maksimum 2 peranti · rolling 30 hari</span></p><div class="table-wrap compact-table"><table><thead><tr><th>Peranti</th><th>Terakhir digunakan</th><th>Tamat jika tidak digunakan</th><th>Tindakan</th></tr></thead><tbody>${rows}</tbody></table></div><p class="tiny">Setiap resume yang berjaya memperbaharui tempoh trusted device kepada 30 hari. Logout peranti hanya membatalkan peranti tersebut.</p><p><button class="btn ghost" onclick='revokeAllTrustedDevices(${JSON.stringify(email)},${JSON.stringify(name||email)})' ${devices.length?'':'disabled'}>Logout semua peranti</button> <button class="btn primary" onclick="closeModal()">Selesai</button></p>`);
+      showModal(`<h3>Trusted Device</h3><p><b>${esc(name||r.user?.name||email)}</b><br><span class="muted">${esc(email)} · maksimum 2 peranti · rolling 7 hari</span></p><div class="table-wrap compact-table"><table><thead><tr><th>Peranti</th><th>Terakhir digunakan</th><th>Tamat jika tidak digunakan</th><th>Tindakan</th></tr></thead><tbody>${rows}</tbody></table></div><p class="tiny">Setiap resume yang berjaya memperbaharui tempoh trusted device kepada 7 hari. Logout peranti hanya membatalkan peranti tersebut.</p><p><button class="btn ghost" onclick='revokeAllTrustedDevices(${JSON.stringify(email)},${JSON.stringify(name||email)})' ${devices.length?'':'disabled'}>Logout semua peranti</button> <button class="btn primary" onclick="closeModal()">Selesai</button></p>`);
     }catch(e){handleServerError(e);}
   }
   async function revokeTrustedDevice(deviceId,email,name){

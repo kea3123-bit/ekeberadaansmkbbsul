@@ -53,7 +53,7 @@ const EK = Object.freeze({
   },
   SESSION: {
     NORMAL_HOURS: 12,
-    REMEMBER_DAYS: 30,
+    REMEMBER_DAYS: 7,
     MAX_TRUSTED_DEVICES: 2,
     SECRET_KEY: 'EK_SESSION_SECRET'
   },
@@ -247,7 +247,7 @@ function setupSystem() {
   try {
     SpreadsheetApp.getUi().alert(
       'eKeberadaan siap',
-      'Struktur sistem telah disediakan. Notifikasi emel juga diaktifkan jika setup dijalankan oleh pemilik sistem kea3123@moe.gov.my. Isi koordinat sekolah di TETAPAN dan senarai emel di PENGGUNA, kemudian deploy Web App sebagai akses awam dan Execute as Me. Login menggunakan PIN 6 digit dan sesi peranti 30 hari.',
+      'Struktur sistem telah disediakan. Notifikasi emel juga diaktifkan jika setup dijalankan oleh pemilik sistem kea3123@moe.gov.my. Isi koordinat sekolah di TETAPAN dan senarai emel di PENGGUNA, kemudian deploy Web App sebagai akses awam dan Execute as Me. Login menggunakan PIN 6 digit dan sesi peranti 7 hari.',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } catch (e) {}
