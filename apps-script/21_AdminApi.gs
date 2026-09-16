@@ -11,12 +11,14 @@ function getAdminData(token, dateStr) {
   // consistent with the final-departure rule.
   try { repairAttendanceTimingStatuses_({from:dateKey,to:dateKey,audit:false}); } catch (_e) {}
   const report = buildDailyReport_(dateKey, activeUsers, settings);
+  const publicHolidays = readPublicHolidays_().filter(r => r.active).sort((a,b) => a.date.localeCompare(b.date)).map(publicHoliday_);
 
   return {
     date: dateKey,
     admin: publicUser_(admin),
     users: allUsers.map(publicUser_),
     settings: publicSettings_(settings),
+    publicHolidays,
     report,
     summary: summarizeReport_(report)
   };
@@ -96,6 +98,7 @@ function adminSaveAttendance(token,payload) {
   const admin=requireSessionAdmin_(token);payload=payload||{};
   const email=normalizeEmail_(payload.email),dateKey=validateDateKey_(payload.date);
   assertSystemDate_(dateKey,getSettings_(),'Tarikh rekod');
+  const publicHoliday=getPublicHolidayByDate_(dateKey);
   const inTime=normalizeOptionalTime_(payload.inTime),outTime=normalizeOptionalTime_(payload.outTime),inTime2=normalizeOptionalTime_(payload.inTime2),outTime2=normalizeOptionalTime_(payload.outTime2);
   const reason=String(payload.reason||'').trim();if(!reason)throw new Error('Sebab pembetulan wajib diisi untuk audit.');
   const user=getUserByEmail_(email,false);if(!user)throw new Error('Pengguna tidak dijumpai.');
@@ -112,12 +115,12 @@ function adminSaveAttendance(token,payload) {
   v[15]='ADMIN';v[16]=admin.email;v[17]=presenceRequest?mergeAttendanceReason_(reason,presenceRequestReason_(presenceRequest,'CATATAN')):reason;v[18]=now;
 
   const flags=[];
-  if(inTime&&schedule.s1In&&timeToMinutes_(inTime)>timeToMinutes_(schedule.s1In))flags.push('LEWAT');
-  if(inTime2&&schedule.s2In&&timeToMinutes_(inTime2)>timeToMinutes_(schedule.s2In)&&!flags.includes('LEWAT'))flags.push('LEWAT');
+  if(!publicHoliday&&inTime&&schedule.s1In&&timeToMinutes_(inTime)>timeToMinutes_(schedule.s1In))flags.push('LEWAT');
+  if(!publicHoliday&&inTime2&&schedule.s2In&&timeToMinutes_(inTime2)>timeToMinutes_(schedule.s2In)&&!flags.includes('LEWAT'))flags.push('LEWAT');
   const finalOutTime=inTime2?outTime2:outTime;
   const finalSession=inTime2?2:1;
   const finalOutRef=getFinalOutReference_(schedule,user,settings,dateKey,v);
-  if(finalOutTime&&finalOutRef&&timeToMinutes_(finalOutTime)<timeToMinutes_(finalOutRef))flags.push('BALIK AWAL');
+  if(!publicHoliday&&finalOutTime&&finalOutRef&&timeToMinutes_(finalOutTime)<timeToMinutes_(finalOutRef))flags.push('BALIK AWAL');
   const status=inTime?attendanceStatusFromFlags_(flags):'TIDAK HADIR';
   v[14]=status;v[34]=joinAttendanceFlags_(flags);
 
@@ -125,9 +128,9 @@ function adminSaveAttendance(token,payload) {
   if(inTime2){try{cleanupSupersededSession1EarlyReviews_(dateKey,dateKey);}catch(_e){}}
 
   const exceptionSpecs=[];
-  if(inTime&&schedule.s1In&&timeToMinutes_(inTime)>timeToMinutes_(schedule.s1In))exceptionSpecs.push({type:'LEWAT',session:1,recordTime:inTime,referenceTime:schedule.s1In});
-  if(inTime2&&schedule.s2In&&timeToMinutes_(inTime2)>timeToMinutes_(schedule.s2In))exceptionSpecs.push({type:'LEWAT',session:2,recordTime:inTime2,referenceTime:schedule.s2In});
-  if(finalOutTime&&finalOutRef&&timeToMinutes_(finalOutTime)<timeToMinutes_(finalOutRef))exceptionSpecs.push({type:'BALIK AWAL',session:finalSession,recordTime:finalOutTime,referenceTime:finalOutRef});
+  if(!publicHoliday&&inTime&&schedule.s1In&&timeToMinutes_(inTime)>timeToMinutes_(schedule.s1In))exceptionSpecs.push({type:'LEWAT',session:1,recordTime:inTime,referenceTime:schedule.s1In});
+  if(!publicHoliday&&inTime2&&schedule.s2In&&timeToMinutes_(inTime2)>timeToMinutes_(schedule.s2In))exceptionSpecs.push({type:'LEWAT',session:2,recordTime:inTime2,referenceTime:schedule.s2In});
+  if(!publicHoliday&&finalOutTime&&finalOutRef&&timeToMinutes_(finalOutTime)<timeToMinutes_(finalOutRef))exceptionSpecs.push({type:'BALIK AWAL',session:finalSession,recordTime:finalOutTime,referenceTime:finalOutRef});
   exceptionSpecs.forEach(x=>{
     let rr=createTimeReviewRecord_({date:dateKey,user,type:x.type,session:x.session,recordTime:x.recordTime,referenceTime:x.referenceTime});
     if(x.type==='LEWAT'&&presenceRequest&&presenceRequest.status==='DILULUSKAN')rr=autoAcknowledgeTimeReviewFromPresence_(rr,presenceRequest,admin);

@@ -11,16 +11,20 @@ function buildDailyReport_(dateKey, users, settings) {
   const today = todayKey_();
   const nowMins = minutesNow_(new Date());
   const absentMins = timeToMinutes_(settings.ABSENT_AFTER);
+  const publicHoliday = getPublicHolidayByDate_(dateKey);
 
   return users.map(u => {
     const rec = byEmail[u.email];
     const v = rec ? padAttendanceValues_(rec.values) : null;
-    const presenceRequest = (!v || !v[4]) ? findRelevantPresenceForDate_(u.email, dateKey, absenceRows) : null;
+    const hasPunch = !!(v && v[4]);
+    const presenceRequest = !hasPunch ? findRelevantPresenceForDate_(u.email, dateKey, absenceRows) : null;
     let status;
-    if (v && String(v[14] || '').toUpperCase() === 'TIDAK HADIR') {
-      status = 'TIDAK HADIR';
-    } else if (v && v[4]) {
+    if (hasPunch) {
       status = effectiveAttendanceStatus_(v,u,settings,dateKey);
+    } else if (publicHoliday) {
+      status = 'CUTI UMUM';
+    } else if (v && String(v[14] || '').toUpperCase() === 'TIDAK HADIR') {
+      status = 'TIDAK HADIR';
     } else if (presenceRequest) {
       // Keberadaan aktif mengatasi ABSENT_AFTER. Status hanya bertukar
       // TIDAK HADIR selepas alert Pengurusan berjaya dan rekod fizikal ditulis.
@@ -53,9 +57,9 @@ function buildDailyReport_(dateKey, users, settings) {
       inIp2: v ? String(v[32] || '') : '',
       outIp2: v ? String(v[33] || '') : '',
       ipCheck: v ? String(v[21] || '') : '',
-      source: v ? String(v[15] || '') : (coveringRequest ? 'TIDAK_HADIR' : (presenceRequest ? 'KEBERADAAN' : '')),
-      editedBy: v ? String(v[16] || '') : (presenceRequest ? String(presenceRequest.reviewedBy || '') : ''),
-      reason: v ? String(v[17] || '') : (coveringRequest ? `${coveringRequest.type}${coveringRequest.status === 'MENUNGGU' ? ' — MENUNGGU KELULUSAN' : ''}` : (presenceRequest ? presenceRequestReason_(presenceRequest, '') : ''))
+      source: hasPunch ? String(v[15] || '') : (publicHoliday ? 'CUTI_UMUM' : (coveringRequest ? 'TIDAK_HADIR' : (presenceRequest ? 'KEBERADAAN' : ''))),
+      editedBy: hasPunch ? String(v[16] || '') : (presenceRequest ? String(presenceRequest.reviewedBy || '') : ''),
+      reason: hasPunch ? String(v[17] || '') : (publicHoliday ? publicHoliday.name : (coveringRequest ? `${coveringRequest.type}${coveringRequest.status === 'MENUNGGU' ? ' — MENUNGGU KELULUSAN' : ''}` : (presenceRequest ? presenceRequestReason_(presenceRequest, '') : '')))
     };
   }).sort((a, b) => {
     const rank = st => st === 'TIDAK HADIR' ? 0 : st.includes('LEWAT') || st.includes('BALIK AWAL') ? 1 : st === 'BELUM HADIR' ? 2 : 3;
@@ -64,11 +68,12 @@ function buildDailyReport_(dateKey, users, settings) {
 }
 
 function summarizeReport_(report) {
-  const s = {total: report.length, hadir: 0, lewat: 0, balikAwal: 0, tidakHadir: 0, belumHadir: 0};
+  const s = {total: report.length, hadir: 0, lewat: 0, balikAwal: 0, tidakHadir: 0, belumHadir: 0, cutiUmum: 0};
   report.forEach(r => {
     const st = String(r.status || '');
     if (st === 'TIDAK HADIR') s.tidakHadir++;
     else if (st === 'BELUM HADIR') s.belumHadir++;
+    else if (st === 'CUTI UMUM') s.cutiUmum++;
     else {
       if (st.includes('LEWAT')) s.lewat++;
       if (st.includes('BALIK AWAL')) s.balikAwal++;
@@ -142,7 +147,7 @@ function buildAttendancePresencePeriodReport_(fromDate, toDate) {
 
       const coveringRequest = (!v || !v[4]) ? findRelevantAbsenceForDate_(u.email, dateKey, absenceRows, 'TIDAK_HADIR') : null;
       const st = String(status || '');
-      if (working) {
+      if (working || (v && v[4])) {
         if (st === 'TIDAK HADIR') s.absent++;
         else if (st === 'BELUM HADIR') s.pending++;
         else {

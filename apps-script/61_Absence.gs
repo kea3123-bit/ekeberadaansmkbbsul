@@ -279,6 +279,7 @@ function weekendLabelForDateKey_(dateKey, settings) {
 function isWorkingDay_(dateKey, settings) {
   settings = settings || getSettings_();
   if (!isOnOrAfterSystemStart_(dateKey, settings)) return false;
+  if (isPublicHolidayDate_(dateKey)) return false;
   const codes = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
   const day = new Date(String(dateKey) + 'T12:00:00').getDay();
   const configured = String(settings.WORKING_DAYS || EK.DEFAULT_SETTINGS.WORKING_DAYS).toUpperCase().split(',').map(x => x.trim()).filter(Boolean);

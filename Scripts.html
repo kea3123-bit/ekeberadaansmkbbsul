@@ -694,8 +694,8 @@ const state = {
     if(start>end)return '<tr><td colspan="7" class="pc-empty">Tiada tarikh untuk bahagian ini.</td></tr>';
     for(let day=start;day<=end;day++){
       const r=byDay.get(day)||{},status=String(r.status||'').trim().toUpperCase();
-      const cls=status==='TIDAK HADIR'?'pc-row-absent':status==='WEEKEND'?'pc-row-weekend':(status.includes('LEWAT')||status.includes('BALIK AWAL'))?'pc-row-lewat':status==='HADIR'?'pc-row-hadir':'';
-      if(status==='WEEKEND'){const label=String(r.reason||'').trim().toUpperCase()||'CUTI';html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-weekend-full"><span>${esc(label)}</span></td></tr>`;continue;}
+      const cls=status==='PUBLIC_HOLIDAY'?'pc-row-holiday':status==='TIDAK HADIR'?'pc-row-absent':status==='WEEKEND'?'pc-row-weekend':(status.includes('LEWAT')||status.includes('BALIK AWAL'))?'pc-row-lewat':status==='HADIR'?'pc-row-hadir':'';
+      if(status==='PUBLIC_HOLIDAY'){const label=String(r.reason||'CUTI UMUM').trim();html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-holiday-full"><span class="pc-holiday-label">CUTI UMUM</span><span class="pc-holiday-reason">${esc(label)}</span></td></tr>`;continue;}if(status==='WEEKEND'){const label=String(r.reason||'').trim().toUpperCase()||'CUTI';html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-weekend-full"><span>${esc(label)}</span></td></tr>`;continue;}
       if(status==='TIDAK HADIR'){const reason=String(r.reason||'').trim(),detail=reason&&reason.toUpperCase()!=='TIDAK HADIR'?reason:'TIADA PENJELASAN';html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-absence-full"><span class="pc-absence-label">TIDAK HADIR</span><span class="pc-absence-reason">${esc(detail)}</span></td></tr>`;continue;}
       const reviews=r.reviewItems||[], flagged=(type,session)=>reviews.some(x=>String(x.type||'').toUpperCase()===type&&Number(x.session||1)===session), tc=(v,bad)=>`<td class="${bad?'pc-time-alert':''}">${esc(shortTime(v))}</td>`;
       html+=`<tr class="${cls}"><td class="pc-day">${day}</td>${tc(r.inTime,flagged('LEWAT',1))}${tc(r.outTime,flagged('BALIK AWAL',1))}${tc(r.inTime2,flagged('LEWAT',2))}${tc(r.outTime2,flagged('BALIK AWAL',2))}<td class="pc-statement">${esc(cardStatement(r))}</td><td class="pc-sign"></td></tr>`;
@@ -906,8 +906,8 @@ const state = {
 
   function renderAdmin(){
     const a=state.admin;if(!a)return;document.getElementById('reportDate').value=a.date;
-    document.getElementById('summaryCards').innerHTML=[['Jumlah',a.summary.total],['Hadir',a.summary.hadir],['Lewat',a.summary.lewat],['Balik Awal',a.summary.balikAwal||0],['Tidak hadir',a.summary.tidakHadir],['Belum hadir',a.summary.belumHadir]].map(x=>`<div class="summary-card"><span>${x[0]}</span><strong>${x[1]}</strong></div>`).join('');
-    fillSettings(a.settings);applyReportFilters();applyUserFilters();
+    document.getElementById('summaryCards').innerHTML=[['Jumlah',a.summary.total],['Hadir',a.summary.hadir],['Lewat',a.summary.lewat],['Balik Awal',a.summary.balikAwal||0],['Tidak hadir',a.summary.tidakHadir],['Belum hadir',a.summary.belumHadir],['Cuti Umum',a.summary.cutiUmum||0]].map(x=>`<div class="summary-card"><span>${x[0]}</span><strong>${x[1]}</strong></div>`).join('');
+    fillSettings(a.settings);renderPublicHolidays();applyReportFilters();applyUserFilters();
   }
 
   function applyReportFilters(){
@@ -1010,6 +1010,32 @@ const state = {
   }
 
   // ---------- Settings / visual map ----------
+  function renderPublicHolidays(){
+    const host=document.getElementById('publicHolidayList');if(!host)return;
+    const rows=(state.admin?.publicHolidays||[]).slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+    host.innerHTML=rows.length?rows.map(h=>`<div class="public-holiday-item"><div class="public-holiday-date">${esc(h.date||'')}</div><div><b>${esc(h.name||'Cuti Umum')}</b><small>${esc([h.type,h.source].filter(Boolean).join(' · '))}</small></div><button class="action-link warn-link" type="button" onclick='deletePublicHoliday(${JSON.stringify(h.date)},${JSON.stringify(h.name||'Cuti Umum')})'>Buang</button></div>`).join(''):'<div class="public-holiday-empty">Tiada cuti umum ditetapkan.</div>';
+  }
+  async function addPublicHoliday(){
+    const date=document.getElementById('publicHolidayDate')?.value||'',name=String(document.getElementById('publicHolidayName')?.value||'').trim();
+    if(!date||!name)return toast('Pilih tarikh dan masukkan nama cuti umum.',4200);
+    try{
+      const r=await runServer('adminAddPublicHoliday',state.token,{date,name,type:'MANUAL'});
+      if(state.admin)state.admin.publicHolidays=r.holidays||[];
+      const n=document.getElementById('publicHolidayName');if(n)n.value='';
+      renderPublicHolidays();state.myCardLoaded=false;state.myCardData=null;state.adminCardData=null;
+      toast(`Cuti umum ${date} ditambah untuk semua pengguna.`,4200);
+    }catch(e){handleServerError(e);}
+  }
+  async function deletePublicHoliday(date,name){
+    if(!confirm(`Buang ${name||'cuti umum'} pada ${date}?\n\nPerubahan ini akan digunakan untuk semua pengguna.`))return;
+    try{
+      const r=await runServer('adminDeletePublicHoliday',state.token,date);
+      if(state.admin)state.admin.publicHolidays=r.holidays||[];
+      renderPublicHolidays();state.myCardLoaded=false;state.myCardData=null;state.adminCardData=null;
+      toast(`Cuti umum ${date} dibuang.`,4200);
+    }catch(e){handleServerError(e);}
+  }
+
   function fillSettings(s){const f=document.getElementById('settingsForm');if(!f)return;Object.keys(s).forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]??'';});updateModeSettingHint();updateGpsSettingWarning();if(state.locationMap)setTimeout(syncMapFromInputs,30);}
   function updateGpsSettingWarning(){
     const radius=Number(document.getElementById('settingRadius')?.value||0),accuracy=Number(document.getElementById('settingGpsAccuracy')?.value||0),hint=document.getElementById('gpsSettingWarning');
@@ -1155,6 +1181,8 @@ const state = {
     revokeAllTrustedDevices,
     unlockUser,
     saveSettings,
+    addPublicHoliday,
+    deletePublicHoliday,
     updateModeSettingHint,
     syncMapFromInputs,
     syncMapRadius,

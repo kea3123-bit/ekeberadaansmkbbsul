@@ -69,6 +69,8 @@ function inferAttendanceFlags_(values,user,settings,dateKey) {
   const stored=splitAttendanceFlags_(v[34]);
   const status=String(v[14]||'').toUpperCase();
   if(status==='TIDAK HADIR')return [];
+  dateKey=dateCellToKey_(dateKey||v[0])||todayKey_();
+  if(isPublicHolidayDate_(dateKey))return [];
 
   const fallback=stored.slice();
   if(!fallback.length){
@@ -78,7 +80,6 @@ function inferAttendanceFlags_(values,user,settings,dateKey) {
   if(!user||String(v[15]||'').toUpperCase()==='TEST')return fallback;
 
   settings=settings||getSettings_();
-  dateKey=dateCellToKey_(dateKey||v[0])||todayKey_();
   const flags=[];
   const add=flag=>{if(flag&&!flags.includes(flag))flags.push(flag);};
 

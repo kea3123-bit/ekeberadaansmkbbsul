@@ -68,6 +68,32 @@ function buildPunchCardMonthForUser_(user, monthKey) {
   // Label hanya digunakan jika hari tersebut memang bukan hari bekerja dalam
   // WORKING_DAYS supaya konfigurasi Pentadbir tetap dihormati.
   const existingByDay = new Map(records.map(r => [Number(r.day), r]));
+
+  // Cuti umum berpusat digunakan untuk Kad Perakam pengguna dan Pentadbir.
+  // Rekod punch sebenar sentiasa mengatasi label cuti.
+  const monthHolidays = getPublicHolidaysInRange_(`${monthKey}-01`, `${monthKey}-${String(daysInMonth).padStart(2,'0')}`);
+  monthHolidays.forEach(holiday => {
+    if (holiday.date < systemStartDate) return;
+    const day = Number(holiday.date.slice(8,10));
+    const existing = existingByDay.get(day);
+    if (existing && (existing.inTime || existing.outTime || existing.inTime2 || existing.outTime2)) return;
+    if (existing) {
+      existing.status = 'PUBLIC_HOLIDAY';
+      existing.source = 'CUTI_UMUM';
+      existing.editedBy = 'SISTEM';
+      existing.reason = holiday.name;
+      existing.holiday = holiday;
+    } else {
+      const added = {
+        day, date: holiday.date, status: 'PUBLIC_HOLIDAY',
+        inTime: '', outTime: '', inTime2: '', outTime2: '',
+        source: 'CUTI_UMUM', editedBy: 'SISTEM', reason: holiday.name, holiday
+      };
+      records.push(added);
+      existingByDay.set(day, added);
+    }
+  });
+
   for (let day = 1; day <= daysInMonth; day++) {
     const dateKey = `${monthKey}-${String(day).padStart(2,'0')}`;
     if (dateKey < systemStartDate) continue;
@@ -75,6 +101,7 @@ function buildPunchCardMonthForUser_(user, monthKey) {
     if (!weekendLabel) continue;
 
     const existing = existingByDay.get(day);
+    if (existing && existing.status === 'PUBLIC_HOLIDAY') continue;
     if (existing && (existing.inTime || existing.outTime)) continue;
 
     if (existing) {
@@ -201,6 +228,7 @@ function punch(token, type, location, clientInfo) {
     : validateAndMeasureLocation_(location,settings);
   const now = new Date();
   const dateKey = todayKey_();
+  const publicHoliday = getPublicHolidayByDate_(dateKey);
   const schedule = getEffectiveSchedule_(user,settings);
   try { ensureScheduleHistoryBaseline_(user, settings, now, 'PUNCH'); }
   catch (e) { try { audit_('SEJARAH_JADUAL_BASELINE_GAGAL', user.email, String(e && e.message ? e.message : e), 'SISTEM'); } catch (_e) {} }
@@ -230,7 +258,7 @@ function punch(token, type, location, clientInfo) {
     if (!rec) throw new Error('Rekod waktu hari ini tidak dapat dikenal pasti. Cuba semula.');
     values = padAttendanceValues_(rec.values);
 
-    if (String(values[15] || '').toUpperCase() === 'TIDAK_HADIR' && !values[4]) {
+    if (!publicHoliday && String(values[15] || '').toUpperCase() === 'TIDAK_HADIR' && !values[4]) {
       throw new Error('Anda mempunyai rekod Tidak Hadir yang telah diluluskan untuk hari ini. Hubungi pentadbir jika rekod itu perlu dibatalkan.');
     }
 
@@ -243,14 +271,14 @@ function punch(token, type, location, clientInfo) {
     session = step.session;
     refTime = getPunchReferenceTime_(type,session,schedule,user,settings,dateKey,values);
 
-    if (!isTestMode && type === 'IN') {
+    if (!isTestMode && !publicHoliday && type === 'IN') {
       const latestAllowed = session === 1 ? schedule.maxPunchIn : (schedule.s2Out || '');
       if (latestAllowed && nowMinutes > timeToMinutes_(latestAllowed)) {
         throw new Error(`Tempoh Rekod Waktu Masuk Sesi ${session} telah tamat pada ${latestAllowed}.`);
       }
     }
     const provisionalSession1Out = type === 'OUT' && session === 1 && hasSecondAttendanceSession_(schedule);
-    if (!isTestMode && refTime) {
+    if (!isTestMode && !publicHoliday && refTime) {
       const refMinutes = timeToMinutes_(refTime);
       if (type === 'IN' && nowMinutes > refMinutes) exceptionType = 'LEWAT';
       if (type === 'OUT' && !provisionalSession1Out && nowMinutes < refMinutes) exceptionType = 'BALIK AWAL';
@@ -329,7 +357,7 @@ function punch(token, type, location, clientInfo) {
   const label = type === 'IN' ? 'Masuk' : 'Balik';
   return {
     ok:true,
-    message:`Rekod waktu ${label} berjaya${exceptionType ? ` — status ${exceptionType}` : ''}.`,
+    message:`Rekod waktu ${label} berjaya${publicHoliday ? ` — ${publicHoliday.name}` : (exceptionType ? ` — status ${exceptionType}` : '')}.`,
     attendance:publicAttendance_({values},schedule),
     distanceM:loc.distanceM,
     accuracyM:loc.accuracyM,

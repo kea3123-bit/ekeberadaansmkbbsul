@@ -684,3 +684,21 @@
 </style>
 
 .review-role-tag{display:inline-flex;width:max-content;margin-top:5px;padding:3px 8px;border-radius:999px;background:#eef4ff;color:#175cd3;font-size:11px;font-weight:800}.pc-time-alert{color:#b42318!important;font-weight:900!important;background:#fff1f0!important}.pc-row-lewat .pc-statement{color:#b42318;font-weight:800}.setting-subsection{margin-top:8px;padding:12px 14px;border:1px solid #d0d5dd;border-radius:12px;background:#f8fafc;display:flex;flex-direction:column;gap:3px}
+
+
+/* Public holiday calendar */
+.public-holiday-settings{border:1px solid #e4e7ec;border-radius:16px;padding:16px;background:#fffdf7}
+.holiday-settings-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:12px}
+.holiday-settings-head b{display:block;font-size:15px}
+.holiday-settings-head small{display:block;color:#667085;margin-top:4px;line-height:1.45}
+.holiday-add-grid{display:grid;grid-template-columns:180px minmax(220px,1fr) auto;gap:10px;align-items:end}
+.public-holiday-list{display:grid;gap:8px;margin-top:14px;max-height:360px;overflow:auto}
+.public-holiday-item{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid #eaecf0;border-radius:12px;background:#fff}
+.public-holiday-item small{display:block;color:#667085;margin-top:2px;white-space:normal}
+.public-holiday-date{font-weight:800;font-variant-numeric:tabular-nums}
+.public-holiday-empty{padding:12px;color:#667085;text-align:center;border:1px dashed #d0d5dd;border-radius:12px}
+.pc-row-holiday td{background:#fff7d6!important}
+.pc-holiday-full{text-align:center!important;font-weight:800;letter-spacing:.02em}
+.pc-holiday-label{display:inline-block;margin-right:8px;font-size:11px;padding:3px 7px;border-radius:999px;background:#f5d34f;color:#4a3a00}
+.pc-holiday-reason{color:#5d4a00}
+@media(max-width:700px){.holiday-add-grid{grid-template-columns:1fr}.public-holiday-item{grid-template-columns:1fr auto}.public-holiday-date{grid-column:1/-1}}

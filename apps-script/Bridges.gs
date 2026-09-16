@@ -71,8 +71,11 @@ function renderPagesBridgeTransport_(responsePayload, targetOrigin, channel) {
 
 function pagesBridgeMethodAllowed_(method) {
   return [
+    'adminAddPublicHoliday',
     'adminBulkResetPasswords',
+    'adminDeletePublicHoliday',
     'adminGetPunchCardMonth',
+    'adminListPublicHolidays',
     'adminListTrustedDevices',
     'adminRepairAttendanceDuplicates',
     'adminResetPassword',
@@ -118,8 +121,11 @@ function pagesBridgeMethodAllowed_(method) {
 
 function invokePagesBridgeMethod_(method, args) {
   switch (method) {
+    case 'adminAddPublicHoliday': return adminAddPublicHoliday.apply(null, args);
     case 'adminBulkResetPasswords': return adminBulkResetPasswords.apply(null, args);
+    case 'adminDeletePublicHoliday': return adminDeletePublicHoliday.apply(null, args);
     case 'adminGetPunchCardMonth': return adminGetPunchCardMonth.apply(null, args);
+    case 'adminListPublicHolidays': return adminListPublicHolidays.apply(null, args);
     case 'adminListTrustedDevices': return adminListTrustedDevices.apply(null, args);
     case 'adminRepairAttendanceDuplicates': return adminRepairAttendanceDuplicates.apply(null, args);
     case 'adminResetPassword': return adminResetPassword.apply(null, args);

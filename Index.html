@@ -18,7 +18,7 @@
         <div id="returnAccountCard" class="account-box allowed delima-account-card returning-account-card"></div>
         <button id="continueLastAccountBtn" class="btn primary btn-login-full" type="button" onclick="continueLastAccount()">Teruskan sebagai pengguna ini</button>
         <button class="change-account-link" type="button" onclick="useDifferentAccount()">Bukan anda? Gunakan akaun DELIMa lain</button>
-        <p class="trusted-device-note">Jika sesi 30 hari anda telah tamat, sistem hanya akan meminta PIN. Akaun DELIMa tidak perlu ditaip semula.</p>
+        <p class="trusted-device-note">Jika sesi 7 hari anda telah tamat, sistem hanya akan meminta PIN. Akaun DELIMa tidak perlu ditaip semula.</p>
       </div>
 
       <div id="loginStepEmail" class="login-step">
@@ -45,7 +45,7 @@
         </label>
         <div class="pin-helper">Masukkan PIN 6 digit anda. <span class="pin-forgot">Lupa PIN? Minta Pentadbir Sistem reset PIN anda.</span></div>
         <button id="pinLoginBtn" class="btn primary btn-login-full" type="button" onclick="submitPinLogin()">Masuk</button>
-        <p class="trusted-device-note">Selepas berjaya, peranti ini akan diingati selama 30 hari.</p>
+        <p class="trusted-device-note">Selepas berjaya, peranti ini akan diingati selama 7 hari.</p>
       </div>
 
       <div id="loginStepSetPin" class="login-step hidden">
@@ -68,7 +68,7 @@
             <button type="button" class="password-toggle" onclick="togglePassword('confirmPin',this)" aria-label="Tunjukkan PIN">👁</button>
           </div>
         </label>
-        <div class="password-rules pin-rules">Tepat 6 digit nombor · sesi peranti aktif sehingga 30 hari</div>
+        <div class="password-rules pin-rules">Tepat 6 digit nombor · sesi peranti aktif sehingga 7 hari</div>
         <button id="setPinBtn" class="btn primary btn-login-full" type="button" onclick="submitFirstPin()">Simpan PIN & Teruskan</button>
       </div>
 
@@ -321,7 +321,7 @@
               <div class="filter-bar report-filter-bar">
                 <label class="search-box span-search">Carian dinamik<input id="reportSearch" type="search" placeholder="Nama, emel, kategori, status, sumber, sebab, IP..." oninput="applyReportFilters()"></label>
                 <label>Kategori<select id="reportCategoryFilter" onchange="applyReportFilters()"><option value="">Semua</option><option>Pengurusan</option><option>PPP</option><option>AKP</option></select></label>
-                <label>Status<select id="reportStatusFilter" onchange="applyReportFilters()"><option value="">Semua</option><option>HADIR</option><option>LEWAT</option><option>BALIK AWAL</option><option>TIDAK HADIR</option><option>BELUM HADIR</option></select></label>
+                <label>Status<select id="reportStatusFilter" onchange="applyReportFilters()"><option value="">Semua</option><option>HADIR</option><option>LEWAT</option><option>BALIK AWAL</option><option>TIDAK HADIR</option><option>BELUM HADIR</option><option>CUTI UMUM</option></select></label>
                 <label>Sumber<select id="reportSourceFilter" onchange="applyReportFilters()"><option value="">Semua</option><option>GPS</option><option>TEST</option><option>ADMIN</option><option>TIDAK_HADIR</option></select></label>
                 <div class="filter-count" id="reportFilterCount">0 rekod</div>
               </div>
@@ -363,7 +363,16 @@
                 <label>Tak hadir selepas<input name="absentAfter" type="time" required></label>
                 <label>Peringatan Rekod Waktu Masuk<select name="punchReminderEnabled"><option value="TRUE">Aktif</option><option value="FALSE">Tidak aktif</option></select></label>
                 <label>Waktu peringatan<input name="punchReminderTime" type="time" required></label>
-                <label class="span-2">Hari bekerja<input name="workingDays" placeholder="SUN,MON,TUE,WED,THU" required><small>Gunakan kod SUN, MON, TUE, WED, THU, FRI, SAT. Default Kedah: SUN–THU.</small></label><div class="span-2 setting-subsection"><b>WBF Khamis — AKP & Pengetua</b><small>Jika masa Masuk Sesi 1 berada dalam julat WBF, rujukan Balik Awal dikira daripada masa masuk + tempoh WBF.</small></div><label>WBF Khamis<select name="thursdayWbfEnabled"><option value="TRUE">Aktif</option><option value="FALSE">Tidak aktif</option></select></label><label>Tempoh WBF (minit)<input name="thursdayWbfDurationMinutes" type="number" min="1" max="1440" required></label><label>Masuk WBF mula<input name="thursdayWbfInFrom" type="time" required></label><label>Masuk WBF akhir<input name="thursdayWbfInTo" type="time" required></label><label>Pulang WBF mula<input name="thursdayWbfOutFrom" type="time" required></label><label>Pulang WBF akhir<input name="thursdayWbfOutTo" type="time" required></label>
+                <label class="span-2">Hari bekerja<input name="workingDays" placeholder="SUN,MON,TUE,WED,THU" required><small>Gunakan kod SUN, MON, TUE, WED, THU, FRI, SAT. Default Kedah: SUN–THU.</small></label>
+                <div class="span-2 public-holiday-settings">
+                  <div class="holiday-settings-head"><div><b>Cuti Umum</b><small>Satu senarai pusat untuk semua pengguna. Hari cuti tidak dikira Tidak Hadir; jika staf tetap punch, rekod sebenar dikira sebagai hadir.</small></div></div>
+                  <div class="holiday-add-grid">
+                    <label>Tarikh cuti<input id="publicHolidayDate" type="date"></label>
+                    <label>Nama cuti<input id="publicHolidayName" type="text" maxlength="120" placeholder="Contoh: Hari Malaysia"></label>
+                    <button class="btn primary" type="button" onclick="addPublicHoliday()">+ Tambah cuti</button>
+                  </div>
+                  <div id="publicHolidayList" class="public-holiday-list"></div>
+                </div><div class="span-2 setting-subsection"><b>WBF Khamis — AKP & Pengetua</b><small>Jika masa Masuk Sesi 1 berada dalam julat WBF, rujukan Balik Awal dikira daripada masa masuk + tempoh WBF.</small></div><label>WBF Khamis<select name="thursdayWbfEnabled"><option value="TRUE">Aktif</option><option value="FALSE">Tidak aktif</option></select></label><label>Tempoh WBF (minit)<input name="thursdayWbfDurationMinutes" type="number" min="1" max="1440" required></label><label>Masuk WBF mula<input name="thursdayWbfInFrom" type="time" required></label><label>Masuk WBF akhir<input name="thursdayWbfInTo" type="time" required></label><label>Pulang WBF mula<input name="thursdayWbfOutFrom" type="time" required></label><label>Pulang WBF akhir<input name="thursdayWbfOutTo" type="time" required></label>
                 <label>Rekod IP awam<select name="ipTrackingEnabled"><option value="TRUE">Aktif</option><option value="FALSE">Tidak aktif</option></select></label>
                 <label>Polisi IP ketika rakam waktu<select name="ipPunchPolicy"><option value="WARN">AMARAN — rekod tetapi benarkan</option><option value="BLOCK">SEKAT — tolak IP sama</option><option value="OFF">OFF — rekod sahaja</option></select></label>
                 <div class="span-2 setting-hint ip-policy-hint"><b>Semakan IP satu jam:</b> jika IP awam yang sama digunakan oleh akaun lain dalam jam yang sama, AMARAN akan merekodkan pertindihan tetapi rekod diterima. SEKAT akan menolak rakaman waktu. Untuk Wi‑Fi sekolah/shared network, AMARAN lebih sesuai kerana ramai peranti boleh berkongsi satu IP awam.</div>
