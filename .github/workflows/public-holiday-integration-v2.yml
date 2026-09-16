@@ -33,7 +33,7 @@ jobs:
           PYRUN
 
       - name: Install build dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Validate changed sources
         shell: bash
