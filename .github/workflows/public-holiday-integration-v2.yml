@@ -48,6 +48,7 @@ jobs:
       - name: Commit integration
         shell: bash
         run: |
+          sed -i 's/[[:space:]]\+$//' apps-script/30_Reporting.gs
           git config user.name "kea3123-bit"
           git config user.email "kea3123@moe.edu.my"
           git add Index.html Scripts.html Styles.html apps-script/00_Core.gs apps-script/20_UserApi.gs apps-script/21_AdminApi.gs apps-script/30_Reporting.gs apps-script/60_TimeReview.gs apps-script/61_Absence.gs apps-script/Bridges.gs
