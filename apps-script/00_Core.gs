@@ -222,9 +222,11 @@ function setupSystem() {
   setupTimeReviewSheet_(ss);
   setupLoginLogSheet_(ss);
   setupTrustedDevicesSheet_(ss);
+  // Cuti rasmi 2026 hanya diseed pada generasi pertama. Selepas itu apa-apa
+  // tambah/buang oleh Pentadbir Sistem kekal authoritative walaupun setupSystem
+  // dijalankan semula untuk membaiki helaian lain.
   setupPublicHolidaySheet_(ss);
-  seedKedahPublicHolidays2026_(ss.getSheetByName(EK_PUBLIC_HOLIDAY_SHEET_));
-  try { PropertiesService.getScriptProperties().setProperty(EK_PUBLIC_HOLIDAY_SEED_PROPERTY_, 'TRUE'); } catch (e) {}
+  ensurePublicHolidaySheet_();
   getSessionSecret_();
   getPasswordPepper_();
   PropertiesService.getScriptProperties().setProperty(EK.EMAIL.ENABLED_PROPERTY, 'TRUE');
