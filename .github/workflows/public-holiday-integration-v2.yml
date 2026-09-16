@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           python3 scripts/build-pages.py
-          for f in web/dist/assets/*.js; do node --check "$f"; done
+          for f in _site/assets/*.js; do node --check "$f"; done
           for f in apps-script/*.gs; do cp "$f" /tmp/ek-check.js; node --check /tmp/ek-check.js >/dev/null; done
           grep -q "PUBLIC_HOLIDAY" Scripts.html
           grep -q "2026-09-16','Hari Malaysia" apps-script/45_PublicHolidays.gs
