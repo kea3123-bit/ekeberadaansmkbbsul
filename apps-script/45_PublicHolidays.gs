@@ -7,12 +7,17 @@ const EK_PUBLIC_HOLIDAY_SHEET_ = 'CUTI_UMUM';
 const EK_PUBLIC_HOLIDAY_HEADERS_ = ['Tarikh','Nama','Jenis','Sumber','Aktif','DiciptaPada','DiciptaOleh'];
 const EK_PUBLIC_HOLIDAY_CACHE_KEY_ = 'EK_PERF_PUBLIC_HOLIDAYS_V1';
 const EK_PUBLIC_HOLIDAY_CACHE_TTL_SEC_ = 300;
-const EK_PUBLIC_HOLIDAY_SEED_PROPERTY_ = 'EK_PUBLIC_HOLIDAY_SEED_KEDAH_2026_V1';
+// V2 forces one complete Kedah 2026 import after deployment even if an older
+// holiday seed had already run. Once V2 is marked complete, administrator
+// additions/deletions remain authoritative and setupSystem() will not restore
+// a holiday that was deliberately removed.
+const EK_PUBLIC_HOLIDAY_SEED_PROPERTY_ = 'EK_PUBLIC_HOLIDAY_SEED_KEDAH_2026_V2';
 let EK_RUNTIME_PUBLIC_HOLIDAYS_ = null;
 
-// Jadual 2026 Negeri Kedah daripada jadual rasmi Hari Kelepasan Am Negeri
-// Kedah, ditambah Cuti Peristiwa Thaipusam dan Hari Kelepasan Am Tambahan
-// Aidilfitri yang diumumkan berasingan oleh Kerajaan Negeri Kedah.
+// Lengkap untuk sekolah di Negeri Kedah bagi tahun 2026:
+// - jadual rasmi Hari Kelepasan Am Negeri Kedah 2026;
+// - Cuti Peristiwa Thaipusam pada 1 Februari 2026; dan
+// - Hari Kelepasan Am Tambahan Aidilfitri pada 23 Mac 2026.
 const EK_KEDAH_PUBLIC_HOLIDAYS_2026_ = Object.freeze([
   ['2026-01-17','Israk dan Mikraj','NEGERI','Jadual Hari Kelepasan Am Negeri Kedah 2026'],
   ['2026-02-01','Thaipusam — Cuti Peristiwa','PERISTIWA','Kerajaan Negeri Kedah — Cuti Peristiwa Thaipusam 2026'],
