@@ -229,11 +229,16 @@ function getThursdayWbfOutReferenceFromTimingContext_(ctx,dateKey,values) {
   const v=padAttendanceValues_(values||[]); if(!v[4])return '';
   const inM=timeToMinutes_(formatTime_(v[4]));
   const inFrom=timeToMinutes_(settings.THURSDAY_WBF_IN_FROM||'07:30'), inTo=timeToMinutes_(settings.THURSDAY_WBF_IN_TO||'09:00');
-  if(![inM,inFrom,inTo].every(Number.isFinite)||inM<inFrom||inM>inTo)return '';
-  const expected=inM+Math.max(1,Number(settings.THURSDAY_WBF_DURATION_MINUTES||450));
   const outFrom=timeToMinutes_(settings.THURSDAY_WBF_OUT_FROM||'15:00'), outTo=timeToMinutes_(settings.THURSDAY_WBF_OUT_TO||'16:30');
-  if(![expected,outFrom,outTo].every(Number.isFinite)||expected<outFrom||expected>outTo)return '';
-  return minutesToTime_(expected);
+  if(![inM,inFrom,inTo,outFrom,outTo].every(Number.isFinite)||inM>inTo||inFrom>inTo||outFrom>outTo)return '';
+
+  // Gunakan kaedah yang sama seperti punch masa nyata: ketibaan sebelum mula
+  // WBF dikira dari waktu mula WBF, bukan dianggap tidak layak lalu fallback ke
+  // jadual biasa. Ini juga membetulkan paparan sejarah/Kad Perakam secara dinamik.
+  const effectiveIn=Math.max(inM,inFrom);
+  const expected=effectiveIn+Math.max(1,Number(settings.THURSDAY_WBF_DURATION_MINUTES||450));
+  if(!Number.isFinite(expected))return '';
+  return minutesToTime_(Math.min(outTo,Math.max(outFrom,expected)));
 }
 
 function getFinalOutReferenceFromTimingContext_(ctx,dateKey,values) {
@@ -290,4 +295,3 @@ function onEdit(e) {
     try{audit_('SEJARAH_JADUAL_GAGAL',e&&e.range?e.range.getSheet().getName():'ON_EDIT',String(err&&err.message?err.message:err),'SHEET_EDIT');}catch(_e){}
   }
 }
-
