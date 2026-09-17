@@ -99,7 +99,7 @@ function minutesToTime_(minutes) {
   return `${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`;
 }
 function isThursdayWbfUser_(user) {
-  return !!user && (String(user.category||'').trim().toUpperCase()==='AKP' || /PENGETUA/i.test(String(user.jobTitle||'')));
+  return !!user && (String(user.category||'').trim().toUpperCase()==='AKP' || /\bPENGETUA\b/i.test(String(user.jobTitle||'')));
 }
 function getThursdayWbfOutReference_(user,settings,dateKey,values) {
   if(!isThursdayWbfUser_(user) || String(settings.THURSDAY_WBF_ENABLED||'TRUE').toUpperCase()==='FALSE') return '';
@@ -107,11 +107,16 @@ function getThursdayWbfOutReference_(user,settings,dateKey,values) {
   const v=padAttendanceValues_(values||[]); if(!v[4]) return '';
   const inM=timeToMinutes_(formatTime_(v[4]));
   const inFrom=timeToMinutes_(settings.THURSDAY_WBF_IN_FROM||'07:30'), inTo=timeToMinutes_(settings.THURSDAY_WBF_IN_TO||'09:00');
-  if(![inM,inFrom,inTo].every(Number.isFinite)||inM<inFrom||inM>inTo) return '';
-  const expected=inM+Math.max(1,Number(settings.THURSDAY_WBF_DURATION_MINUTES||450));
   const outFrom=timeToMinutes_(settings.THURSDAY_WBF_OUT_FROM||'15:00'), outTo=timeToMinutes_(settings.THURSDAY_WBF_OUT_TO||'16:30');
-  if(![expected,outFrom,outTo].every(Number.isFinite)||expected<outFrom||expected>outTo) return '';
-  return minutesToTime_(expected);
+  if(![inM,inFrom,inTo,outFrom,outTo].every(Number.isFinite)||inM>inTo||inFrom>inTo||outFrom>outTo) return '';
+
+  // Staf AKP/Pengetua yang hadir sebelum julat mula WBF tetap dianggap
+  // bermula pada THURSDAY_WBF_IN_FROM. Ini mengelakkan ketibaan awal seperti
+  // 07:16/07:18 terjatuh semula kepada waktu balik biasa dan ditanda BALIK AWAL.
+  const effectiveIn=Math.max(inM,inFrom);
+  const expected=effectiveIn+Math.max(1,Number(settings.THURSDAY_WBF_DURATION_MINUTES||450));
+  if(!Number.isFinite(expected)) return '';
+  return minutesToTime_(Math.min(outTo,Math.max(outFrom,expected)));
 }
 function hasSecondAttendanceSession_(schedule) {
   // TRUE means the user MAY continue with Sesi 2; it does not mean Sesi 2 is
