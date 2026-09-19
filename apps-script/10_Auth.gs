@@ -38,7 +38,7 @@ function diagnoseLoginSecurity() {
 
 /**
  * Semak akaun DELIMa dalam whitelist PENGGUNA.
- * v12 menggunakan PIN 6 digit + trusted session 30 hari.
+ * v12 menggunakan PIN 6 digit + trusted session 7 hari.
  *
  * Pengguna lama yang masih mempunyai hash password tetapi AuthType kosong
  * dianggap belum bermigrasi ke PIN. Mereka terus dibawa ke skrin cipta PIN
