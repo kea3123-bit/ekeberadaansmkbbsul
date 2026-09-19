@@ -52,7 +52,9 @@ const EK = Object.freeze({
     PROFILE_ROOT_FOLDER_ID: '1WaZTGUn1izkIdSsk_o0S_14UAx2QODMh'
   },
   SESSION: {
+    // Signed access token lifetime. Trusted-device renewal remains separate.
     NORMAL_HOURS: 12,
+    // Rolling trusted-device lifetime.
     REMEMBER_DAYS: 7,
     MAX_TRUSTED_DEVICES: 2,
     SECRET_KEY: 'EK_SESSION_SECRET'
