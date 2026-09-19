@@ -189,14 +189,20 @@
     const buttonState=startRequestButton(takeActionButton());
     beginGlobalLoading();
 
+    // Punch melibatkan GPS, semakan Sheet dan kemungkinan cold-start Apps Script.
+    // Beri ruang lebih panjang daripada RPC biasa supaya frontend tidak melaporkan
+    // timeout palsu selepas backend sudah menerima/menulis rekod.
+    const requestTimeoutMs=method==='punch'?Math.max(timeoutMs,60000):timeoutMs;
     const timer=setTimeout(()=>{
       const p=pending.get(id);
       if(!p)return;
       pending.delete(id);
       cleanupRequest(p);
       ready=false;
-      failure(new Error('Backend tidak memberi respons. Semak deployment Apps Script atau sambungan internet.'));
-    },timeoutMs);
+      failure(new Error(method==='punch'
+        ? 'Rekod waktu mengambil masa terlalu lama. Jangan tekan berulang kali; muat semula dahulu untuk semak sama ada rekod sudah diterima.'
+        : 'Backend tidak memberi respons. Semak deployment Apps Script atau sambungan internet.'));
+    },requestTimeoutMs);
 
     pending.set(id,{success,failure,timer,frame,form,buttonState,cleaned:false});
     try{
