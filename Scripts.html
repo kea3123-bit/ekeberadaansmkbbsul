@@ -306,9 +306,18 @@ const state = {
       applySessionResult(res);
       return true;
     }catch(e){
-      // Network/server failures must not destroy a valid local credential. Only
-      // explicit authentication/session failures clear the signed session.
-      if(isAuthSessionError(e)){clearStoredSessionToken();state.token='';}
+      // If only the short-lived access token expired, silently mint a fresh
+      // one from the trusted-device credential. Network failures leave the
+      // current local state untouched.
+      if(isAuthSessionError(e)){
+        clearStoredSessionToken();state.token='';
+        try{
+          await recoverAccessSession();
+          return true;
+        }catch(recoveryErr){
+          if(isAuthSessionError(recoveryErr)){clearTrustedDevice();state.deviceToken='';}
+        }
+      }
       return false;
     }finally{state.sessionCheckBusy=false;}
   }
