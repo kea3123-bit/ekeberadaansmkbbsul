@@ -271,12 +271,10 @@ function punch(token, type, location, clientInfo) {
     session = step.session;
     refTime = getPunchReferenceTime_(type,session,schedule,user,settings,dateKey,values);
 
-    if (!isTestMode && !publicHoliday && type === 'IN') {
-      const latestAllowed = session === 1 ? schedule.maxPunchIn : (schedule.s2Out || '');
-      if (latestAllowed && nowMinutes > timeToMinutes_(latestAllowed)) {
-        throw new Error(`Tempoh Rekod Waktu Masuk Sesi ${session} telah tamat pada ${latestAllowed}.`);
-      }
-    }
+    // Rekod Masuk tidak disekat berdasarkan waktu. Pengguna sentiasa boleh
+    // punch mengikut turutan IN -> OUT; masa lewat hanya menghasilkan status
+    // LEWAT untuk semakan. maxPunchIn dikekalkan sebagai data jadual legacy /
+    // rujukan pentadbir, bukan sebagai hard cutoff.
     const provisionalSession1Out = type === 'OUT' && session === 1 && hasSecondAttendanceSession_(schedule);
     if (!isTestMode && !publicHoliday && refTime) {
       const refMinutes = timeToMinutes_(refTime);
