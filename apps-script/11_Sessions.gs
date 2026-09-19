@@ -183,34 +183,46 @@ function registerOrRefreshTrustedDevice_(user, clientInfo, existingCredential) {
     return existing;
   }
 
-  cleanupTrustedDevices_(user.email);
-  const active = getTrustedDevices_(user.email, false)
-    .filter(d => Number(d.sessionVersion || 0) === Math.max(1, Number(user.sessionVersion || 1)))
-    .sort((a,b) => dateMillis_(a.lastSeenAt || a.createdAt) - dateMillis_(b.lastSeenAt || b.createdAt));
-  while (active.length >= EK.SESSION.MAX_TRUSTED_DEVICES) {
-    const old = active.shift();
-    revokeTrustedDeviceById_(old.deviceId, user.email, 'DIGANTI_PERANTI_BAHARU');
-    audit_('TRUSTED_DEVICE_DIGANTI', user.email, `Had ${EK.SESSION.MAX_TRUSTED_DEVICES} peranti; DeviceID lama=${old.deviceId}`, user.email);
-  }
+  // New-device registration is rare, so a short global gate is acceptable and
+  // prevents simultaneous logins from both observing "< 2 devices" and
+  // exceeding MAX_TRUSTED_DEVICES.
+  const gate = LockService.getScriptLock();
+  if (!gate.tryLock(4000)) throw new Error('Pendaftaran peranti sedang sibuk. Cuba log masuk semula.');
+  try {
+    // Force a fresh sheet-backed view after entering the gate. Another login
+    // may have changed the device list while this request was waiting.
+    invalidateTrustedDevicesCache_();
+    cleanupTrustedDevices_(user.email);
+    const active = getTrustedDevices_(user.email, false)
+      .filter(d => Number(d.sessionVersion || 0) === Math.max(1, Number(user.sessionVersion || 1)))
+      .sort((a,b) => dateMillis_(a.lastSeenAt || a.createdAt) - dateMillis_(b.lastSeenAt || b.createdAt));
+    while (active.length >= EK.SESSION.MAX_TRUSTED_DEVICES) {
+      const old = active.shift();
+      revokeTrustedDeviceById_(old.deviceId, user.email, 'DIGANTI_PERANTI_BAHARU');
+      audit_('TRUSTED_DEVICE_DIGANTI', user.email, `Had ${EK.SESSION.MAX_TRUSTED_DEVICES} peranti; DeviceID lama=${old.deviceId}`, user.email);
+    }
 
-  const sh = ensureTrustedDevicesSheet_();
-  const deviceId = Utilities.getUuid().toLowerCase();
-  const secret = newTrustedDeviceSecret_();
-  const credential = `${deviceId}.${secret}`;
-  const now = new Date();
-  const exp = new Date(Date.now() + EK.SESSION.REMEMBER_DAYS * 24 * 60 * 60 * 1000);
-  sh.appendRow([
-    deviceId, user.email, deviceNameFromClientInfo_(ci), platformNameFromClientInfo_(ci), browserNameFromUa_(ci.userAgent),
-    ci.ip || '', now, now, exp, true, Math.max(1, Number(user.sessionVersion || 1)),
-    hashTrustedDeviceSecret_(deviceId, secret), '', ...trustedDeviceTelemetryValues_(ci)
-  ]);
-  const row = sh.getLastRow();
-  sh.getRange(row, 7, 1, 3).setNumberFormat('dd/MM/yyyy HH:mm:ss');
-  sh.getRange(row, 10).insertCheckboxes().setValue(true);
-  invalidateTrustedDevicesCache_();
-  const created = trustedDeviceFromRow_(sh.getRange(row,1,1,EK.TRUSTED_DEVICE_HEADERS.length).getValues()[0], row);
-  created.credential = credential;
-  return created;
+    const sh = ensureTrustedDevicesSheet_();
+    const deviceId = Utilities.getUuid().toLowerCase();
+    const secret = newTrustedDeviceSecret_();
+    const credential = `${deviceId}.${secret}`;
+    const now = new Date();
+    const exp = new Date(Date.now() + EK.SESSION.REMEMBER_DAYS * 24 * 60 * 60 * 1000);
+    sh.appendRow([
+      deviceId, user.email, deviceNameFromClientInfo_(ci), platformNameFromClientInfo_(ci), browserNameFromUa_(ci.userAgent),
+      ci.ip || '', now, now, exp, true, Math.max(1, Number(user.sessionVersion || 1)),
+      hashTrustedDeviceSecret_(deviceId, secret), '', ...trustedDeviceTelemetryValues_(ci)
+    ]);
+    const row = sh.getLastRow();
+    sh.getRange(row, 7, 1, 3).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+    sh.getRange(row, 10).insertCheckboxes().setValue(true);
+    invalidateTrustedDevicesCache_();
+    const created = trustedDeviceFromRow_(sh.getRange(row,1,1,EK.TRUSTED_DEVICE_HEADERS.length).getValues()[0], row);
+    created.credential = credential;
+    return created;
+  } finally {
+    try { gate.releaseLock(); } catch (_e) {}
+  }
 }
 
 function touchTrustedDevice_(rec, clientInfo, extendExpiry) {
@@ -247,7 +259,13 @@ function touchTrustedDevice_(rec, clientInfo, extendExpiry) {
   rec.pixelRatio=nextPixelRatio; rec.touchPoints=nextTouchPoints; rec.cpu=nextCpu; rec.ramGb=nextRamGb;
   rec.network=nextNetwork || ''; rec.publicIpv4=nextIpv4 || ''; rec.publicIpv6=nextIpv6 || '';
   rec.userAgent=nextUserAgent || ''; rec.timezone=nextTimezone || ''; rec.language=nextLanguage || '';
-  if (extendExpiry && previousExpiryMs && previousExpiryMs - now.getTime() < 5 * 60 * 1000) invalidateTrustedDevicesCache_();
+  // Keep the shared trusted-device cache aligned with the successful touch.
+  // This avoids a stale lastSeen/expiry view for up to the full cache TTL.
+  if (Array.isArray(EK_RUNTIME_TRUSTED_DEVICES_)) {
+    cachePutJson_(EK_PERF.TRUSTED_DEVICES_CACHE_KEY, EK_RUNTIME_TRUSTED_DEVICES_, EK_PERF.TRUSTED_DEVICES_TTL_SEC);
+  } else if (extendExpiry && previousExpiryMs && previousExpiryMs - now.getTime() < 5 * 60 * 1000) {
+    invalidateTrustedDevicesCache_();
+  }
   return rec;
 }
 
