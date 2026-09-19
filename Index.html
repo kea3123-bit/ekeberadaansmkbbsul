@@ -346,43 +346,118 @@
             </div>
 
             <div id="tab-settings" class="tab-body hidden">
-              <form id="settingsForm" class="form-grid settings-form-v9" onsubmit="saveSettings(event)">
-                <label class="span-2">Nama sekolah<input name="schoolName" required></label>
-                <label>Mod sistem<select name="systemMode" id="systemModeSelect" onchange="updateModeSettingHint()"><option value="REAL">MOD SEBENAR</option><option value="TEST">MOD TEST</option></select></label>
-                <div class="setting-hint" id="modeSettingHint">MOD SEBENAR menggunakan semakan lokasi; masa hanya menentukan status LEWAT / BALIK AWAL.</div>
-                <label>Latitude pusat<input id="settingLat" name="schoolLat" type="number" step="any" oninput="syncMapFromInputs()"></label>
-                <label>Longitude pusat<input id="settingLng" name="schoolLng" type="number" step="any" oninput="syncMapFromInputs()"></label>
-                <label>Radius (meter)<input id="settingRadius" name="radiusM" type="number" min="1" max="5000" required oninput="syncMapRadius()"></label>
-                <label>Had ketepatan GPS (m)<input id="settingGpsAccuracy" name="maxGpsAccuracyM" type="number" min="1" max="2000" required oninput="updateGpsSettingWarning()"></label>
-                <div id="gpsSettingWarning" class="span-2 setting-hint test-hint hidden"></div>
-                <div class="span-2 map-setting-block">
-                  <div class="map-setting-head"><div><b>Tetapkan lokasi secara visual</b><small>Klik pada peta untuk pindahkan pusat radius atau gunakan lokasi peranti.</small></div><button class="btn ghost small" type="button" onclick="useCurrentLocationForSetting()">Gunakan lokasi saya</button></div>
-                  <div id="locationPickerMap" class="location-picker-map"></div>
-                  <div class="map-coord-readout"><span>Pusat: <b id="mapCoordReadout">—</b></span><span>Radius: <b id="mapRadiusReadout">—</b></span></div>
+              <div class="settings-header">
+                <div>
+                  <div class="eyebrow">Konfigurasi sistem</div>
+                  <h3>Tetapan Pentadbir Sistem</h3>
+                  <p>Urus konfigurasi asas, waktu, lokasi, kalendar dan keselamatan tanpa perlu menatal satu borang panjang.</p>
                 </div>
-                <label>Sesi 1 · Waktu Masuk<input name="defaultS1In" type="time" required><small>Selepas waktu ini = LEWAT, selagi masih dalam had akhir masuk.</small></label><label>Had akhir Rekod Masuk Sesi 1<input name="defaultMaxPunchIn" type="time" required><small>Selepas waktu ini, Rekod Masuk Sesi 1 ditolak.</small></label>
-                <label>Sesi 1 · Waktu Keluar<input name="defaultS1Out" type="time" required><small>Sebelum waktu ini = BALIK AWAL, tetapi rekod tetap diterima.</small></label>
-                <label>Sesi 2 · Waktu Masuk<input name="defaultS2In" type="time"><small>Opsyenal. Jika kosong, hanya Sesi 1 digunakan.</small></label>
-                <label>Sesi 2 · Waktu Keluar<input name="defaultS2Out" type="time"><small>Opsyenal. Jika diisi, menjadi rujukan BALIK AWAL Sesi 2.</small></label><label>Pasangan Sesi 2 opsyenal<select name="allowOptionalSecondSession"><option value="TRUE">Aktif</option><option value="FALSE">Tidak aktif</option></select><small>Aktif: selepas Masuk → Balik Sesi 1, pengguna boleh rekod Masuk → Balik Sesi 2 jika ada.</small></label>
-                <label>Tak hadir selepas<input name="absentAfter" type="time" required></label>
-                <label>Peringatan Rekod Waktu Masuk<select name="punchReminderEnabled"><option value="TRUE">Aktif</option><option value="FALSE">Tidak aktif</option></select></label>
-                <label>Waktu peringatan<input name="punchReminderTime" type="time" required></label>
-                <label class="span-2">Hari bekerja<input name="workingDays" placeholder="SUN,MON,TUE,WED,THU" required><small>Gunakan kod SUN, MON, TUE, WED, THU, FRI, SAT. Default Kedah: SUN–THU.</small></label>
-                <div class="span-2 public-holiday-settings">
-                  <div class="holiday-settings-head"><div><b>Cuti Umum</b><small>Satu senarai pusat untuk semua pengguna. Hari cuti tidak dikira Tidak Hadir; jika pegawai tetap rekod waktu, rekod sebenar dikira sebagai hadir.</small></div></div>
-                  <div class="holiday-add-grid">
-                    <label>Tarikh cuti<input id="publicHolidayDate" type="date"></label>
-                    <label>Nama cuti<input id="publicHolidayName" type="text" maxlength="120" placeholder="Contoh: Hari Malaysia"></label>
-                    <button class="btn primary" type="button" onclick="addPublicHoliday()">+ Tambah cuti</button>
+                <div class="settings-status-strip">
+                  <span><small>Mod</small><b id="settingsModeSummary">—</b></span>
+                  <span><small>Radius</small><b id="settingsRadiusSummary">—</b></span>
+                  <span><small>Hari bekerja</small><b id="settingsWorkdaySummary">—</b></span>
+                </div>
+              </div>
+
+              <div class="settings-subtabs" role="tablist" aria-label="Bahagian tetapan">
+                <button type="button" class="settings-subtab active" data-settings-section="general" onclick="switchSettingsSection('general',this)">Umum & Waktu</button>
+                <button type="button" class="settings-subtab" data-settings-section="location" onclick="switchSettingsSection('location',this)">Lokasi & GPS</button>
+                <button type="button" class="settings-subtab" data-settings-section="calendar" onclick="switchSettingsSection('calendar',this)">Kalendar & WBF</button>
+                <button type="button" class="settings-subtab" data-settings-section="security" onclick="switchSettingsSection('security',this)">Keselamatan & Profil</button>
+              </div>
+
+              <form id="settingsForm" class="settings-form-v15" onsubmit="saveSettings(event)">
+                <section id="settings-section-general" class="settings-section">
+                  <div class="settings-section-head">
+                    <div><span class="settings-section-icon">⚙</span><div><b>Umum & Waktu</b><small>Identiti sistem, mod operasi dan aturan rekod waktu harian.</small></div></div>
                   </div>
-                  <div id="publicHolidayList" class="public-holiday-list"></div>
-                </div><div class="span-2 setting-subsection"><b>WBF Khamis — AKP & Pengetua</b><small>Jika masa Masuk Sesi 1 berada dalam julat WBF, rujukan Balik Awal dikira daripada masa masuk + tempoh WBF.</small></div><label>WBF Khamis<select name="thursdayWbfEnabled"><option value="TRUE">Aktif</option><option value="FALSE">Tidak aktif</option></select></label><label>Tempoh WBF (minit)<input name="thursdayWbfDurationMinutes" type="number" min="1" max="1440" required></label><label>Masuk WBF mula<input name="thursdayWbfInFrom" type="time" required></label><label>Masuk WBF akhir<input name="thursdayWbfInTo" type="time" required></label><label>Pulang WBF mula<input name="thursdayWbfOutFrom" type="time" required></label><label>Pulang WBF akhir<input name="thursdayWbfOutTo" type="time" required></label>
-                <label>Rekod IP awam<select name="ipTrackingEnabled"><option value="TRUE">Aktif</option><option value="FALSE">Tidak aktif</option></select></label>
-                <label>Polisi IP ketika rakam waktu<select name="ipPunchPolicy"><option value="WARN">AMARAN — rekod tetapi benarkan</option><option value="BLOCK">SEKAT — tolak IP sama</option><option value="OFF">OFF — rekod sahaja</option></select></label>
-                <div class="span-2 setting-hint ip-policy-hint"><b>Semakan IP satu jam:</b> jika IP awam yang sama digunakan oleh akaun lain dalam jam yang sama, AMARAN akan merekodkan pertindihan tetapi rekod diterima. SEKAT akan menolak rakaman waktu. Untuk Wi‑Fi sekolah/shared network, AMARAN lebih sesuai kerana ramai peranti boleh berkongsi satu IP awam.</div>
-                <label class="span-2">Folder induk gambar profil Google Drive<input name="profileRootFolderId" placeholder="Folder ID Google Drive"></label>
-                <div class="span-2 profile-sync-card"><div><b>Struktur gambar profil</b><small>01 - Pengurusan / 02 - Guru / 03 - Anggota Kumpulan Pelaksana → folder nama pegawai → eoperasi.png</small></div><button class="btn ghost" type="button" onclick="syncProfilePhotos()">Sync Sekarang</button></div>
-                <div class="span-2"><button class="btn primary" type="submit">Simpan tetapan</button></div>
+                  <div class="settings-grid">
+                    <label class="span-2">Nama sekolah<input name="schoolName" required></label>
+                    <label>Mod sistem<select name="systemMode" id="systemModeSelect" onchange="updateModeSettingHint();updateSettingsSummary()"><option value="REAL">MOD SEBENAR</option><option value="TEST">MOD TEST</option></select></label>
+                    <div class="setting-hint" id="modeSettingHint">MOD SEBENAR menggunakan semakan lokasi; masa hanya menentukan status LEWAT / BALIK AWAL.</div>
+
+                    <div class="settings-group-title span-2"><b>Sesi 1</b><small>Waktu utama dan had akhir rakaman masuk.</small></div>
+                    <label>Sesi 1 · Waktu Masuk<input name="defaultS1In" type="time" required><small>Selepas waktu ini = LEWAT, selagi masih dalam had akhir masuk.</small></label>
+                    <label>Had akhir Rekod Masuk Sesi 1<input name="defaultMaxPunchIn" type="time" required><small>Selepas waktu ini, Rekod Masuk Sesi 1 ditolak.</small></label>
+                    <label>Sesi 1 · Waktu Keluar<input name="defaultS1Out" type="time" required><small>Sebelum waktu ini = BALIK AWAL, tetapi rekod tetap diterima.</small></label>
+                    <label>Tak hadir selepas<input name="absentAfter" type="time" required></label>
+
+                    <div class="settings-group-title span-2"><b>Sesi 2</b><small>Opsyenal untuk organisasi yang menggunakan rekod masuk/balik kedua.</small></div>
+                    <label>Sesi 2 · Waktu Masuk<input name="defaultS2In" type="time"><small>Jika kosong, hanya Sesi 1 digunakan.</small></label>
+                    <label>Sesi 2 · Waktu Keluar<input name="defaultS2Out" type="time"><small>Jika diisi, menjadi rujukan BALIK AWAL Sesi 2.</small></label>
+                    <label>Pasangan Sesi 2 opsyenal<select name="allowOptionalSecondSession"><option value="TRUE">Aktif</option><option value="FALSE">Tidak aktif</option></select><small>Selepas Masuk → Balik Sesi 1, pengguna boleh rekod Masuk → Balik Sesi 2.</small></label>
+
+                    <div class="settings-group-title span-2"><b>Peringatan</b><small>Kawalan notifikasi rekod waktu masuk.</small></div>
+                    <label>Peringatan Rekod Waktu Masuk<select name="punchReminderEnabled"><option value="TRUE">Aktif</option><option value="FALSE">Tidak aktif</option></select></label>
+                    <label>Waktu peringatan<input name="punchReminderTime" type="time" required></label>
+                  </div>
+                </section>
+
+                <section id="settings-section-location" class="settings-section hidden">
+                  <div class="settings-section-head">
+                    <div><span class="settings-section-icon">⌖</span><div><b>Lokasi & GPS</b><small>Tetapkan pusat sekolah, radius dan toleransi ketepatan GPS.</small></div></div>
+                    <button class="btn ghost small" type="button" onclick="useCurrentLocationForSetting()">Gunakan lokasi saya</button>
+                  </div>
+                  <div class="settings-grid">
+                    <label>Latitude pusat<input id="settingLat" name="schoolLat" type="number" step="any" oninput="syncMapFromInputs()"></label>
+                    <label>Longitude pusat<input id="settingLng" name="schoolLng" type="number" step="any" oninput="syncMapFromInputs()"></label>
+                    <label>Radius (meter)<input id="settingRadius" name="radiusM" type="number" min="1" max="5000" required oninput="syncMapRadius();updateSettingsSummary()"></label>
+                    <label>Had ketepatan GPS (m)<input id="settingGpsAccuracy" name="maxGpsAccuracyM" type="number" min="1" max="2000" required oninput="updateGpsSettingWarning()"></label>
+                    <div id="gpsSettingWarning" class="span-2 setting-hint test-hint hidden"></div>
+                    <div class="span-2 map-setting-block">
+                      <div class="map-setting-head"><div><b>Pusat radius & lokasi semasa</b><small>Klik peta untuk pindahkan pusat. Titik lokasi semasa peranti turut dipaparkan jika tersedia.</small></div></div>
+                      <div id="locationPickerMap" class="location-picker-map"></div>
+                      <div class="map-coord-readout"><span>Pusat: <b id="mapCoordReadout">—</b></span><span>Radius: <b id="mapRadiusReadout">—</b></span></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section id="settings-section-calendar" class="settings-section hidden">
+                  <div class="settings-section-head">
+                    <div><span class="settings-section-icon">▦</span><div><b>Kalendar & WBF</b><small>Hari bekerja, cuti umum dan aturan Waktu Bekerja Fleksi Khamis.</small></div></div>
+                  </div>
+                  <div class="settings-grid">
+                    <label class="span-2">Hari bekerja<input name="workingDays" placeholder="SUN,MON,TUE,WED,THU" required oninput="updateSettingsSummary()"><small>Gunakan kod SUN, MON, TUE, WED, THU, FRI, SAT. Default Kedah: SUN–THU.</small></label>
+
+                    <div class="span-2 public-holiday-settings">
+                      <div class="holiday-settings-head"><div><b>Cuti Umum</b><small>Satu senarai pusat untuk semua pengguna. Hari cuti tidak dikira Tidak Hadir; jika pegawai tetap rekod waktu, rekod sebenar dikira sebagai hadir.</small></div></div>
+                      <div class="holiday-add-grid">
+                        <label>Tarikh cuti<input id="publicHolidayDate" type="date"></label>
+                        <label>Nama cuti<input id="publicHolidayName" type="text" maxlength="120" placeholder="Contoh: Hari Malaysia"></label>
+                        <button class="btn primary" type="button" onclick="addPublicHoliday()">+ Tambah cuti</button>
+                      </div>
+                      <div id="publicHolidayList" class="public-holiday-list"></div>
+                    </div>
+
+                    <div class="span-2 setting-subsection settings-subsection-emphasis"><b>WBF Khamis — AKP & Pengetua</b><small>Jika masa Masuk Sesi 1 berada dalam julat WBF, rujukan Balik Awal dikira daripada masa masuk + tempoh WBF.</small></div>
+                    <label>WBF Khamis<select name="thursdayWbfEnabled"><option value="TRUE">Aktif</option><option value="FALSE">Tidak aktif</option></select></label>
+                    <label>Tempoh WBF (minit)<input name="thursdayWbfDurationMinutes" type="number" min="1" max="1440" required></label>
+                    <label>Masuk WBF mula<input name="thursdayWbfInFrom" type="time" required></label>
+                    <label>Masuk WBF akhir<input name="thursdayWbfInTo" type="time" required></label>
+                    <label>Pulang WBF mula<input name="thursdayWbfOutFrom" type="time" required></label>
+                    <label>Pulang WBF akhir<input name="thursdayWbfOutTo" type="time" required></label>
+                  </div>
+                </section>
+
+                <section id="settings-section-security" class="settings-section hidden">
+                  <div class="settings-section-head">
+                    <div><span class="settings-section-icon">◈</span><div><b>Keselamatan & Profil</b><small>Jejak IP, polisi pertindihan rangkaian dan sumber gambar profil.</small></div></div>
+                  </div>
+                  <div class="settings-grid">
+                    <label>Rekod IP awam<select name="ipTrackingEnabled"><option value="TRUE">Aktif</option><option value="FALSE">Tidak aktif</option></select></label>
+                    <label>Polisi IP ketika rakam waktu<select name="ipPunchPolicy"><option value="WARN">AMARAN — rekod tetapi benarkan</option><option value="BLOCK">SEKAT — tolak IP sama</option><option value="OFF">OFF — rekod sahaja</option></select></label>
+                    <div class="span-2 setting-hint ip-policy-hint"><b>Semakan IP satu jam:</b> IP awam yang sama mungkin digunakan oleh ramai peranti pada Wi‑Fi sekolah. AMARAN merekodkan pertindihan tetapi masih menerima rekod; SEKAT akan menolak rakaman waktu.</div>
+
+                    <div class="settings-group-title span-2"><b>Gambar profil</b><small>Sumber Google Drive untuk sinkronisasi gambar pengguna.</small></div>
+                    <label class="span-2">Folder induk gambar profil Google Drive<input name="profileRootFolderId" placeholder="Folder ID Google Drive"></label>
+                    <div class="span-2 profile-sync-card"><div><b>Struktur gambar profil</b><small>01 - Pengurusan / 02 - Guru / 03 - Anggota Kumpulan Pelaksana → folder nama pegawai → eoperasi.png</small></div><button class="btn ghost" type="button" onclick="syncProfilePhotos()">Sync Sekarang</button></div>
+                  </div>
+                </section>
+
+                <div class="settings-savebar">
+                  <div><b>Simpan perubahan</b><small>Semua bahagian di atas disimpan serentak.</small></div>
+                  <button class="btn primary" type="submit">Simpan tetapan</button>
+                </div>
               </form>
             </div>
           </section>
