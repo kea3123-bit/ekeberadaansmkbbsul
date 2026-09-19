@@ -447,7 +447,7 @@ window.EK_CONFIG = Object.freeze({
     const radius = Math.max(1, Number(state.boot?.settings?.radiusM) || 200);
     const netNote = constrainedNetwork() ? ' · peta tidak dimuat untuk jimat data' : '';
     setPreview(
-      `Lokasi ${activeType === 'OUT' ? 'Punch Keluar' : 'Punch Masuk'} dikunci`,
+      `Lokasi ${activeType === 'OUT' ? 'Rekod Keluar' : 'Rekod Masuk'} dikunci`,
       `Ketepatan ±${accuracy}m${Number.isFinite(distance) ? ` · ${distance}m dari pusat / radius ${Math.round(radius)}m` : ''}${netNote}`,
       true
     );

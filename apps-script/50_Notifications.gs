@@ -270,7 +270,7 @@ function installEmailNotificationsFromMenu() {
       `Penghantaran menggunakan akaun pemilik ${EK.EMAIL.OWNER_EMAIL}.\n\n` +
       `Laporan kehadiran hari semalam akan dihantar kepada Pentadbir setiap hari sekitar ${String(result.hour).padStart(2,'0')}:00 (Asia/Kuala_Lumpur).\n\n` +
       (result.reminderEnabled ? `Peringatan Rekod Waktu Masuk juga aktif sekitar ${result.reminderTime} pada hari bekerja.\n\n` : 'Peringatan Rekod Waktu Masuk sedang dinyahaktifkan dalam Tetapan.\n\n') +
-      'Semakan tamat Keberadaan tanpa Punch Masuk berjalan setiap 5 minit dan akan memaklumkan Pengurusan sebelum status TIDAK HADIR ditulis.\n\n' +
+      'Semakan tamat Keberadaan tanpa Rekod Masuk berjalan setiap 5 minit dan akan memaklumkan Pengurusan sebelum status TIDAK HADIR ditulis.\n\n' +
       'Notifikasi permohonan Tidak Hadir dan aliran reset/tetapan PIN juga telah diaktifkan.',
       ui.ButtonSet.OK
     );

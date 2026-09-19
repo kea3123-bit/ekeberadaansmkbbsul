@@ -552,7 +552,7 @@ function notifyPresenceNoPunchManagement_(user, dateKey, deadlineInfo) {
   const recipients = getNotificationAdminEmails_();
   const request = deadlineInfo && deadlineInfo.primary ? deadlineInfo.primary : null;
   const webUrl = getWebAppUrl_();
-  const subject = `PERHATIAN: Tamat Keberadaan tanpa Punch Masuk — ${user.name} (${dateKey})`;
+  const subject = `PERHATIAN: Tamat Keberadaan tanpa Rekod Masuk — ${user.name} (${dateKey})`;
   const requestLines = (deadlineInfo && deadlineInfo.requests ? deadlineInfo.requests : [])
     .map(r => [
       escapeHtml_(r.id || ''),
@@ -562,8 +562,8 @@ function notifyPresenceNoPunchManagement_(user, dateKey, deadlineInfo) {
     ].filter(Boolean).join(' · '))
     .join('<br>');
   const html = emailFrame_(
-    'Tamat Keberadaan — Punch Masuk belum direkod',
-    `<p>Waktu akhir Keberadaan telah berlalu tetapi sistem masih belum mengesan <b>Punch Masuk</b> bagi pegawai berikut.</p>
+    'Tamat Keberadaan — Rekod Masuk belum direkod',
+    `<p>Waktu akhir Keberadaan telah berlalu tetapi sistem masih belum mengesan <b>Rekod Masuk</b> bagi pegawai berikut.</p>
      ${detailTable_([
        ['Nama', user.name || user.email],
        ['Jawatan', user.jobTitle || '—'],
@@ -574,11 +574,11 @@ function notifyPresenceNoPunchManagement_(user, dateKey, deadlineInfo) {
        ['Status permohonan', request ? request.status : '—']
      ])}
      ${requestLines ? `<p><b>Catatan Keberadaan:</b><br>${requestLines}</p>` : ''}
-     <p><b>Tindakan sistem:</b> selepas emel ini berjaya dihantar, rekod akan ditandakan <b>TIDAK HADIR</b>. Jika pegawai kemudian Punch Masuk pada hari yang sama, rekod akan kembali mengikut punch sebenar dan status <b>LEWAT</b> akan kekal jika berkenaan.</p>
+     <p><b>Tindakan sistem:</b> selepas emel ini berjaya dihantar, rekod akan ditandakan <b>TIDAK HADIR</b>. Jika pegawai kemudian Rekod Masuk pada hari yang sama, rekod akan kembali mengikut punch sebenar dan status <b>LEWAT</b> akan kekal jika berkenaan.</p>
      ${webUrl ? `<p style="margin:24px 0"><a href="${escapeHtml_(webUrl)}" style="display:inline-block;background:#0B57D0;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700">Buka e-Keberadaan</a></p>` : ''}`
   );
   const text = [
-    'Tamat Keberadaan — Punch Masuk belum direkod',
+    'Tamat Keberadaan — Rekod Masuk belum direkod',
     `Nama: ${user.name || user.email}`,
     `Emel: ${user.email}`,
     `Tarikh: ${dateKey}`,
@@ -586,7 +586,7 @@ function notifyPresenceNoPunchManagement_(user, dateKey, deadlineInfo) {
     request ? `Keberadaan: ${request.type} (${request.startTime || '-'}-${request.endTime || '-'})` : '',
     request && request.note ? `Catatan: ${request.note}` : '',
     '',
-    'Selepas amaran ini berjaya dihantar, sistem menandakan TIDAK HADIR. Punch Masuk yang dibuat kemudian pada hari sama akan menggantikan status automatik dan status LEWAT tetap dikekalkan jika berkenaan.',
+    'Selepas amaran ini berjaya dihantar, sistem menandakan TIDAK HADIR. Rekod Masuk yang dibuat kemudian pada hari sama akan menggantikan status automatik dan status LEWAT tetap dikekalkan jika berkenaan.',
     webUrl ? `Buka: ${webUrl}` : ''
   ].filter(Boolean).join('\n');
   return safeSendSystemEmail_(recipients, subject, html, text, `KEBERADAAN_NO_PUNCH:${dateKey}:${user.email}`);
@@ -640,13 +640,13 @@ function finalizeExpiredPresenceWithoutPunchForDate_(dateKey, settings, options)
       rec = findAttendanceRecord_(dateKey, user.email);
       if (rec && rec.values[4]) {
         skippedPunch++;
-        audit_('KEBERADAAN_ALERT_TANPA_FINAL', `${dateKey}|${user.email}`, 'Emel telah dihantar tetapi pengguna Punch Masuk sebelum status difinalkan.', 'SISTEM');
+        audit_('KEBERADAAN_ALERT_TANPA_FINAL', `${dateKey}|${user.email}`, 'Emel telah dihantar tetapi pengguna Rekod Masuk sebelum status difinalkan.', 'SISTEM');
         return;
       }
       if (rec && String(rec.values[14] || '').toUpperCase() === 'TIDAK HADIR') return;
 
       const primary = deadline.primary;
-      const reason = presenceRequestReason_(primary, 'TAMAT KEBERADAAN TANPA PUNCH MASUK') +
+      const reason = presenceRequestReason_(primary, 'TAMAT KEBERADAAN TANPA REKOD MASUK') +
         ` — Pengurusan dimaklumkan ${formatDateTime_(new Date())}`;
       const sh = getSheetOrThrow_(EK.SHEETS.ATTENDANCE);
       const v = rec ? padAttendanceValues_(rec.values) : Array(EK.ATT_HEADERS.length).fill('');
