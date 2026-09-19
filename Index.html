@@ -153,9 +153,13 @@
               <div class="home-radius-card"><span>Radius</span><b id="radiusM">—</b></div>
             </div>
             <div class="location-box">
-              <div><b id="locationTitle">Lokasi semasa</b><div id="locationText" class="muted">Lokasi akan diperiksa semasa anda merakam waktu.</div></div>
-              <span id="gpsDot" class="gps-dot"></span>
+              <div class="location-status-copy"><b id="locationTitle">Lokasi semasa</b><div id="locationText" class="muted">Mengesan lokasi secara langsung…</div></div>
+              <div class="location-actions">
+                <span id="gpsDot" class="gps-dot"></span>
+                <button id="refreshLocationBtn" class="btn ghost small" type="button" onclick="refreshLiveLocation()">↻ Segar semula</button>
+              </div>
             </div>
+            <div id="homeLocationMap" class="home-location-map" aria-label="Peta lokasi semasa dan radius sekolah"></div>
             <div id="homePunchTimes" class="punch-times home-punch-times single-session">
               <div class="time-card home-session-time-card">
                 <span class="home-session-title">Sesi 1 · Rekod</span>
