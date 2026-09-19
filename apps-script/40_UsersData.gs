@@ -80,6 +80,9 @@ function publicUser_(u) {
     isLocked: isLocked,
     lockedUntil: isLocked ? formatDateTime_(lockedDate) : '',
     hasProfilePhoto: !!u.profilePhotoFileId,
+    profilePhotoVersion: u.profilePhotoUpdatedAt instanceof Date && !isNaN(u.profilePhotoUpdatedAt.getTime())
+      ? u.profilePhotoUpdatedAt.getTime()
+      : String(u.profilePhotoUpdatedAt || ''),
     canManageAbsence: isManagementUser_(u)
   };
 }
