@@ -222,20 +222,21 @@ function resumeSession(token, deviceCredential, clientInfo) {
   const user = requireSessionUser_(token);
   const ci = normalizeClientInfo_(clientInfo);
 
-  // Migration + repair path: legacy 30-day tokens did not contain a DeviceID,
-  // and a browser can also lose only the device credential while retaining the
-  // signed session. A still-valid signed session may safely bootstrap a fresh
-  // trusted-device record.
   let trusted;
-  if (session.d && deviceCredential) {
+  if (session.d) {
+    // A DeviceID-bearing access token may only be renewed when the caller also
+    // proves possession of the trusted-device secret. A stolen access token
+    // cannot bootstrap itself into a new 7-day trusted device.
+    if (!deviceCredential) {
+      throw new Error('Sesi peranti memerlukan trusted device. Sila log masuk semula.');
+    }
     trusted = verifyTrustedDeviceCredential_(deviceCredential, user.email, session.d);
     touchTrustedDevice_(trusted, ci, true);
     trusted.credential = String(deviceCredential || '').trim();
   } else {
+    // Legacy migration only: old signed tokens without DeviceID may create or
+    // refresh a trusted-device record once while the legacy token is valid.
     trusted = registerOrRefreshTrustedDevice_(user, ci, deviceCredential);
-    if (session.d && trusted.deviceId !== session.d) {
-      revokeTrustedDeviceById_(session.d, user.email, 'DIGANTI_SEMASA_RESUME');
-    }
   }
 
   const freshToken = Number(session.r || 0) === 1
@@ -613,9 +614,10 @@ function cleanupPasswordChangeTickets_() {
 
 function createSessionToken_(email, remember, sessionVersion, deviceId) {
   const now = Date.now();
-  const ttl = remember
-    ? EK.SESSION.REMEMBER_DAYS * 24 * 60 * 60 * 1000
-    : EK.SESSION.NORMAL_HOURS * 60 * 60 * 1000;
+  // Access tokens stay short-lived even when the device is remembered.
+  // "remember" only grants silent renewal through the separate trusted-device
+  // credential, whose rolling lifetime is controlled by REMEMBER_DAYS.
+  const ttl = Math.max(1, Number(EK.SESSION.NORMAL_HOURS || 12)) * 60 * 60 * 1000;
   const payload = {
     e: normalizeEmail_(email),
     v: Math.max(1, Number(sessionVersion || 1)),
