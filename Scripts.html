@@ -7,6 +7,9 @@ const state = {
     absence:null, absencePublic:null, absenceManagement:null, timeReview:null,
     lastSessionCheck:0, sessionCheckBusy:false,
     locationMap:null, locationMarker:null, locationCircle:null,
+    settingsCurrentMarker:null, settingsAccuracyCircle:null,
+    homeLocationMap:null, homeSchoolMarker:null, homeRadiusCircle:null, homeCurrentMarker:null, homeAccuracyCircle:null,
+    liveLocation:null, locationWatchId:null, locationUpdatedAt:0, locationRefreshPromise:null,
     photoCache:new Map(), networkInfo:null, networkPromise:null, leafletPromise:null
   };
 
@@ -410,7 +413,8 @@ const state = {
   async function logout(){
     try{if(state.token)await runServer('logoutApp',state.token);}catch(e){}
     clearStoredSession();
-    Object.assign(state,{token:'',deviceToken:'',boot:null,admin:null,myCardLoaded:false,myCardData:null,adminCardData:null,absence:null,absencePublic:null,absenceManagement:null});
+    stopLiveLocationTracking();
+    Object.assign(state,{token:'',deviceToken:'',boot:null,admin:null,myCardLoaded:false,myCardData:null,adminCardData:null,absence:null,absencePublic:null,absenceManagement:null,liveLocation:null,locationUpdatedAt:0});
     state.selectedUserEmails.clear(); state.photoCache.clear(); closeMobileMenu(); await showLogin(); toast('Anda telah keluar dari peranti ini.');
   }
 
@@ -460,6 +464,9 @@ const state = {
     rememberLastAccount(state.boot?.user);
     document.getElementById('loginPage').classList.add('hidden'); document.getElementById('appShell').classList.remove('hidden');
     renderBoot(); navigate('home');
+    // Start GPS immediately after authentication so punch actions can reuse a
+    // fresh, already-resolved position instead of waiting for a new GPS fix.
+    setTimeout(()=>startLiveLocationTracking(false).catch(()=>{}),0);
     // Keep first paint responsive; Drive photo loading and IP refresh happen
     // after the dashboard is already usable.
     setTimeout(()=>loadOwnProfilePhoto(),180);
@@ -501,7 +508,9 @@ const state = {
     text('locationTitle',test?'Lokasi':'Lokasi semasa');
     if(test) gps('ok','MOD TEST — GPS tidak diperlukan.');
     else if(!b.locationReady) gps('','Koordinat sekolah belum lengkap. Pentadbir Sistem perlu mengisi TETAPAN sebelum rekod waktu boleh digunakan.');
-    else gps('','Lokasi akan diperiksa semasa anda merakam waktu.');
+    else if(state.liveLocation) renderLiveLocationStatus(state.liveLocation);
+    else gps('busy','Mengesan lokasi secara langsung…');
+    updateHomeLocationMap(state.liveLocation).catch(()=>{});
     applySystemDateLimits();
   }
 
@@ -560,6 +569,105 @@ const state = {
     const s=state.boot?.settings||{},lat=Number(s.schoolLat),lng=Number(s.schoolLng);
     if(!pos?.coords||!Number.isFinite(lat)||!Number.isFinite(lng))return NaN;
     return clientHaversineMeters(Number(pos.coords.latitude),Number(pos.coords.longitude),lat,lng);
+  }
+
+  function liveLocationAgeMs(){return state.locationUpdatedAt?Date.now()-state.locationUpdatedAt:Infinity;}
+  function isUsablePunchPosition(pos,maxAgeMs=45000){
+    const accuracy=Number(pos?.coords?.accuracy);
+    return !!pos?.coords&&liveLocationAgeMs()<=maxAgeMs&&Number.isFinite(accuracy)&&accuracy>=0&&accuracy<=punchGpsPolicy().configuredMaxAccuracyM;
+  }
+  function renderLiveLocationStatus(pos){
+    if(!pos?.coords)return;
+    const accuracy=Math.round(Number(pos.coords.accuracy)||0),distance=Math.round(punchGpsDistance(pos));
+    const ageSec=Math.max(0,Math.round(liveLocationAgeMs()/1000));
+    gps('ok',`Lokasi live tersedia · GPS ±${accuracy}m${Number.isFinite(distance)?` · jarak ${distance}m / ${Math.round(punchGpsPolicy().radiusM)}m`:''}${ageSec>8?` · ${ageSec}s lalu`:''}`);
+  }
+  function liveLocationIcon(){
+    return L.divIcon({className:'ek-live-location-icon',html:'<span></span>',iconSize:[22,22],iconAnchor:[11,11]});
+  }
+  function syncCurrentLocationMarker(map,markerKey,accuracyKey,pos){
+    if(!map||typeof L==='undefined'||!pos?.coords)return;
+    const lat=Number(pos.coords.latitude),lng=Number(pos.coords.longitude),accuracy=Math.max(1,Number(pos.coords.accuracy)||1);
+    if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
+    const ll=[lat,lng];
+    if(!state[markerKey])state[markerKey]=L.marker(ll,{icon:liveLocationIcon(),interactive:false,zIndexOffset:1000}).addTo(map);
+    else state[markerKey].setLatLng(ll);
+    if(!state[accuracyKey])state[accuracyKey]=L.circle(ll,{radius:accuracy,interactive:false,weight:1,opacity:.55,fillOpacity:.08}).addTo(map);
+    else state[accuracyKey].setLatLng(ll).setRadius(accuracy);
+  }
+  async function updateHomeLocationMap(pos){
+    const el=document.getElementById('homeLocationMap');
+    if(!el||String(state.boot?.settings?.systemMode||'REAL')==='TEST')return;
+    try{await ensureLeaflet();}catch(e){return;}
+    const s=state.boot?.settings||{},lat=Number(s.schoolLat),lng=Number(s.schoolLng);
+    if(!Number.isFinite(lat)||!Number.isFinite(lng)||typeof L==='undefined')return;
+    if(!state.homeLocationMap){
+      state.homeLocationMap=L.map(el,{zoomControl:true,attributionControl:true}).setView([lat,lng],17);
+      L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'}).addTo(state.homeLocationMap);
+      state.homeSchoolMarker=L.marker([lat,lng],{title:'Lokasi sekolah'}).addTo(state.homeLocationMap);
+      state.homeRadiusCircle=L.circle([lat,lng],{radius:Math.max(1,Number(s.radiusM)||200),weight:2,fillOpacity:.07}).addTo(state.homeLocationMap);
+    }else{
+      state.homeSchoolMarker?.setLatLng([lat,lng]);
+      state.homeRadiusCircle?.setLatLng([lat,lng]).setRadius(Math.max(1,Number(s.radiusM)||200));
+    }
+    if(pos?.coords){
+      syncCurrentLocationMarker(state.homeLocationMap,'homeCurrentMarker','homeAccuracyCircle',pos);
+      const p=[Number(pos.coords.latitude),Number(pos.coords.longitude)];
+      if(Number.isFinite(p[0])&&Number.isFinite(p[1]))state.homeLocationMap.panTo(p,{animate:false});
+    }
+    setTimeout(()=>state.homeLocationMap?.invalidateSize(),50);
+  }
+  function acceptLiveLocation(pos){
+    if(!pos?.coords)return;
+    state.liveLocation=pos;state.locationUpdatedAt=Date.now();
+    renderLiveLocationStatus(pos);
+    updateHomeLocationMap(pos).catch(()=>{});
+    syncCurrentLocationMarker(state.locationMap,'settingsCurrentMarker','settingsAccuracyCircle',pos);
+  }
+  function stopLiveLocationTracking(){
+    if(state.locationWatchId!==null&&navigator.geolocation){
+      try{navigator.geolocation.clearWatch(state.locationWatchId);}catch(e){}
+    }
+    state.locationWatchId=null;
+  }
+  async function startLiveLocationTracking(force=false){
+    if(String(state.boot?.settings?.systemMode||'REAL')==='TEST')return null;
+    if(!navigator.geolocation)throw new Error('Pelayar ini tidak menyokong geolocation.');
+    if(force)stopLiveLocationTracking();
+    if(state.locationWatchId!==null){
+      if(state.liveLocation)renderLiveLocationStatus(state.liveLocation);
+      return state.liveLocation;
+    }
+    gps('busy','Mengesan lokasi secara langsung…');
+    state.locationWatchId=navigator.geolocation.watchPosition(pos=>{
+      acceptLiveLocation(pos);
+    },err=>{
+      if(err?.code===1)gps('','Akses lokasi ditolak. Benarkan Location untuk laman ini.');
+      else if(!state.liveLocation)gps('busy','GPS sedang mencari lokasi…');
+    },{enableHighAccuracy:true,timeout:15000,maximumAge:5000});
+    return state.liveLocation;
+  }
+  async function refreshLiveLocation(){
+    if(state.locationRefreshPromise)return state.locationRefreshPromise;
+    const btn=document.getElementById('refreshLocationBtn');
+    if(btn){btn.disabled=true;btn.dataset.label=btn.textContent;btn.textContent='Menyegar…';}
+    state.locationRefreshPromise=(async()=>{
+      try{
+        gps('busy','Menyegar lokasi…');
+        stopLiveLocationTracking();
+        const pos=await currentPosition();
+        acceptLiveLocation(pos);
+        await startLiveLocationTracking(false);
+        toast(`Lokasi dikemas kini · GPS ±${Math.round(Number(pos.coords.accuracy)||0)}m`);
+        return pos;
+      }catch(e){
+        gps('',e.message);toast(e.message,4500);throw e;
+      }finally{
+        state.locationRefreshPromise=null;
+        if(btn){btn.disabled=false;btn.textContent=btn.dataset.label||'Segar semula';delete btn.dataset.label;}
+      }
+    })();
+    return state.locationRefreshPromise;
   }
 
   function bestPunchPosition(){
@@ -636,7 +744,14 @@ const state = {
     try{
       const ipPromise=getClientNetworkInfo(false); let loc=null;
       if(!test){
-        const pos=await bestPunchPosition();
+        let pos=state.liveLocation;
+        if(!isUsablePunchPosition(pos)){
+          gps('busy','Lokasi live belum cukup tepat/fresh · mendapatkan bacaan terbaik…');
+          pos=await bestPunchPosition();
+          acceptLiveLocation(pos);
+        }else{
+          gps('busy','Menggunakan lokasi live yang telah tersedia…');
+        }
         loc={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy};
         const estimated=Math.round(punchGpsDistance(pos));
         gps('ok',`GPS ±${Math.round(loc.accuracy)}m${Number.isFinite(estimated)?` · anggaran ${estimated}m / ${Math.round(gpsPolicy.radiusM)}m`:''} · menyemak server…`);
@@ -1077,6 +1192,7 @@ const state = {
     const radius=Math.max(1,parseFloat(document.getElementById('settingRadius')?.value)||200);state.locationCircle=L.circle([lat,lng],{radius}).addTo(state.locationMap);
     state.locationMap.on('click',e=>setSettingCoords(e.latlng.lat,e.latlng.lng,true));state.locationMarker.on('dragend',e=>{const p=e.target.getLatLng();setSettingCoords(p.lat,p.lng,false);});
     syncMapReadout(lat,lng,radius);
+    if(state.liveLocation)syncCurrentLocationMarker(state.locationMap,'settingsCurrentMarker','settingsAccuracyCircle',state.liveLocation);
   }
   function setSettingCoords(lat,lng,recenter){document.getElementById('settingLat').value=Number(lat).toFixed(7);document.getElementById('settingLng').value=Number(lng).toFixed(7);syncMapFromInputs(recenter);}
   function syncMapFromInputs(recenter=false){if(!state.locationMap)return;const lat=parseFloat(document.getElementById('settingLat')?.value),lng=parseFloat(document.getElementById('settingLng')?.value),radius=Math.max(1,parseFloat(document.getElementById('settingRadius')?.value)||200);if(!Number.isFinite(lat)||!Number.isFinite(lng))return;const ll=[lat,lng];state.locationMarker?.setLatLng(ll);state.locationCircle?.setLatLng(ll).setRadius(radius);if(recenter)state.locationMap.setView(ll,Math.max(state.locationMap.getZoom(),16));syncMapReadout(lat,lng,radius);}
@@ -1147,6 +1263,7 @@ const state = {
     logout,
     navigate,
     startPunch,
+    refreshLiveLocation,
     loadMyCard,
     setMyCardHalf,
     printMyPunchCard,
