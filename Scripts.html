@@ -1042,7 +1042,7 @@ const state = {
     if(!hint)return;
     const risky=radius>0&&accuracy>radius;
     hint.classList.toggle('hidden',!risky);
-    if(risky)hint.textContent=`⚠ Had ketepatan GPS ${Math.round(accuracy)}m lebih besar daripada radius ${Math.round(radius)}m. Semasa punch, app akan menunggu bacaan yang lebih tepat supaya staf dalam radius tidak tersalah ditolak.`;
+    if(risky)hint.textContent=`⚠ Had ketepatan GPS ${Math.round(accuracy)}m lebih besar daripada radius ${Math.round(radius)}m. Semasa rekod waktu, app akan menunggu bacaan yang lebih tepat supaya pegawai dalam radius tidak tersalah ditolak.`;
   }
   async function saveSettings(ev){ev.preventDefault();const p=Object.fromEntries(new FormData(ev.target).entries());try{const r=await runServer('adminSaveSettings',state.token,p);state.admin.settings=r.settings;state.boot.settings=r.settings;renderBoot();fillSettings(r.settings);toast('Tetapan disimpan.');}catch(e){handleServerError(e);}}
   function updateModeSettingHint(){const mode=document.getElementById('systemModeSelect')?.value||'REAL';const hint=document.getElementById('modeSettingHint');if(hint){hint.textContent=mode==='TEST'?'MOD TEST: rekod waktu boleh dibuat tanpa semakan lokasi dan status waktu. Gunakan hanya untuk ujian sistem.':'MOD SEBENAR: lokasi/radius dikuatkuasakan; masa tidak menyekat rekod tetapi menentukan status LEWAT / BALIK AWAL.';hint.className='setting-hint '+(mode==='TEST'?'test-hint':'real-hint');}}

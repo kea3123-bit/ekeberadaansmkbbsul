@@ -389,7 +389,7 @@ window.EK_CONFIG = Object.freeze({
   }
 
   function beginPreview() {
-    setPreview('Mendapatkan lokasi…', `GPS ${activeType === 'OUT' ? 'Punch Keluar' : 'Punch Masuk'} bermula pada sasaran ±80m dan dilonggarkan bertahap hingga ±140m.`, false);
+    setPreview('Mendapatkan lokasi…', `GPS ${activeType === 'OUT' ? 'Rekod Keluar' : 'Rekod Masuk'} bermula pada sasaran ±80m dan dilonggarkan bertahap hingga ±140m.`, false);
     document.getElementById('punchLocationMap')?.classList.add('hidden');
   }
 
