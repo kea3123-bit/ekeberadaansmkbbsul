@@ -574,7 +574,8 @@ const state = {
   function liveLocationAgeMs(){return state.locationUpdatedAt?Date.now()-state.locationUpdatedAt:Infinity;}
   function isUsablePunchPosition(pos,maxAgeMs=45000){
     const accuracy=Number(pos?.coords?.accuracy);
-    return !!pos?.coords&&liveLocationAgeMs()<=maxAgeMs&&Number.isFinite(accuracy)&&accuracy>=0&&accuracy<=punchGpsPolicy().configuredMaxAccuracyM;
+    const maxAccuracy=Math.min(140,punchGpsPolicy().configuredMaxAccuracyM);
+    return !!pos?.coords&&liveLocationAgeMs()<=maxAgeMs&&Number.isFinite(accuracy)&&accuracy>=0&&accuracy<=maxAccuracy;
   }
   function renderLiveLocationStatus(pos){
     if(!pos?.coords)return;
