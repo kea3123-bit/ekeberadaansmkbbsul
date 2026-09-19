@@ -5,7 +5,7 @@ const state = {
     selectedAccount:null, changeTicket:'', setupPurpose:'',
     selectedUserEmails:new Set(), filteredUsers:[], filteredReport:[], tableSorts:{},
     absence:null, absencePublic:null, absenceManagement:null, timeReview:null,
-    lastSessionCheck:0, sessionCheckBusy:false,
+    lastSessionCheck:0, sessionCheckBusy:false, sessionRecoveryPromise:null,
     locationMap:null, locationMarker:null, locationCircle:null,
     settingsCurrentMarker:null, settingsAccuracyCircle:null,
     homeLocationMap:null, homeSchoolMarker:null, homeRadiusCircle:null, homeCurrentMarker:null, homeAccuracyCircle:null,
@@ -15,12 +15,45 @@ const state = {
 
   document.addEventListener('DOMContentLoaded', initApp);
 
-  function runServer(fn, ...args){
+  function runServerRaw(fn, ...args){
     return new Promise((resolve,reject)=>{
       google.script.run
         .withSuccessHandler(resolve)
         .withFailureHandler(err=>reject(new Error(err && err.message ? err.message : String(err))))[fn](...args);
     });
+  }
+
+  async function recoverAccessSession(){
+    if(state.sessionRecoveryPromise)return state.sessionRecoveryPromise;
+    const device=loadStoredDevice();
+    if(!device)throw new Error('Sesi telah tamat. Sila log masuk semula.');
+    state.sessionRecoveryPromise=(async()=>{
+      const res=await runServerRaw('resumeTrustedDevice',device,getClientInfoFast());
+      applySessionResult(res);
+      return res;
+    })();
+    try{return await state.sessionRecoveryPromise;}
+    finally{state.sessionRecoveryPromise=null;}
+  }
+
+  async function runServer(fn, ...args){
+    try{return await runServerRaw(fn,...args);}
+    catch(err){
+      const authCall=['resumeSession','resumeTrustedDevice','loginWithPin','setFirstPin','checkDelimaAccount','logoutApp'].includes(fn);
+      const tokenCall=!authCall&&state.token&&args.length&&args[0]===state.token;
+      if(!tokenCall||!isAuthSessionError(err))throw err;
+      try{
+        const oldToken=args[0];
+        await recoverAccessSession();
+        if(!state.token||state.token===oldToken)throw err;
+        args[0]=state.token;
+        return await runServerRaw(fn,...args);
+      }catch(recoveryErr){
+        clearStoredSessionToken();state.token='';
+        if(isAuthSessionError(recoveryErr)){clearTrustedDevice();state.deviceToken='';}
+        throw recoveryErr;
+      }
+    }
   }
 
   // ---------- Client info / public IP / device telemetry ----------
@@ -110,7 +143,7 @@ const state = {
   function getClientInfoFast(){
     const cached=state.networkInfo;
     if(cached&&Date.now()-(cached._at||0)<15*60*1000)return cached;
-    getClientNetworkInfo(false).catch(()=>{});
+    getClientNetworkInfo(false,15*60*1000).catch(()=>{});
     return baseClientInfo();
   }
 
@@ -125,9 +158,10 @@ const state = {
     finally{clearTimeout(timer);}
   }
 
-  async function getClientNetworkInfo(force=false){
+  async function getClientNetworkInfo(force=false,maxAgeMs=15*60*1000){
     const cached=state.networkInfo;
-    if(!force&&cached&&Date.now()-(cached._at||0)<15*60*1000)return cached;
+    const maxAge=Math.max(0,Number(maxAgeMs)||0);
+    if(!force&&cached&&Date.now()-(cached._at||0)<maxAge)return cached;
     if(!force&&state.networkPromise)return state.networkPromise;
 
     const task=(async()=>{
@@ -157,13 +191,13 @@ const state = {
   }
 
   async function getClientInfoForAuth(){
-    try{return await getClientNetworkInfo(false);}catch(e){return getClientInfoFast();}
+    try{return await getClientNetworkInfo(false,5*60*1000);}catch(e){return getClientInfoFast();}
   }
 
   async function syncClientTelemetry(){
     if(!state.token)return false;
     try{
-      const info=await getClientNetworkInfo(false);
+      const info=await getClientNetworkInfo(false,5*60*1000);
       await runServer('syncClientTelemetry',state.token,loadStoredDevice(),info);
       return true;
     }catch(e){return false;}
@@ -188,6 +222,8 @@ const state = {
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')renewSessionIfNeeded(false).catch(()=>{});});
       window.addEventListener('pageshow',()=>renewSessionIfNeeded(false).catch(()=>{}));
       window.addEventListener('focus',()=>renewSessionIfNeeded(false).catch(()=>{}));
+      window.addEventListener('online',()=>{state.networkInfo=null;getClientNetworkInfo(true).catch(()=>{});});
+      try{navigator.connection?.addEventListener?.('change',()=>{state.networkInfo=null;getClientNetworkInfo(true).catch(()=>{});});}catch(e){}
       if(await tryResumeStoredSession()) return;
       await showLogin();
     }catch(e){
@@ -425,12 +461,16 @@ const state = {
     }catch(e){}
   }
   function deleteCookie(name){writeCookie(name,'',0,false);writeCookie(name,'',0,true);}
+  function clearLegacySessionPersistence(){
+    safeLocalRemove('ek_session');
+    deleteCookie('ek_session');deleteCookie('ek_session_p');
+  }
   function saveSession(token,deviceToken){
     if(token){
-      safeLocalSet('ek_session',token);
       try{sessionStorage.setItem('ek_session',token);}catch(e){}
-      writeCookie('ek_session',token,7*24*60*60,false);
-      writeCookie('ek_session_p',token,7*24*60*60,true);
+      // Access sessions are intentionally session-scoped. The separate trusted
+      // device credential is the only persistent login mechanism.
+      clearLegacySessionPersistence();
     }
     if(deviceToken)saveTrustedDevice(deviceToken);
   }
@@ -442,15 +482,24 @@ const state = {
     writeCookie('ek_device_p',deviceToken,7*24*60*60,true);
   }
   function loadStoredSession(){
-    try{return safeLocalGet('ek_session')||sessionStorage.getItem('ek_session')||readCookie('ek_session')||readCookie('ek_session_p')||'';}catch(e){return safeLocalGet('ek_session')||readCookie('ek_session')||readCookie('ek_session_p')||'';}
+    let current='';
+    try{current=sessionStorage.getItem('ek_session')||'';}catch(e){}
+    if(current)return current;
+    // One-time migration for older builds that persisted the access token.
+    const legacy=safeLocalGet('ek_session')||readCookie('ek_session')||readCookie('ek_session_p')||'';
+    if(legacy){
+      try{sessionStorage.setItem('ek_session',legacy);}catch(e){}
+      clearLegacySessionPersistence();
+    }
+    return legacy;
   }
   function loadStoredDevice(){
     return safeLocalGet('ek_device')||readCookie('ek_device')||readCookie('ek_device_p')||'';
   }
   function currentTrustedDeviceId(){return String(loadStoredDevice()||'').split('.')[0]||'';}
   function clearStoredSessionToken(){
-    try{sessionStorage.removeItem('ek_session');}catch(e){} safeLocalRemove('ek_session');
-    deleteCookie('ek_session');deleteCookie('ek_session_p');
+    try{sessionStorage.removeItem('ek_session');}catch(e){}
+    clearLegacySessionPersistence();
   }
   function clearTrustedDevice(){
     safeLocalRemove('ek_device');
@@ -743,7 +792,9 @@ const state = {
     const gpsPolicy=punchGpsPolicy();
     setPunchBusy(true); gps('busy',test?'MOD TEST — merakam waktu dan IP…':'Mengesan lokasi… sasaran GPS ±80m');
     try{
-      const ipPromise=getClientNetworkInfo(false); let loc=null;
+      // IP policy needs a recent network identity, but a 2-minute cache keeps
+      // the punch fast when the network has not changed.
+      const ipPromise=getClientNetworkInfo(false,2*60*1000); let loc=null;
       if(!test){
         let pos=state.liveLocation;
         if(!isUsablePunchPosition(pos)){
