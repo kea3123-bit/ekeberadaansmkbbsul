@@ -602,9 +602,10 @@ const state = {
     const u=state.boot?.user; if(!u)return;
     const ids=['sideProfilePhoto','welcomeProfilePhoto'];
     if(!u.hasProfilePhoto){ids.forEach(id=>document.getElementById(id)?.classList.add('hidden'));return;}
-    let data=state.photoCache.get(u.email);
+    const photoKey=`${u.email}|${u.profilePhotoVersion||"0"}`;
+    let data=state.photoCache.get(photoKey);
     if(!data||force){
-      try{const r=await runServer('getProfilePhoto',state.token,u.email);data=r.dataUrl||'';if(data)state.photoCache.set(u.email,data);}catch(e){data='';}
+      try{const r=await runServer('getProfilePhoto',state.token,u.email);data=r.dataUrl||'';if(data)state.photoCache.set(photoKey,data);}catch(e){data='';}
     }
     ids.forEach(id=>{const img=document.getElementById(id);if(!img)return;if(data){img.src=data;img.classList.remove('hidden');}else img.classList.add('hidden');});
   }
@@ -858,7 +859,10 @@ const state = {
   // ---------- Own Kad Perakam Waktu ----------
   async function loadMyCard(force=false){
     const monthInput=document.getElementById('myCardMonth');if(!monthInput.value)monthInput.value=(state.boot?.today||'').slice(0,7);const monthKey=monthInput.value;
-    if(!force&&state.myCardLoaded&&state.myCardData?.month===monthKey&&clientCacheFresh('myCard')){renderMyPunchCard();return;}
+    if(!force&&state.myCardLoaded&&state.myCardData?.month===monthKey){
+      renderMyPunchCard();
+      if(clientCacheFresh('myCard'))return;
+    }
     const loading=document.getElementById('pcLoading');loading.classList.remove('hidden');
     try{state.myCardData=await runServer('getMyPunchCardMonth',state.token,monthKey);state.myCardLoaded=true;markClientCache('myCard');renderMyPunchCard();}
     catch(e){document.getElementById('myCardRows').innerHTML=`<tr><td colspan="7" class="pc-error">${esc(e.message)}</td></tr>`;handleServerError(e,false);}
@@ -920,7 +924,10 @@ const state = {
 
   // ---------- Tidak Hadir / Keberadaan ----------
   async function loadAbsenceData(force=false){
-    if(state.absence&&!force&&clientCacheFresh('absence')){renderAbsence();return;}
+    if(state.absence&&!force){
+      renderAbsence();
+      if(clientCacheFresh('absence'))return;
+    }
     try{state.absence=await runServer('getAbsenceData',state.token);markClientCache('absence');renderAbsence();}
     catch(e){handleServerError(e);}
   }
@@ -1043,7 +1050,10 @@ const state = {
   async function loadAbsencePublic(force=false){
     ensureAbsencePublicDates();
     const from=document.getElementById('absencePublicFrom')?.value,to=document.getElementById('absencePublicTo')?.value,key=`${from}|${to}`;
-    if(state.absencePublic&&!force&&state.absencePublic._key===key&&clientCacheFresh('absencePublic')){applyAbsencePublicFilters();return;}
+    if(state.absencePublic&&!force&&state.absencePublic._key===key){
+      applyAbsencePublicFilters();
+      if(clientCacheFresh('absencePublic'))return;
+    }
     try{state.absencePublic=await runServer('getPublicAbsencePresenceData',state.token,from,to);state.absencePublic._key=key;markClientCache('absencePublic');applyAbsencePublicFilters();}
     catch(e){handleServerError(e);}
   }
@@ -1069,7 +1079,11 @@ const state = {
   function ensureAbsenceManageDates(){const f=document.getElementById('absenceManageFrom'),t=document.getElementById('absenceManageTo'),today=presetRange('today')[0];if(f&&!f.value)f.value=today;if(t&&!t.value)t.value=today;}
   async function loadAbsenceManagement(force=false){
     ensureAbsenceManageDates();const from=document.getElementById('absenceManageFrom')?.value,to=document.getElementById('absenceManageTo')?.value;
-    const key=`${from}|${to}`;if(state.absenceManagement&&!force&&state.absenceManagement._key===key&&clientCacheFresh('absenceManagement')){applyAbsenceManageFilters();return;}
+    const key=`${from}|${to}`;
+    if(state.absenceManagement&&!force&&state.absenceManagement._key===key){
+      applyAbsenceManageFilters();
+      if(clientCacheFresh('absenceManagement'))return;
+    }
     try{state.absenceManagement=await runServer('getAbsenceManagementData',state.token,from,to);state.absenceManagement._key=key;markClientCache('absenceManagement');applyAbsenceManageFilters();}
     catch(e){handleServerError(e);}
   }
@@ -1088,7 +1102,10 @@ const state = {
   function ensureTimeReviewDates(){const f=document.getElementById('timeReviewFrom'),t=document.getElementById('timeReviewTo'),today=presetRange('today')[0];if(f&&!f.value)f.value=today;if(t&&!t.value)t.value=today;}
   async function loadTimeReview(force=false){
     if(!state.boot?.user?.isAdmin)return;ensureTimeReviewDates();const from=document.getElementById('timeReviewFrom').value,to=document.getElementById('timeReviewTo').value,key=`${from}|${to}`;
-    if(state.timeReview&&!force&&state.timeReview._key===key&&clientCacheFresh('timeReview')){applyTimeReviewFilters();return;}
+    if(state.timeReview&&!force&&state.timeReview._key===key){
+      applyTimeReviewFilters();
+      if(clientCacheFresh('timeReview'))return;
+    }
     try{state.timeReview=await runServer('getTimeReviewData',state.token,from,to);state.timeReview._key=key;markClientCache('timeReview');applyTimeReviewFilters();}catch(e){handleServerError(e);}
   }
   function setTimeReviewPreset(kind){const [f,t]=presetRange(kind);document.getElementById('timeReviewFrom').value=f;document.getElementById('timeReviewTo').value=t;loadTimeReview(true);}
@@ -1164,7 +1181,7 @@ const state = {
 
   // ---------- Admin digital card ----------
   function openAdminPunchCard(email,name){state.adminCardEmail=email;state.adminCardData=null;state.adminCardHalf=1;text('adminCardTitle',name||email);text('adminCardEmail',email);const reportMonth=(document.getElementById('reportDate')?.value||state.boot.today).slice(0,7);document.getElementById('adminCardMonth').value=reportMonth;navigate('admincard');loadAdminCard(true);}
-  async function loadAdminCard(force=false){if(!state.adminCardEmail)return;const month=document.getElementById('adminCardMonth').value||state.boot.today.slice(0,7);if(!force&&state.adminCardData?.month===month&&clientCacheFresh('adminCard')){renderAdminCard();return;}const loading=document.getElementById('apcLoading');loading.classList.remove('hidden');try{state.adminCardData=await runServer('adminGetPunchCardMonth',state.token,state.adminCardEmail,month);markClientCache('adminCard');renderAdminCard();}catch(e){handleServerError(e);}finally{loading.classList.add('hidden');}}
+  async function loadAdminCard(force=false){if(!state.adminCardEmail)return;const month=document.getElementById('adminCardMonth').value||state.boot.today.slice(0,7);if(!force&&state.adminCardData?.month===month){renderAdminCard();if(clientCacheFresh('adminCard'))return;}const loading=document.getElementById('apcLoading');loading.classList.remove('hidden');try{state.adminCardData=await runServer('adminGetPunchCardMonth',state.token,state.adminCardEmail,month);markClientCache('adminCard');renderAdminCard();}catch(e){handleServerError(e);}finally{loading.classList.add('hidden');}}
   function renderAdminCard(){const d=state.adminCardData;if(!d)return;text('adminCardTitle',d.user?.name||state.adminCardEmail);text('adminCardEmail',d.user?.email||state.adminCardEmail);text('apcCardNumber',d.cardNumber||'1');text('apcName',d.user?.name||'—');text('apcDepartment',d.department||d.schoolName||'—');text('apcMonthLabel',formatMonthMalay(d.month));document.getElementById('adminCardRows').innerHTML=cardRowsHtml(d,state.adminCardHalf);document.getElementById('adminCardHalf1Btn').classList.toggle('active',state.adminCardHalf===1);document.getElementById('adminCardHalf2Btn').classList.toggle('active',state.adminCardHalf===2);}
   function setAdminCardHalf(half){state.adminCardHalf=half===2?2:1;renderAdminCard();}
 
