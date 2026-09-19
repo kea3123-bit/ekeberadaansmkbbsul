@@ -289,7 +289,12 @@ function punch(token, type, location, clientInfo) {
     const ipPolicy = normalizeIpPunchPolicy_(settings.IP_PUNCH_POLICY || 'WARN');
     if (ipPolicy === 'BLOCK' && recordIp) {
       strictIpLock = LockService.getScriptLock();
-      strictIpLock.waitLock(30000);
+      // Jangan biarkan Polisi IP memegang RPC punch sehingga melepasi timeout
+      // frontend. Dalam burst serentak, gagal cepat dengan mesej yang jelas dan
+      // pengguna boleh cuba semula tanpa risiko request "tergantung".
+      if (!strictIpLock.tryLock(2500)) {
+        throw new Error('Sistem sedang menerima banyak rekod waktu serentak. Sila cuba semula dalam beberapa saat.');
+      }
     }
     ipCheck = evaluatePunchIp_(user,type,recordIp,now,settings,isTestMode);
     if (ipCheck.blocked) throw new Error(ipCheck.error || 'Rakaman waktu ditolak oleh Polisi IP.');
@@ -351,7 +356,13 @@ function punch(token, type, location, clientInfo) {
     }
   }
   if (timeReviewRecord && timeReviewRecord.isNew !== false && !timeReviewRecord.autoAcknowledged) {
-    notifyTimeException_(timeReviewRecord);
+    // Emel semakan masa dihantar oleh trigger berkala. Jangan tunggu MailApp
+    // semasa RPC punch kerana penghantaran emel yang perlahan boleh menyebabkan
+    // frontend timeout walaupun rekod KEHADIRAN sebenarnya sudah berjaya ditulis.
+    try { queueTimeExceptionNotification_(timeReviewRecord); }
+    catch (e) {
+      try { audit_('QUEUE_NOTIFIKASI_SEMAKAN_WAKTU_GAGAL', timeReviewRecord.id, String(e && e.message ? e.message : e), 'SISTEM'); } catch (_e) {}
+    }
   }
 
   const label = type === 'IN' ? 'Masuk' : 'Balik';
