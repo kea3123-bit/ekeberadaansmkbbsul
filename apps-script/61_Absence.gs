@@ -673,15 +673,25 @@ function finalizeExpiredPresenceWithoutPunchForDate_(dateKey, settings, options)
 }
 
 function checkExpiredPresenceWithoutPunchTrigger() {
+  let timeReviewNotifications = {processed:0,sent:0,failed:0};
+  try {
+    // Gunakan trigger 5 minit yang sedia ada untuk menghantar emel LEWAT /
+    // BALIK AWAL. Ini memastikan proses punch tidak menunggu MailApp.
+    timeReviewNotifications = flushTimeExceptionNotificationQueue_();
+  } catch (err) {
+    try { audit_('NOTIFIKASI_SEMAKAN_WAKTU_QUEUE_GAGAL', todayKey_(), String(err && err.message ? err.message : err), 'SISTEM'); } catch (_e) {}
+  }
+
   try {
     const settings = getSettings_();
     if (String(settings.SYSTEM_MODE || 'REAL').toUpperCase() === 'TEST') {
-      return {ok:true,skipped:true,reason:'MOD TEST'};
+      return {ok:true,skipped:true,reason:'MOD TEST',timeReviewNotifications};
     }
-    return finalizeExpiredPresenceWithoutPunchForDate_(todayKey_(), settings);
+    const result = finalizeExpiredPresenceWithoutPunchForDate_(todayKey_(), settings);
+    return Object.assign({}, result, {timeReviewNotifications});
   } catch (err) {
     audit_('TRIGGER_KEBERADAAN_TAMAT_GAGAL', todayKey_(), String(err && err.message ? err.message : err), 'SISTEM');
-    return {ok:false,error:String(err && err.message ? err.message : err)};
+    return {ok:false,error:String(err && err.message ? err.message : err),timeReviewNotifications};
   }
 }
 
