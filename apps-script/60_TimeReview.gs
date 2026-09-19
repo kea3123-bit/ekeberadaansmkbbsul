@@ -64,6 +64,46 @@ function notifyTimeException_(r) {
   return safeSendSystemEmail_(recipients,subject,html,text,r.id);
 }
 
+const EK_TIME_REVIEW_NOTIFY_PROPERTY_PREFIX_ = 'EK_TIME_REVIEW_NOTIFY_V1_';
+
+function queueTimeExceptionNotification_(review) {
+  const id = String(review && review.id || '').trim();
+  if (!id) return false;
+  PropertiesService.getScriptProperties().setProperty(EK_TIME_REVIEW_NOTIFY_PROPERTY_PREFIX_ + id, '1');
+  return true;
+}
+
+function flushTimeExceptionNotificationQueue_() {
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties();
+  const keys = Object.keys(all)
+    .filter(k => k.indexOf(EK_TIME_REVIEW_NOTIFY_PROPERTY_PREFIX_) === 0)
+    .slice(0, 25);
+  if (!keys.length) return {processed:0,sent:0,failed:0};
+
+  const rowsById = {};
+  readTimeReviewRows_().forEach(r => { if (r && r.id) rowsById[String(r.id)] = r; });
+  let sent = 0, failed = 0;
+
+  keys.forEach(key => {
+    const id = key.slice(EK_TIME_REVIEW_NOTIFY_PROPERTY_PREFIX_.length);
+    const review = rowsById[id];
+    if (!review) {
+      props.deleteProperty(key);
+      return;
+    }
+    const result = notifyTimeException_(review);
+    if (result && result.ok) {
+      props.deleteProperty(key);
+      sent++;
+    } else {
+      failed++;
+    }
+  });
+
+  return {processed:keys.length,sent,failed};
+}
+
 function inferAttendanceFlags_(values,user,settings,dateKey) {
   const v=padAttendanceValues_(values);
   const stored=splitAttendanceFlags_(v[34]);
