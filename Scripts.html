@@ -5,6 +5,7 @@ const state = {
     selectedAccount:null, changeTicket:'', setupPurpose:'',
     selectedUserEmails:new Set(), filteredUsers:[], filteredReport:[], tableSorts:{},
     absence:null, absencePublic:null, absenceManagement:null, timeReview:null,
+    cacheTimes:{},
     lastSessionCheck:0, sessionCheckBusy:false, sessionRecoveryPromise:null,
     locationMap:null, locationMarker:null, locationCircle:null,
     settingsCurrentMarker:null, settingsAccuracyCircle:null,
@@ -39,7 +40,7 @@ const state = {
   async function runServer(fn, ...args){
     try{return await runServerRaw(fn,...args);}
     catch(err){
-      const authCall=['resumeSession','resumeTrustedDevice','loginWithPin','setFirstPin','checkDelimaAccount','logoutApp'].includes(fn);
+      const authCall=['resumeSession','resumeTrustedDevice','loginWithPin','setFirstPin','checkDelimaAccount'].includes(fn);
       const tokenCall=!authCall&&state.token&&args.length&&args[0]===state.token;
       if(!tokenCall||!isAuthSessionError(err))throw err;
       try{
@@ -54,6 +55,38 @@ const state = {
         throw recoveryErr;
       }
     }
+  }
+
+  const CLIENT_CACHE_TTL=Object.freeze({
+    myCard:60*1000,
+    adminCard:60*1000,
+    absence:45*1000,
+    absencePublic:30*1000,
+    absenceManagement:30*1000,
+    timeReview:30*1000
+  });
+  function markClientCache(scope){state.cacheTimes[scope]=Date.now();}
+  function clientCacheFresh(scope,ttl=CLIENT_CACHE_TTL[scope]||30000){
+    const at=Number(state.cacheTimes?.[scope]||0);
+    return !!at&&Date.now()-at<ttl;
+  }
+  function invalidateClientCache(...scopes){
+    const list=scopes.flat().filter(Boolean);
+    if(!list.length||list.includes('all')){
+      state.cacheTimes={};
+      state.myCardLoaded=false;state.myCardData=null;state.adminCardData=null;
+      state.absence=null;state.absencePublic=null;state.absenceManagement=null;state.timeReview=null;
+      return;
+    }
+    list.forEach(scope=>{
+      delete state.cacheTimes[scope];
+      if(scope==='myCard'){state.myCardLoaded=false;state.myCardData=null;}
+      else if(scope==='adminCard')state.adminCardData=null;
+      else if(scope==='absence')state.absence=null;
+      else if(scope==='absencePublic')state.absencePublic=null;
+      else if(scope==='absenceManagement')state.absenceManagement=null;
+      else if(scope==='timeReview')state.timeReview=null;
+    });
   }
 
   // ---------- Client info / public IP / device telemetry ----------
@@ -450,7 +483,7 @@ const state = {
     try{if(state.token)await runServer('logoutApp',state.token);}catch(e){}
     clearStoredSession();
     stopLiveLocationTracking();
-    Object.assign(state,{token:'',deviceToken:'',boot:null,admin:null,myCardLoaded:false,myCardData:null,adminCardData:null,absence:null,absencePublic:null,absenceManagement:null,liveLocation:null,locationUpdatedAt:0});
+    Object.assign(state,{token:'',deviceToken:'',boot:null,admin:null,myCardLoaded:false,myCardData:null,adminCardData:null,absence:null,absencePublic:null,absenceManagement:null,timeReview:null,cacheTimes:{},liveLocation:null,locationUpdatedAt:0});
     state.selectedUserEmails.clear(); state.photoCache.clear(); closeMobileMenu(); await showLogin(); toast('Anda telah keluar dari peranti ini.');
   }
 
@@ -812,8 +845,9 @@ const state = {
       if(res&&res.attendance){state.boot.attendance=res.attendance;renderBoot();}else await refreshBoot();
       const ipText=res.ip?` · IP ${res.ip}`:' · IP tidak dikesan';
       gps('ok',test?`Rekod MOD TEST diterima${ipText}.`:`Rekod waktu diterima · GPS ±${Number(res.accuracyM)||Math.round(loc?.accuracy||0)}m · jarak ${res.distanceM}m / ${Number(res.radiusM)||Math.round(gpsPolicy.radiusM)}m${ipText}.`);
-      toast(res.ipWarning||res.message,res.ipWarning?6000:4500); state.myCardLoaded=false; state.myCardData=null;
-      if(res.timeException) state.timeReview=null;
+      toast(res.ipWarning||res.message,res.ipWarning?6000:4500);
+      invalidateClientCache('myCard','adminCard');
+      if(res.timeException)invalidateClientCache('timeReview');
     }catch(e){gps('',e.message);handleServerError(e,false);}finally{setPunchBusy(false);}
   }
 
@@ -824,9 +858,9 @@ const state = {
   // ---------- Own Kad Perakam Waktu ----------
   async function loadMyCard(force=false){
     const monthInput=document.getElementById('myCardMonth');if(!monthInput.value)monthInput.value=(state.boot?.today||'').slice(0,7);const monthKey=monthInput.value;
-    if(!force&&state.myCardLoaded&&state.myCardData?.month===monthKey){renderMyPunchCard();return;}
+    if(!force&&state.myCardLoaded&&state.myCardData?.month===monthKey&&clientCacheFresh('myCard')){renderMyPunchCard();return;}
     const loading=document.getElementById('pcLoading');loading.classList.remove('hidden');
-    try{state.myCardData=await runServer('getMyPunchCardMonth',state.token,monthKey);state.myCardLoaded=true;renderMyPunchCard();}
+    try{state.myCardData=await runServer('getMyPunchCardMonth',state.token,monthKey);state.myCardLoaded=true;markClientCache('myCard');renderMyPunchCard();}
     catch(e){document.getElementById('myCardRows').innerHTML=`<tr><td colspan="7" class="pc-error">${esc(e.message)}</td></tr>`;handleServerError(e,false);}
     finally{loading.classList.add('hidden');}
   }
@@ -886,8 +920,8 @@ const state = {
 
   // ---------- Tidak Hadir / Keberadaan ----------
   async function loadAbsenceData(force=false){
-    if(state.absence&&!force){renderAbsence();return;}
-    try{state.absence=await runServer('getAbsenceData',state.token);renderAbsence();}
+    if(state.absence&&!force&&clientCacheFresh('absence')){renderAbsence();return;}
+    try{state.absence=await runServer('getAbsenceData',state.token);markClientCache('absence');renderAbsence();}
     catch(e){handleServerError(e);}
   }
 
@@ -953,10 +987,10 @@ const state = {
 
   async function submitAbsence(ev){
     ev.preventDefault();const p=Object.fromEntries(new FormData(ev.target).entries());
-    try{const r=await runServer('submitAbsenceRequest',state.token,p);toast(r.message,5000);ev.target.reset();state.absence=null;state.absencePublic=null;document.getElementById('absenceMode').value='TIDAK_HADIR';await loadAbsenceData(true);}
+    try{const r=await runServer('submitAbsenceRequest',state.token,p);toast(r.message,5000);ev.target.reset();invalidateClientCache('absence','absencePublic','absenceManagement');document.getElementById('absenceMode').value='TIDAK_HADIR';await loadAbsenceData(true);}
     catch(e){handleServerError(e);}
   }
-  async function cancelAbsence(id){if(!confirm('Batalkan permohonan ini?'))return;try{await runServer('cancelMyAbsenceRequest',state.token,id);toast('Permohonan dibatalkan.');state.absence=null;state.absencePublic=null;await loadAbsenceData(true);}catch(e){handleServerError(e);}}
+  async function cancelAbsence(id){if(!confirm('Batalkan permohonan ini?'))return;try{await runServer('cancelMyAbsenceRequest',state.token,id);toast('Permohonan dibatalkan.');invalidateClientCache('absence','absencePublic','absenceManagement');await loadAbsenceData(true);}catch(e){handleServerError(e);}}
   function formatDateRange(a,b){return a===b?a:`${a} → ${b}`;}
   function absenceStatusClass(s){return s==='DILULUSKAN'?'approved':s==='DITOLAK'?'rejected':s==='DIBATALKAN'?'cancelled':s==='TIDAK MOHON'?'unexplained':'pending';}
 
@@ -1009,8 +1043,8 @@ const state = {
   async function loadAbsencePublic(force=false){
     ensureAbsencePublicDates();
     const from=document.getElementById('absencePublicFrom')?.value,to=document.getElementById('absencePublicTo')?.value,key=`${from}|${to}`;
-    if(state.absencePublic&&!force&&state.absencePublic._key===key){applyAbsencePublicFilters();return;}
-    try{state.absencePublic=await runServer('getPublicAbsencePresenceData',state.token,from,to);state.absencePublic._key=key;applyAbsencePublicFilters();}
+    if(state.absencePublic&&!force&&state.absencePublic._key===key&&clientCacheFresh('absencePublic')){applyAbsencePublicFilters();return;}
+    try{state.absencePublic=await runServer('getPublicAbsencePresenceData',state.token,from,to);state.absencePublic._key=key;markClientCache('absencePublic');applyAbsencePublicFilters();}
     catch(e){handleServerError(e);}
   }
   function setAbsencePublicPreset(kind){const [f,t]=presetRange(kind);document.getElementById('absencePublicFrom').value=f;document.getElementById('absencePublicTo').value=t;loadAbsencePublic(true);}
@@ -1035,8 +1069,8 @@ const state = {
   function ensureAbsenceManageDates(){const f=document.getElementById('absenceManageFrom'),t=document.getElementById('absenceManageTo'),today=presetRange('today')[0];if(f&&!f.value)f.value=today;if(t&&!t.value)t.value=today;}
   async function loadAbsenceManagement(force=false){
     ensureAbsenceManageDates();const from=document.getElementById('absenceManageFrom')?.value,to=document.getElementById('absenceManageTo')?.value;
-    const key=`${from}|${to}`;if(state.absenceManagement&&!force&&state.absenceManagement._key===key){applyAbsenceManageFilters();return;}
-    try{state.absenceManagement=await runServer('getAbsenceManagementData',state.token,from,to);state.absenceManagement._key=key;applyAbsenceManageFilters();}
+    const key=`${from}|${to}`;if(state.absenceManagement&&!force&&state.absenceManagement._key===key&&clientCacheFresh('absenceManagement')){applyAbsenceManageFilters();return;}
+    try{state.absenceManagement=await runServer('getAbsenceManagementData',state.token,from,to);state.absenceManagement._key=key;markClientCache('absenceManagement');applyAbsenceManageFilters();}
     catch(e){handleServerError(e);}
   }
   function setAbsenceManagePreset(kind){const [f,t]=presetRange(kind);document.getElementById('absenceManageFrom').value=f;document.getElementById('absenceManageTo').value=t;loadAbsenceManagement(true);}
@@ -1047,21 +1081,21 @@ const state = {
     const r=state.absenceManagement?.requests?.find(x=>x.id===id);if(!r)return;const approve=decision==='DILULUSKAN';
     showModal(`<div class="review-request"><div class="first-login-badge">PERMOHONAN KEPADA PENGETUA</div><h3>${approve?'Luluskan':'Tolak'} Permohonan</h3><p><b>${esc(r.name)}</b><br><span class="muted">${esc(r.jobTitle||'')} · ${esc(r.email)} · ${esc(r.category)}</span></p><div class="review-summary"><div><span>Mod</span><b>${esc(r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir')}</b></div><div><span>Jenis</span><b>${esc(r.type)}</b></div><div><span>Tempoh</span><b>${esc(formatDateRange(r.startDate,r.endDate))}</b></div><div><span>Masa</span><b>${r.mode==='KEBERADAAN'?esc(`${r.startTime} – ${r.endTime}`):'—'}</b></div><div class="span-2"><span>Catatan</span><b>${esc(r.note||'—')}</b></div></div><form onsubmit='reviewAbsence(event,${JSON.stringify(id)},${JSON.stringify(decision)})'><label>Ulasan Pengetua / Pengurusan<textarea name="comment" rows="3" placeholder="Ulasan keputusan (opsyenal)"></textarea></label><p><button class="btn ${approve?'primary':'dark'}" type="submit">${approve?'Luluskan Permohonan':'Tolak Permohonan'}</button></p></form></div>`);
   }
-  async function reviewAbsence(ev,id,decision){ev.preventDefault();const comment=new FormData(ev.target).get('comment')||'';try{const r=await runServer('reviewAbsenceRequest',state.token,id,decision,comment);closeModal();toast(r.conflicts?.length?`Keputusan disimpan. ${r.conflicts.length} tarikh mempunyai rekod waktu sedia ada dan tidak ditindih.`:'Keputusan permohonan disimpan.',5000);state.absenceManagement=null;state.absence=null;state.absencePublic=null;await loadAbsenceManagement(true);}catch(e){handleServerError(e);}}
+  async function reviewAbsence(ev,id,decision){ev.preventDefault();const comment=new FormData(ev.target).get('comment')||'';try{const r=await runServer('reviewAbsenceRequest',state.token,id,decision,comment);closeModal();toast(r.conflicts?.length?`Keputusan disimpan. ${r.conflicts.length} tarikh mempunyai rekod waktu sedia ada dan tidak ditindih.`:'Keputusan permohonan disimpan.',5000);invalidateClientCache('absenceManagement','absence','absencePublic','myCard','adminCard');await loadAbsenceManagement(true);}catch(e){handleServerError(e);}}
   async function generateAbsencePresencePdfClient(){try{const filters={fromDate:document.getElementById('absenceManageFrom').value,toDate:document.getElementById('absenceManageTo').value,mode:document.getElementById('absenceManageMode').value,status:document.getElementById('absenceManageStatus').value,category:document.getElementById('absenceManageCategory').value};const r=await runServer('generateAbsencePresencePdf',state.token,filters);downloadPdfResult(r);toast('Laporan PDF dijana.');}catch(e){handleServerError(e);}}
 
   // ---------- Semakan Lewat / Balik Awal ----------
   function ensureTimeReviewDates(){const f=document.getElementById('timeReviewFrom'),t=document.getElementById('timeReviewTo'),today=presetRange('today')[0];if(f&&!f.value)f.value=today;if(t&&!t.value)t.value=today;}
   async function loadTimeReview(force=false){
     if(!state.boot?.user?.isAdmin)return;ensureTimeReviewDates();const from=document.getElementById('timeReviewFrom').value,to=document.getElementById('timeReviewTo').value,key=`${from}|${to}`;
-    if(state.timeReview&&!force&&state.timeReview._key===key){applyTimeReviewFilters();return;}
-    try{state.timeReview=await runServer('getTimeReviewData',state.token,from,to);state.timeReview._key=key;applyTimeReviewFilters();}catch(e){handleServerError(e);}
+    if(state.timeReview&&!force&&state.timeReview._key===key&&clientCacheFresh('timeReview')){applyTimeReviewFilters();return;}
+    try{state.timeReview=await runServer('getTimeReviewData',state.token,from,to);state.timeReview._key=key;markClientCache('timeReview');applyTimeReviewFilters();}catch(e){handleServerError(e);}
   }
   function setTimeReviewPreset(kind){const [f,t]=presetRange(kind);document.getElementById('timeReviewFrom').value=f;document.getElementById('timeReviewTo').value=t;loadTimeReview(true);}
   function applyTimeReviewFilters(){const data=state.timeReview?.rows||[],q=norm(document.getElementById('timeReviewSearch')?.value),type=document.getElementById('timeReviewType')?.value||'',st=document.getElementById('timeReviewStatus')?.value||'',sort=getTableSort('timeReview');const list=sortRecords(data.filter(r=>{const hay=norm([r.name,r.jobTitle,r.email,r.category,r.date,r.type,r.session,r.recordTime,r.referenceTime,r.reviewStatus,r.reviewerJobTitle,r.comment].join(' '));return(!q||hay.includes(q))&&(!type||r.type===type)&&(!st||r.reviewStatus===st);}),sort);text('timeReviewCount',`${list.length} / ${data.length} rekod`);const body=document.getElementById('timeReviewRows');if(!body)return;body.innerHTML=list.length?list.map(r=>`<tr><td><b>${esc(r.name)}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.email)}</small></td><td>${esc(r.date)}</td><td><span class="badge ${r.type==='LEWAT'?'lewat':'awal'}">${esc(r.type)}</span></td><td>${esc(r.session)}</td><td><b>${esc(r.recordTime)}</b></td><td>${esc(r.referenceTime||'—')}</td><td><span class="request-status ${r.reviewStatus==='DIAMBIL MAKLUM'?'approved':r.reviewStatus==='DITOLAK'?'rejected':'pending'}">${esc(r.reviewStatus)}</span></td><td>${r.reviewStatus==='BELUM DIAMBIL MAKLUM'?`<div class="row-actions"><button class="action-link approve-link" onclick='openTimeReview(${JSON.stringify(r.id)},"DIAMBIL MAKLUM")'>Diambil Maklum</button><button class="action-link warn-link" onclick='openTimeReview(${JSON.stringify(r.id)},"DITOLAK")'>Ditolak</button></div>`:`<span class="review-role-tag">${esc(r.reviewerJobTitle||'Pentadbir Sistem')}</span><small class="table-sub">Catatan: ${esc(r.comment||'—')}</small><small class="table-sub">${esc(r.reviewedAt||'—')}</small>`}</td></tr>`).join(''):'<tr><td colspan="8" class="empty-cell">Tiada rekod sepadan.</td></tr>';
   }
   function openTimeReview(id,decision){const r=state.timeReview?.rows?.find(x=>x.id===id);if(!r)return;showModal(`<h3>${esc(decision==='DIAMBIL MAKLUM'?'Diambil Maklum':'Tolak')} Rekod Waktu</h3><p><b>${esc(r.name)}</b><br><span class="muted">${esc(r.jobTitle||'')} · ${esc(r.email)}</span></p><div class="review-summary"><div><span>Jenis</span><b>${esc(r.type)}</b></div><div><span>Sesi</span><b>${esc(r.session)}</b></div><div><span>Waktu</span><b>${esc(r.recordTime)}</b></div><div><span>Rujukan</span><b>${esc(r.referenceTime||'—')}</b></div></div><form onsubmit='submitTimeReview(event,${JSON.stringify(id)},${JSON.stringify(decision)})'><label>Ulasan<textarea name="comment" rows="3" placeholder="Catatan (opsyenal)"></textarea></label><p><button class="btn ${decision==='DIAMBIL MAKLUM'?'primary':'dark'}" type="submit">Simpan Keputusan</button></p></form>`);}
-  async function submitTimeReview(ev,id,decision){ev.preventDefault();const comment=new FormData(ev.target).get('comment')||'';try{const r=await runServer('reviewTimeException',state.token,id,decision,comment);closeModal();toast(`${r.status}.`,4500);state.timeReview=null;state.myCardLoaded=false;state.adminCardData=null;await loadTimeReview(true);}catch(e){handleServerError(e);}}
+  async function submitTimeReview(ev,id,decision){ev.preventDefault();const comment=new FormData(ev.target).get('comment')||'';try{const r=await runServer('reviewTimeException',state.token,id,decision,comment);closeModal();toast(`${r.status}.`,4500);invalidateClientCache('timeReview','myCard','adminCard');await loadTimeReview(true);}catch(e){handleServerError(e);}}
   async function generateTimeReviewPdfClient(){try{const filters={fromDate:document.getElementById('timeReviewFrom').value,toDate:document.getElementById('timeReviewTo').value,type:document.getElementById('timeReviewType').value,status:document.getElementById('timeReviewStatus').value};const r=await runServer('generateTimeReviewPdf',state.token,filters);downloadPdfResult(r);toast('Laporan PDF dijana.');}catch(e){handleServerError(e);}}
 
   // ---------- Admin data / report ----------
@@ -1126,11 +1160,11 @@ const state = {
   }
 
   function openAttendanceModal(email,name,inTime,outTime,inTime2,outTime2){const date=document.getElementById('reportDate').value;showModal(`<h3>Ubah rekod waktu</h3><p><b>${esc(name)}</b><br><span class="muted">${esc(email)} · ${esc(date)}</span></p><form onsubmit="saveAttendance(event)"><input type="hidden" name="email" value="${attr(email)}"><input type="hidden" name="date" value="${attr(date)}"><div class="modal-grid"><label>Sesi 1 · Masuk<input type="time" name="inTime" value="${attr((inTime||'').slice(0,5))}"></label><label>Sesi 1 · Keluar<input type="time" name="outTime" value="${attr((outTime||'').slice(0,5))}"></label><label>Sesi 2 · Masuk<input type="time" name="inTime2" value="${attr((inTime2||'').slice(0,5))}"></label><label>Sesi 2 · Keluar<input type="time" name="outTime2" value="${attr((outTime2||'').slice(0,5))}"></label></div><label>Sebab pembetulan<textarea name="reason" rows="3" required placeholder="Contoh: terlupa rakam waktu / arahan rasmi"></textarea></label><p><button class="btn primary" type="submit">Simpan pembetulan</button></p></form>`);}
-  async function saveAttendance(ev){ev.preventDefault();const p=Object.fromEntries(new FormData(ev.target).entries());try{await runServer('adminSaveAttendance',state.token,p);closeModal();toast('Rekod dikemas kini.');await refreshAdmin();}catch(e){handleServerError(e);}}
+  async function saveAttendance(ev){ev.preventDefault();const p=Object.fromEntries(new FormData(ev.target).entries());try{await runServer('adminSaveAttendance',state.token,p);invalidateClientCache('myCard','adminCard','timeReview');closeModal();toast('Rekod dikemas kini.');await refreshAdmin();}catch(e){handleServerError(e);}}
 
   // ---------- Admin digital card ----------
   function openAdminPunchCard(email,name){state.adminCardEmail=email;state.adminCardData=null;state.adminCardHalf=1;text('adminCardTitle',name||email);text('adminCardEmail',email);const reportMonth=(document.getElementById('reportDate')?.value||state.boot.today).slice(0,7);document.getElementById('adminCardMonth').value=reportMonth;navigate('admincard');loadAdminCard(true);}
-  async function loadAdminCard(force=false){if(!state.adminCardEmail)return;const month=document.getElementById('adminCardMonth').value||state.boot.today.slice(0,7);if(!force&&state.adminCardData?.month===month){renderAdminCard();return;}const loading=document.getElementById('apcLoading');loading.classList.remove('hidden');try{state.adminCardData=await runServer('adminGetPunchCardMonth',state.token,state.adminCardEmail,month);renderAdminCard();}catch(e){handleServerError(e);}finally{loading.classList.add('hidden');}}
+  async function loadAdminCard(force=false){if(!state.adminCardEmail)return;const month=document.getElementById('adminCardMonth').value||state.boot.today.slice(0,7);if(!force&&state.adminCardData?.month===month&&clientCacheFresh('adminCard')){renderAdminCard();return;}const loading=document.getElementById('apcLoading');loading.classList.remove('hidden');try{state.adminCardData=await runServer('adminGetPunchCardMonth',state.token,state.adminCardEmail,month);markClientCache('adminCard');renderAdminCard();}catch(e){handleServerError(e);}finally{loading.classList.add('hidden');}}
   function renderAdminCard(){const d=state.adminCardData;if(!d)return;text('adminCardTitle',d.user?.name||state.adminCardEmail);text('adminCardEmail',d.user?.email||state.adminCardEmail);text('apcCardNumber',d.cardNumber||'1');text('apcName',d.user?.name||'—');text('apcDepartment',d.department||d.schoolName||'—');text('apcMonthLabel',formatMonthMalay(d.month));document.getElementById('adminCardRows').innerHTML=cardRowsHtml(d,state.adminCardHalf);document.getElementById('adminCardHalf1Btn').classList.toggle('active',state.adminCardHalf===1);document.getElementById('adminCardHalf2Btn').classList.toggle('active',state.adminCardHalf===2);}
   function setAdminCardHalf(half){state.adminCardHalf=half===2?2:1;renderAdminCard();}
 
