@@ -1042,8 +1042,36 @@ const state = {
   }
 
   function switchTab(name,btn){
-    document.querySelectorAll('.tab-body').forEach(x=>x.classList.add('hidden'));document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.getElementById('tab-'+name).classList.remove('hidden');btn.classList.add('active');
-    if(name==='settings')setTimeout(()=>{initLocationPicker().then(()=>state.locationMap?.invalidateSize()).catch(()=>{});},80);
+    document.querySelectorAll('#adminPanel > .tab-body').forEach(x=>x.classList.add('hidden'));
+    document.querySelectorAll('#adminPanel > .tabs > .tab').forEach(x=>x.classList.remove('active'));
+    document.getElementById('tab-'+name)?.classList.remove('hidden');btn?.classList.add('active');
+    if(name==='settings'){
+      const active=document.querySelector('.settings-subtab.active')||document.querySelector('.settings-subtab');
+      switchSettingsSection(active?.dataset.settingsSection||'general',active);
+    }
+  }
+
+  function switchSettingsSection(name,btn){
+    const allowed=['general','location','calendar','security'];
+    if(!allowed.includes(name))name='general';
+    document.querySelectorAll('.settings-section').forEach(x=>x.classList.add('hidden'));
+    document.querySelectorAll('.settings-subtab').forEach(x=>{
+      const active=x.dataset.settingsSection===name;
+      x.classList.toggle('active',active);
+      x.setAttribute('aria-selected',active?'true':'false');
+    });
+    document.getElementById('settings-section-'+name)?.classList.remove('hidden');
+    if(name==='location')setTimeout(()=>{initLocationPicker().then(()=>state.locationMap?.invalidateSize()).catch(()=>{});},60);
+  }
+
+  function updateSettingsSummary(){
+    const f=document.getElementById('settingsForm');if(!f)return;
+    const mode=String(f.elements.systemMode?.value||'REAL');
+    const radius=Number(f.elements.radiusM?.value||0);
+    const days=String(f.elements.workingDays?.value||'').split(',').map(x=>x.trim()).filter(Boolean);
+    text('settingsModeSummary',mode==='TEST'?'TEST':'SEBENAR');
+    text('settingsRadiusSummary',radius?Math.round(radius)+' m':'—');
+    text('settingsWorkdaySummary',days.length?days.length+' hari':'—');
   }
 
   function openAttendanceModal(email,name,inTime,outTime,inTime2,outTime2){const date=document.getElementById('reportDate').value;showModal(`<h3>Ubah rekod waktu</h3><p><b>${esc(name)}</b><br><span class="muted">${esc(email)} · ${esc(date)}</span></p><form onsubmit="saveAttendance(event)"><input type="hidden" name="email" value="${attr(email)}"><input type="hidden" name="date" value="${attr(date)}"><div class="modal-grid"><label>Sesi 1 · Masuk<input type="time" name="inTime" value="${attr((inTime||'').slice(0,5))}"></label><label>Sesi 1 · Keluar<input type="time" name="outTime" value="${attr((outTime||'').slice(0,5))}"></label><label>Sesi 2 · Masuk<input type="time" name="inTime2" value="${attr((inTime2||'').slice(0,5))}"></label><label>Sesi 2 · Keluar<input type="time" name="outTime2" value="${attr((outTime2||'').slice(0,5))}"></label></div><label>Sebab pembetulan<textarea name="reason" rows="3" required placeholder="Contoh: terlupa rakam waktu / arahan rasmi"></textarea></label><p><button class="btn primary" type="submit">Simpan pembetulan</button></p></form>`);}
@@ -1152,7 +1180,7 @@ const state = {
     }catch(e){handleServerError(e);}
   }
 
-  function fillSettings(s){const f=document.getElementById('settingsForm');if(!f)return;Object.keys(s).forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]??'';});updateModeSettingHint();updateGpsSettingWarning();if(state.locationMap)setTimeout(syncMapFromInputs,30);}
+  function fillSettings(s){const f=document.getElementById('settingsForm');if(!f)return;Object.keys(s).forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]??'';});updateModeSettingHint();updateGpsSettingWarning();updateSettingsSummary();if(state.locationMap)setTimeout(syncMapFromInputs,30);}
   function updateGpsSettingWarning(){
     const radius=Number(document.getElementById('settingRadius')?.value||0),accuracy=Number(document.getElementById('settingGpsAccuracy')?.value||0),hint=document.getElementById('gpsSettingWarning');
     if(!hint)return;
@@ -1160,7 +1188,7 @@ const state = {
     hint.classList.toggle('hidden',!risky);
     if(risky)hint.textContent=`⚠ Had ketepatan GPS ${Math.round(accuracy)}m lebih besar daripada radius ${Math.round(radius)}m. Semasa rekod waktu, app akan menunggu bacaan yang lebih tepat supaya pegawai dalam radius tidak tersalah ditolak.`;
   }
-  async function saveSettings(ev){ev.preventDefault();const p=Object.fromEntries(new FormData(ev.target).entries());try{const r=await runServer('adminSaveSettings',state.token,p);state.admin.settings=r.settings;state.boot.settings=r.settings;renderBoot();fillSettings(r.settings);toast('Tetapan disimpan.');}catch(e){handleServerError(e);}}
+  async function saveSettings(ev){ev.preventDefault();const p=Object.fromEntries(new FormData(ev.target).entries()),btn=ev.submitter;setButtonBusy(btn,true,'Menyimpan…');try{const r=await runServer('adminSaveSettings',state.token,p);state.admin.settings=r.settings;state.boot.settings=r.settings;renderBoot();fillSettings(r.settings);toast('Tetapan berjaya disimpan.');}catch(e){handleServerError(e);}finally{setButtonBusy(btn,false,'');}}
   function updateModeSettingHint(){const mode=document.getElementById('systemModeSelect')?.value||'REAL';const hint=document.getElementById('modeSettingHint');if(hint){hint.textContent=mode==='TEST'?'MOD TEST: rekod waktu boleh dibuat tanpa semakan lokasi dan status waktu. Gunakan hanya untuk ujian sistem.':'MOD SEBENAR: lokasi/radius dikuatkuasakan; masa tidak menyekat rekod tetapi menentukan status LEWAT / BALIK AWAL.';hint.className='setting-hint '+(mode==='TEST'?'test-hint':'real-hint');}}
 
   function ensureLeaflet(){
@@ -1282,6 +1310,8 @@ const state = {
     refreshAdmin,
     applyReportFilters,
     switchTab,
+    switchSettingsSection,
+    updateSettingsSummary,
     openAttendanceModal,
     saveAttendance,
     openAdminPunchCard,
