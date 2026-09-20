@@ -899,13 +899,13 @@ const state = {
       slot.dataset.half=String(half);
 
       const card=source.cloneNode(true);
-      card.classList.add('physical-card-print');
+      card.classList.add('physical-card-print','physical-card-print-compact');
       card.classList.add(half===1?'print-half-left':'print-half-right');
       card.removeAttribute('id');
 
       const rows=card.querySelector('#'+rowsId);
       if(rows){
-        rows.innerHTML=cardRowsHtml(data,half);
+        rows.innerHTML=cardRowsHtml(data,half,true);
         rows.removeAttribute('id');
       }
 
@@ -934,8 +934,10 @@ const state = {
     return printPunchCardSpread(state.adminCardData,'adminPhysicalPunchCard','adminCardRows','apcLoading');
   }
 
-  function cardRowsHtml(d,half){
-    const start=half===1?1:16,end=half===1?Math.min(15,d.daysInMonth):d.daysInMonth,byDay=new Map((d.records||[]).map(r=>[Number(r.day),r]));let html='';
+  function cardRowsHtml(d,half,compact=false){
+    const start=half===1?1:16,
+          end=half===1?Math.min(15,d.daysInMonth):(compact?31:d.daysInMonth),
+          byDay=new Map((d.records||[]).map(r=>[Number(r.day),r]));let html='';
     if(start>end)return '<tr><td colspan="7" class="pc-empty">Tiada tarikh untuk bahagian ini.</td></tr>';
     for(let day=start;day<=end;day++){
       const r=byDay.get(day)||{},status=String(r.status||'').trim().toUpperCase();
@@ -943,21 +945,38 @@ const state = {
       if(status==='PUBLIC_HOLIDAY'){const label=String(r.reason||'CUTI UMUM').trim();html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-holiday-full"><span class="pc-holiday-label">CUTI UMUM</span><span class="pc-holiday-reason">${esc(label)}</span></td></tr>`;continue;}if(status==='WEEKEND'){const label=String(r.reason||'').trim().toUpperCase()||'CUTI';html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-weekend-full"><span>${esc(label)}</span></td></tr>`;continue;}
       if(status==='TIDAK HADIR'){const reason=String(r.reason||'').trim(),detail=reason&&reason.toUpperCase()!=='TIDAK HADIR'?reason:'TIADA PENJELASAN';html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-absence-full"><span class="pc-absence-label">TIDAK HADIR</span><span class="pc-absence-reason">${esc(detail)}</span></td></tr>`;continue;}
       const reviews=r.reviewItems||[], flagged=(type,session)=>reviews.some(x=>String(x.type||'').toUpperCase()===type&&Number(x.session||1)===session), tc=(v,bad)=>`<td class="${bad?'pc-time-alert':''}">${esc(shortTime(v))}</td>`;
-      html+=`<tr class="${cls}"><td class="pc-day">${day}</td>${tc(r.inTime,flagged('LEWAT',1))}${tc(r.outTime,flagged('BALIK AWAL',1))}${tc(r.inTime2,flagged('LEWAT',2))}${tc(r.outTime2,flagged('BALIK AWAL',2))}<td class="pc-statement">${esc(cardStatement(r))}</td><td class="pc-sign"></td></tr>`;
+      html+=`<tr class="${cls}"><td class="pc-day">${day}</td>${tc(r.inTime,flagged('LEWAT',1))}${tc(r.outTime,flagged('BALIK AWAL',1))}${tc(r.inTime2,flagged('LEWAT',2))}${tc(r.outTime2,flagged('BALIK AWAL',2))}<td class="pc-statement">${esc(cardStatement(r,compact))}</td><td class="pc-sign"></td></tr>`;
     }return html;
   }
   function shortTime(v){return v?String(v).slice(0,5):'';}
-  function cardStatement(r){
+  function compactCardReason(reason){
+    let text=String(reason||'').trim()
+      .replace(/BELUM DIAMBIL MAKLUM/gi,'BELUM SEMAK')
+      .replace(/DIAMBIL MAKLUM/gi,'DIMAKLUMI')
+      .replace(/MAKLUMAN\s+KEBERADAAN/gi,'KEBERADAAN')
+      .replace(/KEBENARAN\s+KELUAR/gi,'KELUAR RASMI')
+      .replace(/\s*[—–]\s*/g,' · ')
+      .replace(/\s+/g,' ')
+      .trim();
+    if(text.length>42)text=text.slice(0,41).trimEnd()+'…';
+    return text;
+  }
+  function cardStatement(r,compact=false){
     if(!r)return '';
     const status=String(r.status||''), parts=[];
     if(status.includes('LEWAT'))parts.push('LEWAT');
     if(status.includes('BALIK AWAL'))parts.push('BALIK AWAL');
     if(parts.length){
-      parts.push(r.reviewState||'BELUM DIAMBIL MAKLUM');
-      // Untuk pengguna Keberadaan yang punch lewat, kekalkan catatan
-      // Keberadaan pada Kad Perakam sebagai konteks yang telah dimaklumkan.
-      if(r.reason&&String(r.reason).toUpperCase().includes('KEBERADAAN'))parts.push(r.reason);
-    } else if(r.reason)parts.push(r.reason);
+      const review=String(r.reviewState||'BELUM DIAMBIL MAKLUM');
+      parts.push(compact?compactCardReason(review):review);
+      // Print compact hanya perlu konteks "KEBERADAAN", bukan catatan panjang
+      // yang boleh mengubah tinggi row fizikal.
+      if(r.reason&&String(r.reason).toUpperCase().includes('KEBERADAAN')){
+        parts.push(compact?'KEBERADAAN':r.reason);
+      }
+    } else if(r.reason){
+      parts.push(compact?compactCardReason(r.reason):r.reason);
+    }
     return parts.join(' · ');
   }
   function formatMonthMalay(monthKey){if(!/^\d{4}-\d{2}$/.test(monthKey||''))return monthKey||'—';const[y,m]=monthKey.split('-').map(Number);const months=['JANUARI','FEBRUARI','MAC','APRIL','MEI','JUN','JULAI','OGOS','SEPTEMBER','OKTOBER','NOVEMBER','DISEMBER'];return `${months[m-1]} ${y}`;}
