@@ -467,10 +467,10 @@
         <section id="screen-admincard" class="screen hidden">
           <div class="page-heading punchcard-page-heading">
             <div><button class="back-link" onclick="navigate('admin')">← Kembali ke Laporan</button><div class="eyebrow">Kad Perakam Waktu Pegawai</div><h1 id="adminCardTitle">—</h1><p id="adminCardEmail" class="muted">—</p></div>
-            <div class="punchcard-actions"><label class="month-picker">Bulan <input id="adminCardMonth" type="month" onchange="loadAdminCard(true)"></label><button class="btn ghost" onclick="loadAdminCard(true)">Muat semula</button></div>
+            <div class="punchcard-actions"><label class="month-picker">Bulan <input id="adminCardMonth" type="month" onchange="loadAdminCard(true)"></label><button class="btn ghost" onclick="loadAdminCard(true)">Muat semula</button><button class="btn dark" onclick="printAdminPunchCard()">Cetak</button></div>
           </div>
           <div class="card-side-switch"><button id="adminCardHalf1Btn" class="card-side-btn active" onclick="setAdminCardHalf(1)">1 – 15</button><button id="adminCardHalf2Btn" class="card-side-btn" onclick="setAdminCardHalf(2)">16 – 31</button></div>
-          <section class="physical-card admin-physical-card">
+          <section id="adminPhysicalPunchCard" class="physical-card admin-physical-card">
             <div class="pc-topline"><div class="pc-government">KERAJAAN MALAYSIA</div><div class="pc-number"><strong id="apcCardNumber">1</strong><span>NOMBOR:</span></div></div>
             <div class="pc-emblem-wrap"><div class="pc-emblem"><?!= include('Logo'); ?></div></div>
             <div class="pc-info-row"><span>NAMA :</span><strong id="apcName">—</strong></div>
