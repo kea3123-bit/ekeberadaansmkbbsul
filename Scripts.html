@@ -881,26 +881,57 @@ const state = {
   function renderMyPunchCard(){const d=state.myCardData;if(!d)return;text('pcCardNumber',d.cardNumber||'1');text('pcName',d.user?.name||'—');text('pcDepartment',d.department||d.schoolName||'—');text('pcMonthLabel',formatMonthMalay(d.month));document.getElementById('myCardRows').innerHTML=cardRowsHtml(d,state.myCardHalf);document.getElementById('cardHalf1Btn').classList.toggle('active',state.myCardHalf===1);document.getElementById('cardHalf2Btn').classList.toggle('active',state.myCardHalf===2);}
   function setMyCardHalf(half){state.myCardHalf=half===2?2:1;renderMyPunchCard();}
   function clearPunchCardPrintPages(){document.getElementById('punchCardPrintPages')?.remove();}
-  function buildPunchCardPrintPages(){
-    const d=state.myCardData,source=document.getElementById('physicalPunchCard');
-    if(!d||!source)return null;
+  function buildPunchCardPrintSpread(data,sourceId,rowsId,loadingId){
+    const source=document.getElementById(sourceId);
+    if(!data||!source)return null;
     clearPunchCardPrintPages();
-    const host=document.createElement('div');host.id='punchCardPrintPages';host.className='punch-card-print-pages';
+
+    const host=document.createElement('div');
+    host.id='punchCardPrintPages';
+    host.className='punch-card-print-pages';
+
+    const page=document.createElement('section');
+    page.className='punch-card-print-page punch-card-print-spread';
+
     [1,2].forEach(half=>{
-      const page=document.createElement('section');page.className='punch-card-print-page';page.dataset.half=String(half);
-      const card=source.cloneNode(true);card.classList.add('physical-card-print');card.removeAttribute('id');
-      const rows=card.querySelector('#myCardRows');if(rows){rows.innerHTML=cardRowsHtml(d,half);rows.removeAttribute('id');}
-      const loading=card.querySelector('#pcLoading');if(loading)loading.remove();
+      const slot=document.createElement('div');
+      slot.className='punch-card-print-slot';
+      slot.dataset.half=String(half);
+
+      const card=source.cloneNode(true);
+      card.classList.add('physical-card-print');
+      card.classList.add(half===1?'print-half-left':'print-half-right');
+      card.removeAttribute('id');
+
+      const rows=card.querySelector('#'+rowsId);
+      if(rows){
+        rows.innerHTML=cardRowsHtml(data,half);
+        rows.removeAttribute('id');
+      }
+
+      const loading=loadingId?card.querySelector('#'+loadingId):null;
+      if(loading)loading.remove();
+
       card.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
-      page.appendChild(card);host.appendChild(page);
+      slot.appendChild(card);
+      page.appendChild(slot);
     });
-    document.body.appendChild(host);return host;
+
+    host.appendChild(page);
+    document.body.appendChild(host);
+    return host;
   }
-  function printMyPunchCard(){
-    if(!state.myCardData)return toast('Kad Perakam Waktu belum dimuatkan.');
-    if(!buildPunchCardPrintPages())return toast('Kad Perakam Waktu tidak dapat disediakan untuk cetakan.');
+  function printPunchCardSpread(data,sourceId,rowsId,loadingId){
+    if(!data)return toast('Kad Perakam Waktu belum dimuatkan.');
+    if(!buildPunchCardPrintSpread(data,sourceId,rowsId,loadingId))return toast('Kad Perakam Waktu tidak dapat disediakan untuk cetakan.');
     window.addEventListener('afterprint',clearPunchCardPrintPages,{once:true});
     requestAnimationFrame(()=>requestAnimationFrame(()=>window.print()));
+  }
+  function printMyPunchCard(){
+    return printPunchCardSpread(state.myCardData,'physicalPunchCard','myCardRows','pcLoading');
+  }
+  function printAdminPunchCard(){
+    return printPunchCardSpread(state.adminCardData,'adminPhysicalPunchCard','adminCardRows','apcLoading');
   }
 
   function cardRowsHtml(d,half){
@@ -1394,6 +1425,7 @@ const state = {
     loadMyCard,
     setMyCardHalf,
     printMyPunchCard,
+    printAdminPunchCard,
     loadAbsenceData,
     submitAbsence,
     cancelAbsence,
