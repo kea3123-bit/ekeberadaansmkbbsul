@@ -195,7 +195,7 @@
         <section id="screen-mycard" class="screen hidden">
           <div class="page-heading punchcard-page-heading">
             <div><div class="eyebrow">Rekod peribadi</div><h1>Kad Perakam Waktu Saya</h1><p>Paparan digital mengikut format kad mencatit waktu kerajaan.</p></div>
-            <div class="punchcard-actions"><label class="month-picker">Bulan <input id="myCardMonth" type="month" onchange="loadMyCard(true)"></label><button class="btn ghost" onclick="loadMyCard(true)">Muat semula</button><button class="btn dark" onclick="printMyPunchCard()">Cetak</button></div>
+            <div class="punchcard-actions"><label class="month-picker">Bulan <input id="myCardMonth" type="month" onchange="loadMyCard(true)"></label><button class="btn ghost" onclick="loadMyCard(true)">Segar semula</button><button class="btn dark" onclick="printMyPunchCard()">Cetak</button></div>
           </div>
           <div class="card-side-switch" role="group"><button id="cardHalf1Btn" class="card-side-btn active" onclick="setMyCardHalf(1)">1 – 15</button><button id="cardHalf2Btn" class="card-side-btn" onclick="setMyCardHalf(2)">16 – 31</button></div>
           <section id="physicalPunchCard" class="physical-card" aria-label="Kad mencatit waktu digital">
@@ -215,7 +215,7 @@
         <section id="screen-absence" class="screen hidden">
           <div class="page-heading">
             <div><div class="eyebrow">Permohonan kepada Pengetua</div><h1>Tidak Hadir / Keberadaan</h1><p>Maklumkan ketidakhadiran atau tempoh keberadaan rasmi di sekolah.</p></div>
-            <div class="toolbar-actions"><button class="btn ghost" onclick="loadAbsenceData(true)">Muat semula</button><button class="btn dark" onclick="navigate('absencepublic')">Lihat Senarai</button></div>
+            <div class="toolbar-actions"><button class="btn ghost" onclick="loadAbsenceData(true)">Segar semula</button><button class="btn dark" onclick="navigate('absencepublic')">Lihat Senarai</button></div>
           </div>
           <section class="panel absence-form-panel absence-form-full">
             <div class="panel-head compact"><div><div class="eyebrow">Permohonan baharu</div><h2>Maklum Tidak Hadir / Keberadaan</h2></div></div>
@@ -241,7 +241,7 @@
         <section id="screen-absencepublic" class="screen hidden">
           <div class="page-heading">
             <div><div class="eyebrow">Makluman semua pegawai</div><h1>Senarai Tidak Hadir / Keberadaan</h1><p>Semak permohonan aktif, keberadaan dan ketidakhadiran tanpa penjelasan mengikut tarikh atau tempoh.</p></div>
-            <div class="toolbar-actions"><button class="btn ghost" onclick="loadAbsencePublic(true)">Muat semula</button><button class="btn dark" onclick="generatePublicAbsencePresencePdfClient()">Jana Laporan PDF</button></div>
+            <div class="toolbar-actions"><button class="btn ghost" onclick="loadAbsencePublic(true)">Segar semula</button><button class="btn dark" onclick="generatePublicAbsencePresencePdfClient()">Jana Laporan PDF</button></div>
           </div>
           <section class="panel">
             <div class="preset-row"><button class="btn ghost small" onclick="setAbsencePublicPreset('yesterday')">Semalam</button><button class="btn ghost small" onclick="setAbsencePublicPreset('today')">Hari ini</button><button class="btn ghost small" onclick="setAbsencePublicPreset('tomorrow')">Esok</button><button class="btn ghost small" onclick="setAbsencePublicPreset('week')">Minggu ini</button><button class="btn ghost small" onclick="setAbsencePublicPreset('month')">Bulan ini</button></div>
@@ -262,7 +262,7 @@
 
         <!-- ABSENCE / PRESENCE MANAGEMENT -->
         <section id="screen-absencemanage" class="screen hidden">
-          <div class="page-heading"><div><div class="eyebrow">Khas Pengurusan / Pentadbir Sistem</div><h1>Semakan Tidak Hadir / Keberadaan</h1><p>Semak permohonan dan tempoh pegawai yang tidak tersedia untuk kelas/ganti.</p></div><div class="toolbar-actions"><button class="btn ghost" onclick="loadAbsenceManagement(true)">Muat semula</button><button class="btn dark" onclick="generateAbsencePresencePdfClient()">Jana Laporan PDF</button></div></div>
+          <div class="page-heading"><div><div class="eyebrow">Khas Pengurusan / Pentadbir Sistem</div><h1>Semakan Tidak Hadir / Keberadaan</h1><p>Semak permohonan dan tempoh pegawai yang tidak tersedia untuk kelas/ganti.</p></div><div class="toolbar-actions"><button class="btn ghost" onclick="loadAbsenceManagement(true)">Segar semula</button><button class="btn dark" onclick="generateAbsencePresencePdfClient()">Jana Laporan PDF</button></div></div>
           <section class="panel">
             <div class="preset-row"><button class="btn ghost small" onclick="setAbsenceManagePreset('yesterday')">Semalam</button><button class="btn ghost small" onclick="setAbsenceManagePreset('today')">Hari ini</button><button class="btn ghost small" onclick="setAbsenceManagePreset('tomorrow')">Esok</button><button class="btn ghost small" onclick="setAbsenceManagePreset('week')">Minggu ini</button><button class="btn ghost small" onclick="setAbsenceManagePreset('month')">Bulan ini</button></div>
             <div class="filter-bar absence-manage-filter">
@@ -280,7 +280,7 @@
 
         <!-- TIME EXCEPTION REVIEW -->
         <section id="screen-timereview" class="screen hidden">
-          <div class="page-heading"><div><div class="eyebrow">Pentadbir Sistem sahaja</div><h1>Semakan Lewat / Balik Awal</h1><p>Semak rekod waktu yang melepasi waktu rujukan. Semua waktu menggunakan Malaysia Time (MYT), GMT+8 — Asia/Kuala_Lumpur.</p></div><div class="toolbar-actions"><button class="btn ghost" onclick="loadTimeReview(true)">Muat semula</button><button class="btn dark" onclick="generateTimeReviewPdfClient()">Jana Laporan PDF</button></div></div>
+          <div class="page-heading"><div><div class="eyebrow">Pentadbir Sistem sahaja</div><h1>Semakan Lewat / Balik Awal</h1><p>Semak rekod waktu yang melepasi waktu rujukan. Semua waktu menggunakan Malaysia Time (MYT), GMT+8 — Asia/Kuala_Lumpur.</p></div><div class="toolbar-actions"><button class="btn ghost" onclick="loadTimeReview(true)">Segar semula</button><button class="btn dark" onclick="generateTimeReviewPdfClient()">Jana Laporan PDF</button></div></div>
           <section class="panel">
             <div class="preset-row"><button class="btn ghost small" onclick="setTimeReviewPreset('yesterday')">Semalam</button><button class="btn ghost small" onclick="setTimeReviewPreset('today')">Hari ini</button><button class="btn ghost small" onclick="setTimeReviewPreset('tomorrow')">Esok</button><button class="btn ghost small" onclick="setTimeReviewPreset('week')">Minggu ini</button><button class="btn ghost small" onclick="setTimeReviewPreset('month')">Bulan ini</button></div>
             <div class="filter-bar time-review-filter">
@@ -297,7 +297,7 @@
 
         <!-- ADMIN SCREEN -->
         <section id="screen-admin" class="screen hidden">
-          <div class="page-heading"><div><div class="eyebrow">Akses Pentadbir Sistem</div><h1>Panel Pentadbir</h1><p>Laporan, pengurusan pengguna, PIN dan tetapan sistem.</p></div><button class="btn ghost" onclick="refreshAdmin()">Muat semula</button></div>
+          <div class="page-heading"><div><div class="eyebrow">Akses Pentadbir Sistem</div><h1>Panel Pentadbir</h1><p>Laporan, pengurusan pengguna, PIN dan tetapan sistem.</p></div><button class="btn ghost" onclick="refreshAdmin()">Segar semula</button></div>
           <section id="adminPanel" class="panel">
             <div class="tabs"><button class="tab active" data-tab="report-builder" onclick="switchTab('report-builder', this)">Jana Laporan</button><button class="tab" data-tab="report" onclick="switchTab('report', this)">Paparan Harian</button><button class="tab" data-tab="users" onclick="switchTab('users', this)">Pengguna</button><button class="tab" data-tab="settings" onclick="switchTab('settings', this)">Tetapan</button></div>
 
@@ -467,7 +467,7 @@
         <section id="screen-admincard" class="screen hidden">
           <div class="page-heading punchcard-page-heading">
             <div><button class="back-link" onclick="navigate('admin')">← Kembali ke Laporan</button><div class="eyebrow">Kad Perakam Waktu Pegawai</div><h1 id="adminCardTitle">—</h1><p id="adminCardEmail" class="muted">—</p></div>
-            <div class="punchcard-actions"><label class="month-picker">Bulan <input id="adminCardMonth" type="month" onchange="loadAdminCard(true)"></label><button class="btn ghost" onclick="loadAdminCard(true)">Muat semula</button><button class="btn dark" onclick="printAdminPunchCard()">Cetak</button></div>
+            <div class="punchcard-actions"><label class="month-picker">Bulan <input id="adminCardMonth" type="month" onchange="loadAdminCard(true)"></label><button class="btn ghost" onclick="loadAdminCard(true)">Segar semula</button><button class="btn dark" onclick="printAdminPunchCard()">Cetak</button></div>
           </div>
           <div class="card-side-switch"><button id="adminCardHalf1Btn" class="card-side-btn active" onclick="setAdminCardHalf(1)">1 – 15</button><button id="adminCardHalf2Btn" class="card-side-btn" onclick="setAdminCardHalf(2)">16 – 31</button></div>
           <section id="adminPhysicalPunchCard" class="physical-card admin-physical-card">
