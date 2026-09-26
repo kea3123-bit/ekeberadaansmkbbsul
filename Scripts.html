@@ -1022,10 +1022,13 @@ const state = {
     const requiredPresenceTypes=['PROGRAM DALAMAN SEKOLAH','URUSAN PERIBADI (MASUK LEWAT)','URUSAN PERIBADI (BALIK AWAL)','MESYUARAT DALAM SEKOLAH','BENGKEL/KURSUS/SEMINAR (PPD)','BENGKEL/KURSUS/SEMINAR (JPN)','BENGKEL/KURSUS/SEMINAR (KPM)','MESYUARAT/TAKLIMAT (PPD)','MESYUARAT/TAKLIMAT (JPN)','MESYUARAT/TAKLIMAT (KPM)','URUSAN PEPERIKSAAN','LAIN-LAIN - KEBERADAAN'
     ];
     const serverTypes=mode==='KEBERADAAN'?(d.presenceTypes||[]):(d.types||[]);
-    const requiredTypes=mode==='KEBERADAAN'?requiredPresenceTypes:requiredAbsenceTypes;
+    const fallbackTypes=mode==='KEBERADAAN'?requiredPresenceTypes:requiredAbsenceTypes;
+    const sourceTypes=Array.isArray(serverTypes)&&serverTypes.length?serverTypes:fallbackTypes;
     const seen=new Set(),types=[];
-    [...serverTypes,...requiredTypes].forEach(value=>{const x=String(value||'').trim().toUpperCase();if(x&&!seen.has(x)){seen.add(x);types.push(x);}});
-    if(typeSel)typeSel.innerHTML='<option value="">Pilih jenis</option>'+types.map(x=>`<option>${esc(x)}</option>`).join('');
+    // Backend ialah source of truth. Fallback hardcoded hanya digunakan semasa
+    // bootstrap lama / backend gagal menghantar senarai, bukan digabungkan.
+    sourceTypes.forEach(value=>{const x=String(value||'').trim().toUpperCase();if(x&&!seen.has(x)){seen.add(x);types.push(x);}});
+    if(typeSel)typeSel.innerHTML='<option value="">Pilih jenis</option>'+types.map(x=>`<option value="${attr(x)}">${esc(x)}</option>`).join('');
     ['absenceStartTimeWrap','absenceEndTimeWrap'].forEach(id=>document.getElementById(id)?.classList.toggle('hidden',mode!=='KEBERADAAN'));
     const st=document.getElementById('absenceStartTime'),et=document.getElementById('absenceEndTime');if(st)st.required=mode==='KEBERADAAN';if(et)et.required=mode==='KEBERADAAN';
   }
@@ -1039,7 +1042,20 @@ const state = {
   }
 
   async function submitAbsence(ev){
-    ev.preventDefault();const p=Object.fromEntries(new FormData(ev.target).entries());
+    ev.preventDefault();
+    const p=Object.fromEntries(new FormData(ev.target).entries());
+    const mode=String(p.mode||'TIDAK_HADIR').toUpperCase()==='KEBERADAAN'?'KEBERADAAN':'TIDAK_HADIR';
+    const allowed=mode==='KEBERADAAN'?(state.absence?.presenceTypes||[]):(state.absence?.types||[]);
+    const selectedType=String(p.type||'').trim().toUpperCase();
+    if(Array.isArray(allowed)&&allowed.length){
+      const normalizedAllowed=allowed.map(x=>String(x||'').trim().toUpperCase());
+      if(!normalizedAllowed.includes(selectedType)){
+        updateAbsenceModeUi();
+        toast('Senarai jenis telah dikemas kini. Sila pilih jenis semula.',5000);
+        return;
+      }
+    }
+    p.type=selectedType;
     try{const r=await runServer('submitAbsenceRequest',state.token,p);toast(r.message,5000);ev.target.reset();invalidateClientCache('absence','absencePublic','absenceManagement');document.getElementById('absenceMode').value='TIDAK_HADIR';await loadAbsenceData(true);}
     catch(e){handleServerError(e);}
   }
