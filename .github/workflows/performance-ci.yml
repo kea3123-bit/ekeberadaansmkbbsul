@@ -157,6 +157,16 @@ jobs:
           grep -R -q 'Asia/Kuala_Lumpur' apps-script/appsscript.json
           grep -R -q 'function isPagesWebOriginAllowed_' apps-script/Bridges.gs
           grep -R -q 'EK_PAGES_ORIGINS' apps-script/Bridges.gs
+          # Enam jenis urusan rasmi bertanda mesti sah untuk kedua-dua
+          # Tidak Hadir dan Keberadaan melalui kumpulan kongsi backend.
+          grep -q 'const EK_EXTERNAL_OFFICIAL_TYPES' apps-script/00_Core.gs
+          grep -q "BENGKEL/KURSUS/SEMINAR (PPD)" apps-script/00_Core.gs
+          grep -q "BENGKEL/KURSUS/SEMINAR (JPN)" apps-script/00_Core.gs
+          grep -q "BENGKEL/KURSUS/SEMINAR (KPM)" apps-script/00_Core.gs
+          grep -q "MESYUARAT/TAKLIMAT (PPD)" apps-script/00_Core.gs
+          grep -q "MESYUARAT/TAKLIMAT (JPN)" apps-script/00_Core.gs
+          grep -q "MESYUARAT/TAKLIMAT (KPM)" apps-script/00_Core.gs
+          test "$(grep -o '\.\.\.EK_EXTERNAL_OFFICIAL_TYPES' apps-script/00_Core.gs | wc -l)" -eq 2
           ! grep -R -q "createTemplateFromFile('Index')" apps-script/*.gs
           test ! -e Code.gs
           test ! -e .github/workflows/apps-script-deploy.yml
