@@ -1,3 +1,12 @@
+const EK_EXTERNAL_OFFICIAL_TYPES = Object.freeze([
+  'BENGKEL/KURSUS/SEMINAR (PPD)',
+  'BENGKEL/KURSUS/SEMINAR (JPN)',
+  'BENGKEL/KURSUS/SEMINAR (KPM)',
+  'MESYUARAT/TAKLIMAT (PPD)',
+  'MESYUARAT/TAKLIMAT (JPN)',
+  'MESYUARAT/TAKLIMAT (KPM)'
+]);
+
 const EK = Object.freeze({
   TIMEZONE: 'Asia/Kuala_Lumpur', // Malaysia Time (MYT), GMT+8
   SHEETS: {
@@ -12,8 +21,18 @@ const EK = Object.freeze({
     TRUSTED_DEVICES: 'SESI_PERANTI'
   },
   CATEGORIES: ['Pengurusan', 'AKP', 'PPP'],
-  ABSENCE_TYPES: ['CUTI REHAT KHAS','CUTI REHAT','CUTI SAKIT (AWAM)','CUTI SAKIT (SWASTA)','CUTI TANPA REKOD KELOMPOK','CUTI KUARANTIN','BENGKEL/KURSUS/SEMINAR (PPD)','BENGKEL/KURSUS/SEMINAR (JPN)','BENGKEL/KURSUS/SEMINAR (KPM)','MESYUARAT/TAKLIMAT (PPD)','MESYUARAT/TAKLIMAT (JPN)','MESYUARAT/TAKLIMAT (KPM)','AKTIVITI KOKURIKULUM','AKTIVITI SUKAN/PERMAINAN','URUSAN PEPERIKSAAN','LAIN-LAIN'],
-  PRESENCE_TYPES: ['PROGRAM DALAMAN SEKOLAH','URUSAN PERIBADI (MASUK LEWAT)','URUSAN PERIBADI (BALIK AWAL)','MESYUARAT DALAM SEKOLAH','BENGKEL/KURSUS/SEMINAR (PPD)','BENGKEL/KURSUS/SEMINAR (JPN)','BENGKEL/KURSUS/SEMINAR (KPM)','MESYUARAT/TAKLIMAT (PPD)','MESYUARAT/TAKLIMAT (JPN)','MESYUARAT/TAKLIMAT (KPM)','URUSAN PEPERIKSAAN','LAIN-LAIN - KEBERADAAN'],
+  ABSENCE_TYPES: [
+    'CUTI REHAT KHAS','CUTI REHAT','CUTI SAKIT (AWAM)','CUTI SAKIT (SWASTA)',
+    'CUTI TANPA REKOD KELOMPOK','CUTI KUARANTIN',
+    ...EK_EXTERNAL_OFFICIAL_TYPES,
+    'AKTIVITI KOKURIKULUM','AKTIVITI SUKAN/PERMAINAN','URUSAN PEPERIKSAAN','LAIN-LAIN'
+  ],
+  PRESENCE_TYPES: [
+    'PROGRAM DALAMAN SEKOLAH','URUSAN PERIBADI (MASUK LEWAT)','URUSAN PERIBADI (BALIK AWAL)',
+    'MESYUARAT DALAM SEKOLAH',
+    ...EK_EXTERNAL_OFFICIAL_TYPES,
+    'URUSAN PEPERIKSAAN','LAIN-LAIN - KEBERADAAN'
+  ],
   USER_HEADERS: ['Aktif', 'Nama', 'Emel', 'Kategori', 'Pentadbir', 'WaktuLewat', 'MaksMasuk', 'WaktuBalik', 'Catatan', 'PasswordSalt', 'PasswordHash', 'WajibTukarPassword', 'VersiSesi', 'GagalLogin', 'DikunciSehingga', 'PasswordDikemaskiniPada', 'FotoProfilFileId', 'FotoProfilDikemaskiniPada', 'AuthType', 'Jawatan', 'Sesi1Masuk', 'Sesi1Keluar', 'Sesi2Masuk', 'Sesi2Keluar'],
   ATT_HEADERS: ['Tarikh', 'Emel', 'Nama', 'Kategori', 'Masuk', 'MasukLat', 'MasukLng', 'MasukJarakM', 'MasukAkurasiM', 'Balik', 'BalikLat', 'BalikLng', 'BalikJarakM', 'BalikAkurasiM', 'Status', 'Sumber', 'DisuntingOleh', 'SebabEdit', 'DikemaskiniPada', 'MasukIP', 'BalikIP', 'IPSemakan', 'Masuk2', 'Masuk2Lat', 'Masuk2Lng', 'Masuk2JarakM', 'Masuk2AkurasiM', 'Balik2', 'Balik2Lat', 'Balik2Lng', 'Balik2JarakM', 'Balik2AkurasiM', 'Masuk2IP', 'Balik2IP', 'StatusWaktu'],
   AUDIT_HEADERS: ['Masa', 'Pelaku', 'Tindakan', 'Sasaran', 'Butiran'],
