@@ -11,7 +11,7 @@ const state = {
     settingsCurrentMarker:null, settingsAccuracyCircle:null,
     homeLocationMap:null, homeSchoolMarker:null, homeRadiusCircle:null, homeCurrentMarker:null, homeAccuracyCircle:null,
     liveLocation:null, locationWatchId:null, locationUpdatedAt:0, locationRefreshPromise:null,
-    photoCache:new Map(), networkInfo:null, networkPromise:null, leafletPromise:null
+    photoCache:new Map(), clientInfo:null, clientInfoPromise:null, leafletPromise:null
   };
 
   document.addEventListener('DOMContentLoaded', initApp);
@@ -89,7 +89,7 @@ const state = {
     });
   }
 
-  // ---------- Client info / public IP / device telemetry ----------
+  // ---------- Client device telemetry ----------
   function getClientInstanceId(){
     const key='ek_client_instance_id';
     let id=safeLocalGet(key);
@@ -125,16 +125,11 @@ const state = {
     };
   }
 
-  function baseClientInfo(ipv4='',ipv6='',extra={}){
+  function baseClientInfo(extra={}){
     const sw=screen?.width||0,sh=screen?.height||0,
           vw=window.innerWidth||0,vh=window.innerHeight||0,
           net=clientNetworkFields();
-    const v4=String(ipv4||'').trim(),v6=String(ipv6||'').trim();
     return {
-      ip:v4||v6,
-      publicIpv4:v4,
-      publicIpv6:v6,
-      ipSource:(v4||v6)?'browser-public-ip':'',
       clientInstanceId:getClientInstanceId(),
       userAgent:navigator.userAgent||'',
       platform:(navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||'',
@@ -174,79 +169,39 @@ const state = {
   }
 
   function getClientInfoFast(){
-    const cached=state.networkInfo;
+    const cached=state.clientInfo;
     if(cached&&Date.now()-(cached._at||0)<15*60*1000)return cached;
-    getClientNetworkInfo(false,15*60*1000).catch(()=>{});
+    getClientDeviceInfo(false,15*60*1000).catch(()=>{});
     return baseClientInfo();
   }
 
-  async function fetchPublicIpJson(url,timeoutMs=1600){
-    const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),timeoutMs);
-    try{
-      const r=await fetch(url,{cache:'no-store',signal:ctrl.signal});
-      if(!r.ok)return '';
-      const j=await r.json();
-      return String(j?.ip||'').trim();
-    }catch(e){return '';}
-    finally{clearTimeout(timer);}
-  }
-
-  async function getClientNetworkInfo(force=false,maxAgeMs=15*60*1000){
-    const cached=state.networkInfo;
+  async function getClientDeviceInfo(force=false,maxAgeMs=15*60*1000){
+    const cached=state.clientInfo;
     const maxAge=Math.max(0,Number(maxAgeMs)||0);
     if(!force&&cached&&Date.now()-(cached._at||0)<maxAge)return cached;
-    if(!force&&state.networkPromise)return state.networkPromise;
-
+    if(!force&&state.clientInfoPromise)return state.clientInfoPromise;
     const task=(async()=>{
-      const [v4r,v6r,hintsr]=await Promise.allSettled([
-        fetchPublicIpJson('https://api.ipify.org?format=json',1600),
-        fetchPublicIpJson('https://api6.ipify.org?format=json',1600),
-        getClientHintsExtra()
-      ]);
-      let ipv4=v4r.status==='fulfilled'?String(v4r.value||'').trim():'',
-          ipv6=v6r.status==='fulfilled'?String(v6r.value||'').trim():'',
-          hints=hintsr.status==='fulfilled'?(hintsr.value||{}):{};
-      if(ipv4&&ipv4.includes(':')){if(!ipv6)ipv6=ipv4;ipv4='';}
-      if(ipv6&&!ipv6.includes(':')){if(!ipv4)ipv4=ipv6;ipv6='';}
-      if(!ipv4){try{ipv4=await getPublicIpJsonp();}catch(e){ipv4='';}}
-      if(!ipv4&&!ipv6){
-        const dual=await fetchPublicIpJson('https://api64.ipify.org?format=json',1200);
-        if(dual.includes(':'))ipv6=dual;else ipv4=dual;
-      }
-      const info=baseClientInfo(ipv4,ipv6,hints);
-      state.networkInfo=info;
+      const hints=await getClientHintsExtra().catch(()=>({}));
+      const info=baseClientInfo(hints||{});
+      state.clientInfo=info;
       return info;
     })();
-
-    if(!force)state.networkPromise=task;
+    if(!force)state.clientInfoPromise=task;
     try{return await task;}
-    finally{if(state.networkPromise===task)state.networkPromise=null;}
+    finally{if(state.clientInfoPromise===task)state.clientInfoPromise=null;}
   }
 
   async function getClientInfoForAuth(){
-    try{return await getClientNetworkInfo(false,5*60*1000);}catch(e){return getClientInfoFast();}
+    try{return await getClientDeviceInfo(false,5*60*1000);}catch(e){return getClientInfoFast();}
   }
 
   async function syncClientTelemetry(){
     if(!state.token)return false;
     try{
-      const info=await getClientNetworkInfo(false,5*60*1000);
+      const info=await getClientDeviceInfo(false,5*60*1000);
       await runServer('syncClientTelemetry',state.token,loadStoredDevice(),info);
       return true;
     }catch(e){return false;}
-  }
-
-  function getPublicIpJsonp(){
-    return new Promise((resolve,reject)=>{
-      const cb='ekIpCb_'+Math.random().toString(36).slice(2);
-      const script=document.createElement('script');
-      const timer=setTimeout(()=>cleanup(new Error('IP timeout')),1500);
-      function cleanup(err,value){clearTimeout(timer);try{delete window[cb];}catch(e){}script.remove();err?reject(err):resolve(value||'');}
-      window[cb]=data=>cleanup(null,String(data&&data.ip||'').trim());
-      script.onerror=()=>cleanup(new Error('IP lookup gagal'));
-      script.src='https://api.ipify.org?format=jsonp&callback='+encodeURIComponent(cb);
-      document.head.appendChild(script);
-    });
   }
 
   // ---------- Login (v12: DELIMa email + 6-digit PIN + 7-day trusted device) ----------
@@ -255,8 +210,8 @@ const state = {
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')renewSessionIfNeeded(false).catch(()=>{});});
       window.addEventListener('pageshow',()=>renewSessionIfNeeded(false).catch(()=>{}));
       window.addEventListener('focus',()=>renewSessionIfNeeded(false).catch(()=>{}));
-      window.addEventListener('online',()=>{state.networkInfo=null;getClientNetworkInfo(true).catch(()=>{});});
-      try{navigator.connection?.addEventListener?.('change',()=>{state.networkInfo=null;getClientNetworkInfo(true).catch(()=>{});});}catch(e){}
+      window.addEventListener('online',()=>{state.clientInfo=null;getClientDeviceInfo(true).catch(()=>{});});
+      try{navigator.connection?.addEventListener?.('change',()=>{state.clientInfo=null;getClientDeviceInfo(true).catch(()=>{});});}catch(e){}
       if(await tryResumeStoredSession()) return;
       await showLogin();
     }catch(e){
@@ -361,7 +316,7 @@ const state = {
     document.getElementById('appShell').classList.add('hidden');
     document.getElementById('loginPage').classList.remove('hidden');
     hideLoginError(); resetLoginFlow(true);
-    getClientNetworkInfo(false).catch(()=>{});
+    getClientDeviceInfo(false).catch(()=>{});
     const cachedSchool=safeLocalGet('ek_school_name');
     if(cachedSchool)text('loginSchoolName',cachedSchool);
     runServer('getLoginPageData').then(d=>{
@@ -558,7 +513,7 @@ const state = {
     // Start GPS immediately after authentication so punch actions can reuse a
     // fresh, already-resolved position instead of waiting for a new GPS fix.
     setTimeout(()=>startLiveLocationTracking(false).catch(()=>{}),0);
-    // Keep first paint responsive; Drive photo loading and IP refresh happen
+    // Keep first paint responsive; Drive photo loading and device telemetry refresh happen
     // after the dashboard is already usable.
     setTimeout(()=>loadOwnProfilePhoto(),180);
     setTimeout(()=>syncClientTelemetry().catch(()=>{}),0);
@@ -833,11 +788,9 @@ const state = {
   async function startPunch(type){
     const test=String(state.boot?.settings?.systemMode||'REAL')==='TEST';
     const gpsPolicy=punchGpsPolicy();
-    setPunchBusy(true); gps('busy',test?'MOD TEST — merakam waktu dan IP…':'Mengesan lokasi… sasaran GPS ±80m');
+    setPunchBusy(true); gps('busy',test?'MOD TEST — merakam waktu…':'Mengesan lokasi… sasaran GPS ±80m');
     try{
-      // IP policy needs a recent network identity, but a 2-minute cache keeps
-      // the punch fast when the network has not changed.
-      const ipPromise=getClientNetworkInfo(false,2*60*1000); let loc=null;
+      const clientInfoPromise=getClientDeviceInfo(false,2*60*1000); let loc=null;
       if(!test){
         let pos=state.liveLocation;
         if(!isUsablePunchPosition(pos)){
@@ -851,11 +804,10 @@ const state = {
         const estimated=Math.round(punchGpsDistance(pos));
         gps('ok',`GPS ±${Math.round(loc.accuracy)}m${Number.isFinite(estimated)?` · anggaran ${estimated}m / ${Math.round(gpsPolicy.radiusM)}m`:''} · menyemak server…`);
       }
-      const clientInfo=await ipPromise, res=await runServer('punch',state.token,type,loc,clientInfo);
+      const clientInfo=await clientInfoPromise, res=await runServer('punch',state.token,type,loc,clientInfo);
       if(res&&res.attendance){state.boot.attendance=res.attendance;renderBoot();}else await refreshBoot();
-      const ipText=res.ip?` · IP ${res.ip}`:' · IP tidak dikesan';
-      gps('ok',test?`Rekod MOD TEST diterima${ipText}.`:`Rekod waktu diterima · GPS ±${Number(res.accuracyM)||Math.round(loc?.accuracy||0)}m · jarak ${res.distanceM}m / ${Number(res.radiusM)||Math.round(gpsPolicy.radiusM)}m${ipText}.`);
-      toast(res.ipWarning||res.message,res.ipWarning?6000:4500);
+      gps('ok',test?'Rekod MOD TEST diterima.':`Rekod waktu diterima · GPS ±${Number(res.accuracyM)||Math.round(loc?.accuracy||0)}m · jarak ${res.distanceM}m / ${Number(res.radiusM)||Math.round(gpsPolicy.radiusM)}m.`);
+      toast(res.message,4500);
       invalidateClientCache('myCard','adminCard');
       if(res.timeException)invalidateClientCache('timeReview');
     }catch(e){gps('',e.message);handleServerError(e,false);}finally{setPunchBusy(false);}
@@ -1220,7 +1172,7 @@ const state = {
     const data=state.admin?.report||[],q=norm(document.getElementById('reportSearch')?.value),cat=document.getElementById('reportCategoryFilter')?.value||'',st=document.getElementById('reportStatusFilter')?.value||'',src=document.getElementById('reportSourceFilter')?.value||'';
     // Search intentionally excludes inTime/outTime as requested.
     const list=sortRecords(data.filter(r=>{
-      const hay=norm([r.date,r.name,r.jobTitle,r.email,r.category,r.status,r.inDistanceM,r.outDistanceM,r.inDistanceM2,r.outDistanceM2,r.source,r.editedBy,r.reason,r.inIp,r.outIp,r.inIp2,r.outIp2,r.ipCheck].join(' '));
+      const hay=norm([r.date,r.name,r.jobTitle,r.email,r.category,r.status,r.inDistanceM,r.outDistanceM,r.inDistanceM2,r.outDistanceM2,r.source,r.editedBy,r.reason].join(' '));
       return(!q||hay.includes(q))&&(!cat||r.category===cat)&&(!st||String(r.status||'').includes(st))&&(!src||r.source===src);
     }),getTableSort('report'));
     state.filteredReport=list;text('reportFilterCount',`${list.length} / ${data.length} rekod`);updateTableSortIndicators('report');renderReportRows(list);
@@ -1228,7 +1180,7 @@ const state = {
 
   function renderReportRows(list){
     const body=document.getElementById('reportRows');if(!body)return;
-    body.innerHTML=list.length?list.map(r=>`<tr><td><button class="person-link" onclick='openAdminPunchCard(${JSON.stringify(r.email)},${JSON.stringify(r.name)})'>${esc(r.name)}</button><div class="muted">${esc(r.email)}</div></td><td><b>${esc(r.jobTitle||'—')}</b><small class="table-sub">${esc(r.category)}</small></td><td><span class="badge ${badgeClass(r.status)}">${esc(r.status)}</span></td><td>${esc(r.inTime||'—')}</td><td>${esc(r.outTime||'—')}</td><td>${esc(r.inTime2||'—')}</td><td>${esc(r.outTime2||'—')}</td><td><b>${esc(r.source||'—')}</b><small class="table-sub">${esc(r.reason||'')}</small></td><td><b>${esc(r.inIp||'—')}</b><small class="table-sub">K1: ${esc(r.outIp||'—')} · M2: ${esc(r.inIp2||'—')} · K2: ${esc(r.outIp2||'—')}</small><small class="table-sub ip-check-note">${esc(r.ipCheck||'')}</small></td><td><button class="action-link" onclick='openAttendanceModal(${JSON.stringify(r.email)},${JSON.stringify(r.name)},${JSON.stringify(r.inTime||'')},${JSON.stringify(r.outTime||'')},${JSON.stringify(r.inTime2||'')},${JSON.stringify(r.outTime2||'')})'>Ubah</button></td></tr>`).join(''):'<tr><td colspan="10" class="empty-cell">Tiada rekod sepadan.</td></tr>';
+    body.innerHTML=list.length?list.map(r=>`<tr><td><button class="person-link" onclick='openAdminPunchCard(${JSON.stringify(r.email)},${JSON.stringify(r.name)})'>${esc(r.name)}</button><div class="muted">${esc(r.email)}</div></td><td><b>${esc(r.jobTitle||'—')}</b><small class="table-sub">${esc(r.category)}</small></td><td><span class="badge ${badgeClass(r.status)}">${esc(r.status)}</span></td><td>${esc(r.inTime||'—')}</td><td>${esc(r.outTime||'—')}</td><td>${esc(r.inTime2||'—')}</td><td>${esc(r.outTime2||'—')}</td><td><b>${esc(r.source||'—')}</b><small class="table-sub">${esc(r.reason||'')}</small></td><td><button class="action-link" onclick='openAttendanceModal(${JSON.stringify(r.email)},${JSON.stringify(r.name)},${JSON.stringify(r.inTime||'')},${JSON.stringify(r.outTime||'')},${JSON.stringify(r.inTime2||'')},${JSON.stringify(r.outTime2||'')})'>Ubah</button></td></tr>`).join(''):'<tr><td colspan="9" class="empty-cell">Tiada rekod sepadan.</td></tr>';
   }
 
   function switchTab(name,btn){
@@ -1322,7 +1274,7 @@ const state = {
   async function openTrustedDevices(email,name){
     try{
       const r=await runServer('adminListTrustedDevices',state.token,email),devices=r.devices||[];
-      const rows=devices.length?devices.map(d=>{const meta=[d.deviceType,d.model,d.platform,d.browser].filter(Boolean).join(' · '),tech=[d.screen,d.network].filter(Boolean).join(' · '),ip4=d.publicIpv4||(!String(d.lastIp||'').includes(':')?d.lastIp:''),ip6=d.publicIpv6||(String(d.lastIp||'').includes(':')?d.lastIp:'');return `<tr><td><b>${esc(d.deviceName||'Peranti')}</b><small class="table-sub">${esc(meta||'Maklumat peranti terhad')}</small>${tech?`<small class="table-sub">${esc(tech)}</small>`:''}</td><td>${esc(d.lastSeenAt||'—')}<small class="table-sub">IPv4: ${esc(ip4||'—')}</small><small class="table-sub">IPv6: ${esc(ip6||'—')}</small></td><td>${esc(d.expiresAt||'—')}</td><td><button class="action-link warn-link" onclick='revokeTrustedDevice(${JSON.stringify(d.deviceId)},${JSON.stringify(email)},${JSON.stringify(name||email)})'>Logout peranti</button></td></tr>`;}).join(''):'<tr><td colspan="4" class="empty-cell">Tiada trusted device aktif.</td></tr>';
+      const rows=devices.length?devices.map(d=>{const meta=[d.deviceType,d.model,d.platform,d.browser].filter(Boolean).join(' · '),tech=[d.screen,d.network].filter(Boolean).join(' · ');return `<tr><td><b>${esc(d.deviceName||'Peranti')}</b><small class="table-sub">${esc(meta||'Maklumat peranti terhad')}</small>${tech?`<small class="table-sub">${esc(tech)}</small>`:''}</td><td>${esc(d.lastSeenAt||'—')}</td><td>${esc(d.expiresAt||'—')}</td><td><button class="action-link warn-link" onclick='revokeTrustedDevice(${JSON.stringify(d.deviceId)},${JSON.stringify(email)},${JSON.stringify(name||email)})'>Logout peranti</button></td></tr>`;}).join(''):'<tr><td colspan="4" class="empty-cell">Tiada trusted device aktif.</td></tr>';
       showModal(`<h3>Trusted Device</h3><p><b>${esc(name||r.user?.name||email)}</b><br><span class="muted">${esc(email)} · maksimum 2 peranti · rolling 7 hari</span></p><div class="table-wrap compact-table"><table><thead><tr><th>Peranti</th><th>Terakhir digunakan</th><th>Tamat jika tidak digunakan</th><th>Tindakan</th></tr></thead><tbody>${rows}</tbody></table></div><p class="tiny">Setiap resume yang berjaya memperbaharui tempoh trusted device kepada 7 hari. Logout peranti hanya membatalkan peranti tersebut.</p><p><button class="btn ghost" onclick='revokeAllTrustedDevices(${JSON.stringify(email)},${JSON.stringify(name||email)})' ${devices.length?'':'disabled'}>Logout semua peranti</button> <button class="btn primary" onclick="closeModal()">Selesai</button></p>`);
     }catch(e){handleServerError(e);}
   }
