@@ -31,6 +31,21 @@ function adminGetPunchCardMonth(token, email, monthKey) {
   return buildPunchCardMonthForUser_(user, monthKey);
 }
 
+function adminEditedFieldsForCard_(v) {
+  const explicit=String(v[35]||'').split(',').map(x=>x.trim().toUpperCase()).filter(x=>['IN','OUT','IN2','OUT2'].includes(x));
+  if(explicit.length)return Array.from(new Set(explicit));
+  // Compatibility for records saved before per-field metadata existed:
+  // source=ADMIN means the row was admin-entered/edited, so mark all populated
+  // time cells rather than hiding that distinction completely.
+  if(String(v[15]||'').trim().toUpperCase()!=='ADMIN')return [];
+  const fields=[];
+  if(v[4])fields.push('IN');
+  if(v[9])fields.push('OUT');
+  if(v[22])fields.push('IN2');
+  if(v[27])fields.push('OUT2');
+  return fields;
+}
+
 function buildPunchCardMonthForUser_(user, monthKey) {
   monthKey = String(monthKey || todayKey_().slice(0, 7)).trim();
   if (!/^\d{4}-\d{2}$/.test(monthKey)) throw new Error('Bulan tidak sah.');
@@ -54,7 +69,8 @@ function buildPunchCardMonthForUser_(user, monthKey) {
           inTime: v[4] ? formatTime_(v[4]) : '', outTime: v[9] ? formatTime_(v[9]) : '',
           inTime2: v[22] ? formatTime_(v[22]) : '', outTime2: v[27] ? formatTime_(v[27]) : '',
           statusFlags: timingFlags,
-          source: String(v[15] || ''), editedBy: String(v[16] || ''), reason: String(v[17] || '')
+          source: String(v[15] || ''), editedBy: String(v[16] || ''), reason: String(v[17] || ''),
+          adminEditedFields: adminEditedFieldsForCard_(v)
         };
       }).sort((a, b) => a.day - b.day);
   }
@@ -243,6 +259,7 @@ function punch(token, type, location, clientInfo) {
 
   let values = null;
   let session = 1;
+  let punchFieldKey = '';
   let refTime = '';
   let exceptionType = '';
   let ipCheck = {note:'',warning:'',blocked:false,registry:null,audit:null};
@@ -299,13 +316,20 @@ function punch(token, type, location, clientInfo) {
 
     values[2]=user.name; values[3]=user.category;
     if (session === 1 && type === 'IN') {
+      punchFieldKey='IN';
       values[4]=now; values[5]=loc.lat; values[6]=loc.lng; values[7]=loc.distanceM; values[8]=loc.accuracyM; values[19]=recordIp || '';
     } else if (session === 1 && type === 'OUT') {
+      punchFieldKey='OUT';
       values[9]=now; values[10]=loc.lat; values[11]=loc.lng; values[12]=loc.distanceM; values[13]=loc.accuracyM; values[20]=recordIp || '';
     } else if (session === 2 && type === 'IN') {
+      punchFieldKey='IN2';
       values[22]=now; values[23]=loc.lat; values[24]=loc.lng; values[25]=loc.distanceM; values[26]=loc.accuracyM; values[32]=recordIp || '';
     } else if (session === 2 && type === 'OUT') {
+      punchFieldKey='OUT2';
       values[27]=now; values[28]=loc.lat; values[29]=loc.lng; values[30]=loc.distanceM; values[31]=loc.accuracyM; values[33]=recordIp || '';
+    }
+    if(punchFieldKey){
+      values[35]=String(values[35]||'').split(',').map(x=>x.trim().toUpperCase()).filter(x=>x&&x!==punchFieldKey).join(',');
     }
 
     const flags = inferAttendanceFlags_(values,user,settings,dateKey);
