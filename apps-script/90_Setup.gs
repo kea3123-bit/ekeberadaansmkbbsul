@@ -210,7 +210,7 @@ function styleHeader_(sh, cols) {
 
 function styleReportSheet_(sh, count) {
   sh.getRange(2, 1, 1, 6).setBackground('#DCE8FF').setFontWeight('bold');
-  sh.getRange(5, 1, 1, 18).setBackground('#0B57D0').setFontColor('#FFFFFF').setFontWeight('bold');
+  sh.getRange(5, 1, 1, 13).setBackground('#0B57D0').setFontColor('#FFFFFF').setFontWeight('bold');
   if (count) {
     const statusRange = sh.getRange(6, 6, count, 1);
     const rules = [
@@ -221,6 +221,6 @@ function styleReportSheet_(sh, count) {
     ];
     sh.setConditionalFormatRules(rules);
   }
-  sh.autoResizeColumns(1, 18);
-  sh.setColumnWidth(2, 220); sh.setColumnWidth(3, 230); sh.setColumnWidth(10, 170); sh.setColumnWidth(11, 170); sh.setColumnWidth(12, 360); sh.setColumnWidth(15, 300);
+  sh.autoResizeColumns(1, 13);
+  sh.setColumnWidth(2, 220); sh.setColumnWidth(3, 230); sh.setColumnWidth(10, 170); sh.setColumnWidth(11, 140); sh.setColumnWidth(12, 220); sh.setColumnWidth(13, 320);
 }
