@@ -32,8 +32,11 @@ function adminGetPunchCardMonth(token, email, monthKey) {
 }
 
 function adminEditedFieldsForCard_(v) {
-  const explicit=String(v[35]||'').split(',').map(x=>x.trim().toUpperCase()).filter(x=>['IN','OUT','IN2','OUT2'].includes(x));
-  if(explicit.length)return Array.from(new Set(explicit));
+  const raw=String(v[35]||'').trim();
+  const explicit=raw.split(',').map(x=>x.trim().toUpperCase()).filter(x=>['IN','OUT','IN2','OUT2'].includes(x));
+  // Any non-empty metadata value (including NONE) means the new per-field
+  // tracking is authoritative.
+  if(raw)return Array.from(new Set(explicit));
   // Compatibility for records saved before per-field metadata existed:
   // source=ADMIN means the row was admin-entered/edited, so mark all populated
   // time cells rather than hiding that distinction completely.
@@ -70,7 +73,8 @@ function buildPunchCardMonthForUser_(user, monthKey) {
           inTime2: v[22] ? formatTime_(v[22]) : '', outTime2: v[27] ? formatTime_(v[27]) : '',
           statusFlags: timingFlags,
           source: String(v[15] || ''), editedBy: String(v[16] || ''), reason: String(v[17] || ''),
-          adminEditedFields: adminEditedFieldsForCard_(v)
+          adminEditedFields: adminEditedFieldsForCard_(v),
+          adminEditMetadataKnown: !!String(v[35] || '').trim()
         };
       }).sort((a, b) => a.day - b.day);
   }
