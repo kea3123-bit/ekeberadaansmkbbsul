@@ -162,6 +162,17 @@ jobs:
           grep -q "changedFields" apps-script/21_AdminApi.gs
           grep -q "pc-time-admin-edit" Styles.html
           grep -q "pc-time-admin-edit" web/config.js
+          # IP detection/policy is retired; device telemetry remains.
+          ! grep -R -q "api\.ipify\.org" Scripts.html web apps-script
+          ! grep -R -q "api64\.ipify\.org" Scripts.html web apps-script
+          ! grep -R -q "IP_TRACKING_ENABLED" Scripts.html Index.html web apps-script
+          ! grep -R -q "IP_PUNCH_POLICY" Scripts.html Index.html web apps-script
+          ! grep -R -q "evaluatePunchIp_" Scripts.html web apps-script
+          ! grep -R -q "registerPunchIpUse_" Scripts.html web apps-script
+          ! grep -R -q "publicIpv4" Scripts.html web apps-script
+          ! grep -R -q "publicIpv6" Scripts.html web apps-script
+          grep -q "function inferClientDeviceType" Scripts.html
+          grep -q "function syncClientTelemetry" Scripts.html
           # Public absence list defaults to newest submission and has sortable numbering.
           grep -q "default:'submitted_desc'" Scripts.html
           grep -q "sort-absencePublic-order" Index.html
