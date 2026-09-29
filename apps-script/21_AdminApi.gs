@@ -109,6 +109,17 @@ function adminSaveAttendance(token,payload) {
 
   const settings=getSettings_(),schedule=getEffectiveSchedule_(user,settings),sh=getSheetOrThrow_(EK.SHEETS.ATTENDANCE),rec=findAttendanceRecord_(dateKey,email),now=new Date();
   const v=rec?padAttendanceValues_(rec.values):Array(EK.ATT_HEADERS.length).fill('');
+  const beforeTimes={
+    IN:v[4]?formatTime_(v[4]):'',
+    OUT:v[9]?formatTime_(v[9]):'',
+    IN2:v[22]?formatTime_(v[22]):'',
+    OUT2:v[27]?formatTime_(v[27]):''
+  };
+  const nextTimes={IN:inTime,OUT:outTime,IN2:inTime2,OUT2:outTime2};
+  const changedFields=Object.keys(nextTimes).filter(key=>String(beforeTimes[key]||'')!==String(nextTimes[key]||''));
+  const previousEdited=String(v[35]||'').split(',').map(x=>x.trim().toUpperCase()).filter(Boolean);
+  v[35]=Array.from(new Set(previousEdited.concat(changedFields))).filter(x=>['IN','OUT','IN2','OUT2'].includes(x)).join(',');
+
   v[0]=dateKey;v[1]=email;v[2]=user.name;v[3]=user.category;
   v[4]=inTime?dateAndTime_(dateKey,inTime):'';v[9]=outTime?dateAndTime_(dateKey,outTime):'';
   v[22]=inTime2?dateAndTime_(dateKey,inTime2):'';v[27]=outTime2?dateAndTime_(dateKey,outTime2):'';
