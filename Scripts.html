@@ -946,7 +946,7 @@ const state = {
       if(status==='TIDAK HADIR'){const reason=String(r.reason||'').trim(),detail=reason&&reason.toUpperCase()!=='TIDAK HADIR'?reason:'TIADA PENJELASAN';html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-absence-full"><span class="pc-absence-label">TIDAK HADIR</span><span class="pc-absence-reason">${esc(detail)}</span></td></tr>`;continue;}
       const reviews=r.reviewItems||[], flagged=(type,session)=>reviews.some(x=>String(x.type||'').toUpperCase()===type&&Number(x.session||1)===session);
       const adminEdited=new Set((Array.isArray(r.adminEditedFields)?r.adminEditedFields:[]).map(x=>String(x||'').toUpperCase()));
-      if(!adminEdited.size&&String(r.source||'').toUpperCase()==='ADMIN'){
+      if(!adminEdited.size&&!r.adminEditMetadataKnown&&String(r.source||'').toUpperCase()==='ADMIN'){
         if(r.inTime)adminEdited.add('IN');if(r.outTime)adminEdited.add('OUT');if(r.inTime2)adminEdited.add('IN2');if(r.outTime2)adminEdited.add('OUT2');
       }
       const tc=(v,bad,field)=>{
