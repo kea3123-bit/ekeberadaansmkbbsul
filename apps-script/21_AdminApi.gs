@@ -110,10 +110,10 @@ function adminSaveAttendance(token,payload) {
   const settings=getSettings_(),schedule=getEffectiveSchedule_(user,settings),sh=getSheetOrThrow_(EK.SHEETS.ATTENDANCE),rec=findAttendanceRecord_(dateKey,email),now=new Date();
   const v=rec?padAttendanceValues_(rec.values):Array(EK.ATT_HEADERS.length).fill('');
   const beforeTimes={
-    IN:v[4]?formatTime_(v[4]):'',
-    OUT:v[9]?formatTime_(v[9]):'',
-    IN2:v[22]?formatTime_(v[22]):'',
-    OUT2:v[27]?formatTime_(v[27]):''
+    IN:v[4]?displayMalaysiaTime_(v[4]):'',
+    OUT:v[9]?displayMalaysiaTime_(v[9]):'',
+    IN2:v[22]?displayMalaysiaTime_(v[22]):'',
+    OUT2:v[27]?displayMalaysiaTime_(v[27]):''
   };
   const nextTimes={IN:inTime,OUT:outTime,IN2:inTime2,OUT2:outTime2};
   const changedFields=Object.keys(nextTimes).filter(key=>String(beforeTimes[key]||'')!==String(nextTimes[key]||''));
