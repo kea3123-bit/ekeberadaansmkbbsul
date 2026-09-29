@@ -146,8 +146,6 @@ function publicSettings_(s) {
     punchReminderEnabled: String(s.PUNCH_REMINDER_ENABLED || 'TRUE').toUpperCase() !== 'FALSE' ? 'TRUE' : 'FALSE',
     punchReminderTime: s.PUNCH_REMINDER_TIME || '09:00',
     workingDays: s.WORKING_DAYS || EK.DEFAULT_SETTINGS.WORKING_DAYS,
-    ipTrackingEnabled: String(s.IP_TRACKING_ENABLED || 'TRUE').toUpperCase() !== 'FALSE' ? 'TRUE' : 'FALSE',
-    ipPunchPolicy: normalizeIpPunchPolicy_(s.IP_PUNCH_POLICY || 'WARN'),
     systemMode: String(s.SYSTEM_MODE || 'REAL').toUpperCase(),
     systemStartDate: getSystemStartDate_(s),
     profileRootFolderId: s.PROFILE_ROOT_FOLDER_ID || ''
