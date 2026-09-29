@@ -38,7 +38,8 @@ const EK = Object.freeze({
   AUDIT_HEADERS: ['Masa', 'Pelaku', 'Tindakan', 'Sasaran', 'Butiran'],
   ABSENCE_HEADERS: ['ID', 'DihantarPada', 'Emel', 'Nama', 'Kategori', 'Jenis', 'TarikhMula', 'TarikhAkhir', 'Catatan', 'Status', 'DisemakOleh', 'DisemakPada', 'UlasanPengetua', 'DikemaskiniPada', 'Mod', 'MasaMula', 'MasaAkhir', 'Jawatan'],
   TIME_REVIEW_HEADERS: ['ID', 'DiciptaPada', 'Tarikh', 'Emel', 'Nama', 'Jawatan', 'Kategori', 'Jenis', 'Sesi', 'WaktuRekod', 'WaktuRujukan', 'StatusSemakan', 'DisemakOleh', 'NamaPelulus', 'DisemakPada', 'Ulasan'],
-  LOGIN_HEADERS: ['Masa', 'Emel', 'Nama', 'Kategori', 'IP Awam', 'Peranti/Pelayar', 'Status', 'Butiran'],
+  // Kolum IP legacy dikekalkan pada Sheet supaya indeks sejarah tidak berganjak; code baharu tidak mengesan atau menulis IP.
+  LOGIN_HEADERS: ['Masa', 'Emel', 'Nama', 'Kategori', 'IP Awam (Legacy)', 'Peranti/Pelayar', 'Status', 'Butiran'],
   TRUSTED_DEVICE_HEADERS: ['DeviceID', 'Emel', 'NamaPeranti', 'Platform', 'Pelayar', 'IPTerakhir', 'DiciptaPada', 'DilihatTerakhir', 'TamatPada', 'Aktif', 'VersiSesi', 'TokenHash', 'SebabBatal', 'ClientInstanceID', 'JenisPeranti', 'ModelPeranti', 'Skrin', 'Viewport', 'PixelRatio', 'TouchPoints', 'CPU', 'RAMGB', 'Rangkaian', 'IPv4Awam', 'IPv6Awam', 'UserAgent', 'ZonMasa', 'Bahasa'],
   DEFAULT_SETTINGS: {
     SCHOOL_NAME: 'SMK Bandar Baru Sungai Lalang',
@@ -64,8 +65,6 @@ const EK = Object.freeze({
     PUNCH_REMINDER_ENABLED: 'TRUE',
     PUNCH_REMINDER_TIME: '09:00',
     WORKING_DAYS: 'SUN,MON,TUE,WED,THU',
-    IP_TRACKING_ENABLED: 'TRUE',
-    IP_PUNCH_POLICY: 'WARN',
     SYSTEM_MODE: 'REAL',
     SYSTEM_START_DATE: '2026-09-01',
     PROFILE_ROOT_FOLDER_ID: '1WaZTGUn1izkIdSsk_o0S_14UAx2QODMh'
