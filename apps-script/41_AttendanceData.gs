@@ -449,11 +449,12 @@ function buildMergedAttendanceValues_(group) {
   if (in2IpCandidate) merged[32] = String(in2IpCandidate.values[32] || '');
   if (out2IpCandidate) merged[33] = String(out2IpCandidate.values[33] || '');
   const adminEditedFields = new Set();
+  const hasAdminEditMetadata = rows.some(v => !!String(v[35] || '').trim());
   rows.forEach(v => String(v[35] || '').split(',').forEach(x => {
     x = String(x || '').trim().toUpperCase();
     if (['IN','OUT','IN2','OUT2'].includes(x)) adminEditedFields.add(x);
   }));
-  merged[35] = Array.from(adminEditedFields).join(',');
+  merged[35] = adminEditedFields.size ? Array.from(adminEditedFields).join(',') : (hasAdminEditMetadata ? 'NONE' : '');
   const mergedFlags = []; rows.forEach(v => splitAttendanceFlags_(v[34]).forEach(f => { if (!mergedFlags.includes(f)) mergedFlags.push(f); }));
   merged[34] = joinAttendanceFlags_(mergedFlags);
   if (merged[4] && String(merged[14] || '').toUpperCase() !== 'TIDAK HADIR') merged[14] = attendanceStatusFromFlags_(mergedFlags);
