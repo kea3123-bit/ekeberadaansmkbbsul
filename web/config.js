@@ -184,7 +184,7 @@ window.EK_CONFIG = Object.freeze({
         : '';
       const signature = reviewerTagsForCard(dateReviews);
       const adminEdited = new Set((Array.isArray(r.adminEditedFields) ? r.adminEditedFields : []).map(x => String(x || '').toUpperCase()));
-      if (!adminEdited.size && String(r.source || '').toUpperCase() === 'ADMIN') {
+      if (!adminEdited.size && !r.adminEditMetadataKnown && String(r.source || '').toUpperCase() === 'ADMIN') {
         if (r.inTime) adminEdited.add('IN');
         if (r.outTime) adminEdited.add('OUT');
         if (r.inTime2) adminEdited.add('IN2');
