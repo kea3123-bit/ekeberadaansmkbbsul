@@ -153,6 +153,9 @@ jobs:
           grep -R -q 'recent && sameFingerprint' apps-script/11_Sessions.gs
           grep -R -q 'invalidateTimeReviewRows_();' apps-script/60_TimeReview.gs
           grep -R -q 'function diagnosePerformanceBackend' apps-script/95_Diagnostics.gs
+          grep -q "CATEGORIES: \['Pengurusan', 'AKP', 'PPP', 'Praktikum', 'MySTEP'\]" apps-script/00_Core.gs
+          grep -q "Praktikum:'04 - Praktikum'" apps-script/70_Profile.gs
+          grep -q "MySTEP:'05 - MySTEP'" apps-script/70_Profile.gs
           grep -R -q 'EK_RUNTIME_ABSENCE_ROWS_' apps-script
           grep -R -q 'Asia/Kuala_Lumpur' apps-script/appsscript.json
           grep -R -q 'function isPagesWebOriginAllowed_' apps-script/Bridges.gs
