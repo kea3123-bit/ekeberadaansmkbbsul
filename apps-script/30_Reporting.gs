@@ -263,7 +263,7 @@ function writeReportSheet_(dateKey, report) {
   const sh = getSheetOrThrow_(EK.SHEETS.REPORT);
   sh.clearContents();
   const summary = summarizeReport_(report);
-  const headers = ['Tarikh', 'Nama', 'Jawatan', 'Emel', 'Kategori', 'Status', 'Masuk 1', 'Keluar 1', 'Masuk 2', 'Keluar 2', 'IP Masuk 1', 'IP Keluar 1', 'IP Masuk 2', 'IP Keluar 2', 'Semakan IP', 'Sumber', 'Disunting Oleh', 'Sebab'];
+  const headers = ['Tarikh', 'Nama', 'Jawatan', 'Emel', 'Kategori', 'Status', 'Masuk 1', 'Keluar 1', 'Masuk 2', 'Keluar 2', 'Sumber', 'Disunting Oleh', 'Sebab'];
   sh.getRange(1, 1).setValue(`LAPORAN KEBERADAAN — ${dateKey}`).setFontWeight('bold').setFontSize(14);
   sh.getRange(2, 1, 1, 6).setValues([['Jumlah', 'Hadir', 'Lewat', 'Balik Awal', 'Tidak Hadir', 'Belum Hadir']]);
   sh.getRange(3, 1, 1, 6).setValues([[summary.total, summary.hadir, summary.lewat, summary.balikAwal, summary.tidakHadir, summary.belumHadir]]);
@@ -272,7 +272,6 @@ function writeReportSheet_(dateKey, report) {
     sh.getRange(6, 1, report.length, headers.length).setValues(report.map(r => [
       r.date, r.name, r.jobTitle || '', r.email, r.category, r.status,
       r.inTime, r.outTime, r.inTime2, r.outTime2,
-      r.inIp || '', r.outIp || '', r.inIp2 || '', r.outIp2 || '', r.ipCheck || '',
       r.source, r.editedBy, r.reason
     ]));
   }
