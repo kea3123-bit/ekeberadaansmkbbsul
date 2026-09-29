@@ -435,19 +435,7 @@ function buildMergedAttendanceValues_(group) {
 
   while (merged.length < EK.ATT_HEADERS.length) merged.push('');
 
-  const inIpCandidate = group
-    .filter(x => x.values[4] && String(x.values[19] || '').trim())
-    .sort((a,b) => (dateValueMs_(a.values[4]) - dateValueMs_(b.values[4])) || (a.row - b.row))[0];
-  const outIpCandidate = group
-    .filter(x => x.values[9] && String(x.values[20] || '').trim())
-    .sort((a,b) => (dateValueMs_(b.values[9]) - dateValueMs_(a.values[9])) || (b.row - a.row))[0];
-  if (inIpCandidate) merged[19] = String(inIpCandidate.values[19] || '');
-  if (outIpCandidate) merged[20] = String(outIpCandidate.values[20] || '');
-  merged[21] = rows.slice().reverse().map(v => String(v[21] || '').trim()).find(Boolean) || String(merged[21] || '');
-  const in2IpCandidate = group.filter(x => x.values[22] && String(x.values[32] || '').trim()).sort((a,b)=>(dateValueMs_(a.values[22])-dateValueMs_(b.values[22]))||(a.row-b.row))[0];
-  const out2IpCandidate = group.filter(x => x.values[27] && String(x.values[33] || '').trim()).sort((a,b)=>(dateValueMs_(b.values[27])-dateValueMs_(a.values[27]))||(b.row-a.row))[0];
-  if (in2IpCandidate) merged[32] = String(in2IpCandidate.values[32] || '');
-  if (out2IpCandidate) merged[33] = String(out2IpCandidate.values[33] || '');
+  // Legacy IP columns are intentionally left untouched/blank. IP collection has been retired.
   const adminEditedFields = new Set();
   const hasAdminEditMetadata = rows.some(v => !!String(v[35] || '').trim());
   rows.forEach(v => String(v[35] || '').split(',').forEach(x => {
