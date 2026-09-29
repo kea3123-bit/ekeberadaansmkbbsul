@@ -27,6 +27,8 @@ window.EK_CONFIG = Object.freeze({
 
     /* Punch-card exception emphasis: only the actual exceptional time is red. */
     .pc-time-exception{color:#b42318!important;font-weight:800!important}
+    .pc-time-admin-edit{font-weight:900!important;text-decoration:underline dotted 1px;text-underline-offset:2px;color:#175cd3!important}
+    .pc-time-exception.pc-time-admin-edit{color:#b42318!important;text-decoration-color:#175cd3!important}
     .pc-statement-status{font-weight:800;line-height:1.2}
     .pc-presence-note{display:block;margin-top:1px;font-size:7px;line-height:1.05;font-weight:700;white-space:normal;color:#475467}
     .pc-sign-tags{display:flex;flex-direction:column;align-items:center;gap:3px}
@@ -38,6 +40,8 @@ window.EK_CONFIG = Object.freeze({
     .pc-sign .reviewer-role-tag{margin-top:0;padding:2px 5px;font-size:8px;line-height:1.15}
     @media print{
       .pc-time-exception{color:#b42318!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .pc-time-admin-edit{font-weight:900!important;text-decoration:underline dotted 1px;text-underline-offset:1px;color:#175cd3!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .pc-time-exception.pc-time-admin-edit{color:#b42318!important;text-decoration-color:#175cd3!important}
       .reviewer-role-tag{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     }
   `;
@@ -179,10 +183,20 @@ window.EK_CONFIG = Object.freeze({
         ? `${presenceType || 'Keberadaan'} — Maklum from Pengetua`
         : '';
       const signature = reviewerTagsForCard(dateReviews);
-      const timeCell = (value, exceptional) => `<td class="${exceptional ? 'pc-time-exception' : ''}">${esc(shortTime(value))}</td>`;
+      const adminEdited = new Set((Array.isArray(r.adminEditedFields) ? r.adminEditedFields : []).map(x => String(x || '').toUpperCase()));
+      if (!adminEdited.size && String(r.source || '').toUpperCase() === 'ADMIN') {
+        if (r.inTime) adminEdited.add('IN');
+        if (r.outTime) adminEdited.add('OUT');
+        if (r.inTime2) adminEdited.add('IN2');
+        if (r.outTime2) adminEdited.add('OUT2');
+      }
+      const timeCell = (value, exceptional, field) => {
+        const classes = [exceptional ? 'pc-time-exception' : '', adminEdited.has(field) ? 'pc-time-admin-edit' : ''].filter(Boolean).join(' ');
+        return `<td class="${classes}">${esc(shortTime(value))}</td>`;
+      };
       const statementHtml = `${reviewStatement ? `<span class="pc-statement-status">${esc(reviewStatement)}</span>` : ''}${presenceStatement ? `<span class="pc-presence-note">${esc(presenceStatement)}</span>` : ''}`;
 
-      html += `<tr class="${cls}"><td class="pc-day">${day}</td>${timeCell(r.inTime, late1)}${timeCell(r.outTime, early1)}${timeCell(r.inTime2, late2)}${timeCell(r.outTime2, early2)}<td class="pc-statement">${statementHtml}</td><td class="pc-sign">${signature}</td></tr>`;
+      html += `<tr class="${cls}"><td class="pc-day">${day}</td>${timeCell(r.inTime, late1, 'IN')}${timeCell(r.outTime, early1, 'OUT')}${timeCell(r.inTime2, late2, 'IN2')}${timeCell(r.outTime2, early2, 'OUT2')}<td class="pc-statement">${statementHtml}</td><td class="pc-sign">${signature}</td></tr>`;
     }
     return html;
   }
