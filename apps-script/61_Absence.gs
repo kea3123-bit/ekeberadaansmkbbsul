@@ -52,7 +52,9 @@ function getPublicAbsencePresenceData(token, fromDate, toDate) {
     .map(r => publicAbsenceListItem_(r, from, to));
   const unexplained = buildUnexplainedAbsenceEntries_(from, to, '', context).map(r => publicAbsenceListItem_(r, from, to));
   const rows = requested.concat(unexplained).sort((a,b) =>
-    String(a.startDate||'').localeCompare(String(b.startDate||'')) || String(a.name||'').localeCompare(String(b.name||''))
+    (Number(b.submittedMs||0)-Number(a.submittedMs||0)) ||
+    String(b.startDate||'').localeCompare(String(a.startDate||'')) ||
+    String(a.name||'').localeCompare(String(b.name||''))
   );
   return {fromDate:from,toDate:to,today,systemStartDate,rows};
 }
@@ -65,6 +67,7 @@ function publicAbsenceListItem_(r, fromDate, toDate) {
   // shown in the table/PDF (e.g. 13-16 Sep filtered on 14 Sep stays 13-16 Sep).
   const startDate = r.startDate || '';
   const endDate = r.endDate || startDate;
+  const submittedMs = Number(r.submittedMs || dateValueMs_(r.submittedAt) || dateValueMs_(startDate) || 0);
   return {
     id:String(r.id||''),
     name:String(r.name||(user&&user.name)||''),
@@ -77,7 +80,9 @@ function publicAbsenceListItem_(r, fromDate, toDate) {
     endDate,
     startTime:normalizeOptionalTime_(r.startTime),
     endTime:normalizeOptionalTime_(r.endTime),
-    status:String(r.status||'MENUNGGU')
+    status:String(r.status||'MENUNGGU'),
+    submittedAt:r.submittedAt ? formatDateTime_(r.submittedAt) : '',
+    submittedMs
   };
 }
 
