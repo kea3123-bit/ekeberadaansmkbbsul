@@ -20,7 +20,7 @@ const EK = Object.freeze({
     LOGIN_LOG: 'LOG_LOGIN',
     TRUSTED_DEVICES: 'SESI_PERANTI'
   },
-  CATEGORIES: ['Pengurusan', 'AKP', 'PPP'],
+  CATEGORIES: ['Pengurusan', 'AKP', 'PPP', 'Praktikum', 'MySTEP'],
   ABSENCE_TYPES: [
     'CUTI REHAT KHAS','CUTI REHAT','CUTI SAKIT (AWAM)','CUTI SAKIT (SWASTA)',
     'CUTI TANPA REKOD KELOMPOK','CUTI KUARANTIN',
