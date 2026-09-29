@@ -52,11 +52,6 @@ function buildDailyReport_(dateKey, users, settings) {
       outDistanceM: v && v[12] !== '' ? Number(v[12]) : null,
       inDistanceM2: v && v[25] !== '' ? Number(v[25]) : null,
       outDistanceM2: v && v[30] !== '' ? Number(v[30]) : null,
-      inIp: v ? String(v[19] || '') : '',
-      outIp: v ? String(v[20] || '') : '',
-      inIp2: v ? String(v[32] || '') : '',
-      outIp2: v ? String(v[33] || '') : '',
-      ipCheck: v ? String(v[21] || '') : '',
       source: hasPunch ? String(v[15] || '') : (publicHoliday ? 'CUTI_UMUM' : (coveringRequest ? 'TIDAK_HADIR' : (presenceRequest ? 'KEBERADAAN' : ''))),
       editedBy: hasPunch ? String(v[16] || '') : (presenceRequest ? String(presenceRequest.reviewedBy || '') : ''),
       reason: hasPunch ? String(v[17] || '') : (publicHoliday ? publicHoliday.name : (coveringRequest ? `${coveringRequest.type}${coveringRequest.status === 'MENUNGGU' ? ' — MENUNGGU KELULUSAN' : ''}` : (presenceRequest ? presenceRequestReason_(presenceRequest, '') : '')))
