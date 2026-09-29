@@ -435,7 +435,7 @@ function buildMergedAttendanceValues_(group) {
 
   while (merged.length < EK.ATT_HEADERS.length) merged.push('');
 
-  // Legacy IP columns are intentionally left untouched/blank. IP collection has been retired.
+  // Legacy network-identity slots are intentionally left blank for sheet-index compatibility.
   const adminEditedFields = new Set();
   const hasAdminEditMetadata = rows.some(v => !!String(v[35] || '').trim());
   rows.forEach(v => String(v[35] || '').split(',').forEach(x => {
