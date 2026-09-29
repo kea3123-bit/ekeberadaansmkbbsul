@@ -1093,7 +1093,9 @@ const state = {
 
   function compareText(a,b){return String(a??'').localeCompare(String(b??''),'ms',{numeric:true,sensitivity:'base'});}
   function sortRecords(list,mode){
-    const rows=(list||[]).slice(),m=String(mode||''),cmp=(a,b)=>compareText(a,b),dateOf=r=>String(r.startDate||r.date||r.submittedAt||''),statusOf=r=>String(r.reviewStatus||r.status||r.category||''),timeOf=r=>String(r.inTime||'99:99');
+    const rows=(list||[]).slice(),m=String(mode||''),cmp=(a,b)=>compareText(a,b),dateOf=r=>String(r.startDate||r.date||r.submittedAt||''),statusOf=r=>String(r.reviewStatus||r.status||r.category||''),timeOf=r=>String(r.inTime||'99:99'),submittedMsOf=r=>Number(r.submittedMs||0);
+    if(m==='submitted_desc')return rows.sort((a,b)=>(submittedMsOf(b)-submittedMsOf(a))||cmp(dateOf(b),dateOf(a))||cmp(a.name,b.name));
+    if(m==='submitted_asc')return rows.sort((a,b)=>(submittedMsOf(a)-submittedMsOf(b))||cmp(dateOf(a),dateOf(b))||cmp(a.name,b.name));
     if(m==='date_desc')return rows.sort((a,b)=>cmp(dateOf(b),dateOf(a))||cmp(a.name,b.name));
     if(m==='date_asc')return rows.sort((a,b)=>cmp(dateOf(a),dateOf(b))||cmp(a.name,b.name));
     if(m==='name_desc')return rows.sort((a,b)=>cmp(b.name,a.name));
@@ -1109,7 +1111,7 @@ const state = {
   }
 
   const TABLE_SORT_CONFIG={
-    absencePublic:{default:'date_desc',name:['name_asc','name_desc'],date:['date_desc','date_asc'],status:['status_asc','status_desc']},
+    absencePublic:{default:'submitted_desc',order:['submitted_desc','submitted_asc'],name:['name_asc','name_desc'],date:['date_desc','date_asc'],status:['status_asc','status_desc']},
     absenceManage:{default:'date_desc',name:['name_asc','name_desc'],date:['date_desc','date_asc'],status:['status_asc','status_desc']},
     timeReview:{default:'date_desc',name:['name_asc','name_desc'],date:['date_desc','date_asc'],status:['status_asc','status_desc']},
     report:{default:'name_asc',name:['name_asc','name_desc'],status:['status_asc','status_desc'],in:['in_asc','in_desc']},
@@ -1155,7 +1157,7 @@ const state = {
     const summary=document.getElementById('absencePublicSummary');
     if(summary){const th=list.filter(r=>r.mode==='TIDAK_HADIR').length,kb=list.filter(r=>r.mode==='KEBERADAAN').length,nm=list.filter(r=>r.status==='TIDAK MOHON').length;summary.innerHTML=[['Jumlah',list.length],['Tidak Hadir',th],['Keberadaan',kb],['Tiada Penjelasan',nm]].map(x=>`<div class="summary-card"><span>${esc(x[0])}</span><strong>${x[1]}</strong></div>`).join('');}
     const body=document.getElementById('absencePublicRows');if(!body)return;
-    body.innerHTML=list.length?list.map(r=>`<tr><td><b>${esc(r.name||'—')}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.category||'—')}</small></td><td><b>${esc(r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir')}</b></td><td>${esc(r.type||'—')}</td><td>${esc(formatDateRange(r.startDate,r.endDate))}${r.mode==='KEBERADAAN'?`<small class="table-sub">${esc(r.startTime||'—')} – ${esc(r.endTime||'—')}</small>`:''}</td><td><span class="request-status ${absenceStatusClass(r.status)}">${esc(r.status)}</span></td></tr>`).join(''):'<tr><td colspan="5" class="empty-cell">Tiada rekod sepadan untuk tempoh dan tapisan dipilih.</td></tr>';
+    body.innerHTML=list.length?list.map((r,index)=>`<tr><td class="absence-public-number">${index+1}</td><td><b>${esc(r.name||'—')}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.category||'—')}</small></td><td><b>${esc(r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir')}</b></td><td>${esc(r.type||'—')}</td><td>${esc(formatDateRange(r.startDate,r.endDate))}${r.mode==='KEBERADAAN'?`<small class="table-sub">${esc(r.startTime||'—')} – ${esc(r.endTime||'—')}</small>`:''}</td><td><span class="request-status ${absenceStatusClass(r.status)}">${esc(r.status)}</span></td></tr>`).join(''):'<tr><td colspan="6" class="empty-cell">Tiada rekod sepadan untuk tempoh dan tapisan dipilih.</td></tr>';
   }
   async function generatePublicAbsencePresencePdfClient(){
     try{const filters=currentAbsencePublicFilters();const r=await runServer('generatePublicAbsencePresencePdf',state.token,filters);downloadPdfResult(r);toast('Laporan PDF Senarai Tidak Hadir / Keberadaan dijana.');}
