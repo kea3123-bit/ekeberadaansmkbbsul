@@ -83,7 +83,7 @@ function diagnosePerformanceBackend() {
       attendanceIndex: 'date+email direct lookup / daily batched row slots / sharded cross-execution cache',
       punchLock: 'daily batched row slots + direct per-user row writes; global lock only for one-time slot allocation',
       punchRead: 'reuses row returned by daily slot allocator; avoids a second Sheet row read on normal punch path',
-      clientTelemetry: 'trusted-device background metadata sync without IP collection',
+      clientTelemetry: 'trusted-device background device metadata sync',
       note: 'Burst harness remains the launch gate; cacheHealth now shows when Sheet growth approaches the configured cache-shard cap.'
     },
     timingsMs: marks,
