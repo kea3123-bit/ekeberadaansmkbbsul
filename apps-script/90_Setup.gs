@@ -86,6 +86,7 @@ function setupAttendanceSheet_(ss) {
   sh.setColumnWidth(2, 230); sh.setColumnWidth(3, 220); sh.setColumnWidth(18, 300);
   sh.setColumnWidth(20, 170); sh.setColumnWidth(21, 170); sh.setColumnWidth(22, 360);
   sh.setColumnWidth(35, 180);
+  sh.setColumnWidth(36, 210);
 }
 
 function setupAuditSheet_(ss) {
