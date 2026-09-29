@@ -57,8 +57,6 @@ function setupSettingsSheet_(ss) {
     PUNCH_REMINDER_ENABLED: 'TRUE = emel peringatan Rekod Waktu Masuk dihantar setiap hari bekerja jika belum merekod waktu',
     PUNCH_REMINDER_TIME: 'Waktu emel peringatan Rekod Waktu Masuk (HH:mm). Trigger Apps Script berjalan sekitar jam ini.',
     WORKING_DAYS: 'Hari bekerja: SUN,MON,TUE,WED,THU,FRI,SAT. Default Kedah: SUN,MON,TUE,WED,THU',
-    IP_TRACKING_ENABLED: 'TRUE = rekod IP awam ketika login dan rakam waktu',
-    IP_PUNCH_POLICY: 'WARN = rekod/amaran jika IP sama digunakan akaun lain dalam jam sama; BLOCK = tolak rekod waktu; OFF = tiada semakan pertindihan',
     SYSTEM_MODE: 'REAL = masa/lokasi sebenar; TEST = abaikan semakan lokasi dan status waktu',
     SYSTEM_START_DATE: 'Tarikh mula rasmi e-Keberadaan. Semua tarikh sebelum ini diabaikan oleh laporan, Punch Card dan pengiraan Tidak Hadir. Ubah nilai ini jika mahu memasukkan sejarah lebih awal (format YYYY-MM-DD).',
     PROFILE_ROOT_FOLDER_ID: 'Folder induk Google Drive yang mengandungi 01 - Pengurusan, 02 - Guru dan 03 - Anggota Kumpulan Pelaksana'
