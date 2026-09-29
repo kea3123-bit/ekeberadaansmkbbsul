@@ -520,11 +520,6 @@ function publicAttendance_(rec,schedule) {
     inDistanceM2:v[25]===''?null:Number(v[25]),
     outDistanceM2:v[30]===''?null:Number(v[30]),
     source:String(v[15]||''),
-    inIp:String(v[19]||''),
-    outIp:String(v[20]||''),
-    inIp2:String(v[32]||''),
-    outIp2:String(v[33]||''),
-    ipCheck:String(v[21]||''),
     nextRecord:nextAttendanceStep_(v,schedule)
   };
 }
