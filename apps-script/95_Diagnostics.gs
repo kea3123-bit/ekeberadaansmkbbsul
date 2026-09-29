@@ -81,10 +81,9 @@ function diagnosePerformanceBackend() {
     launchReadiness: {
       targetDailyUsers: 100,
       attendanceIndex: 'date+email direct lookup / daily batched row slots / sharded cross-execution cache',
-      ipCheck: 'hour registry cache; strict global ordering only for BLOCK policy',
-      punchLock: 'daily batched row slots + direct per-user row writes; global lock only for one-time slot allocation and strict BLOCK IP policy',
+      punchLock: 'daily batched row slots + direct per-user row writes; global lock only for one-time slot allocation',
       punchRead: 'reuses row returned by daily slot allocator; avoids a second Sheet row read on normal punch path',
-      clientTelemetry: 'GitHub Pages public IPv4/IPv6 lookup + trusted-device background metadata sync',
+      clientTelemetry: 'trusted-device background metadata sync without IP collection',
       note: 'Burst harness remains the launch gate; cacheHealth now shows when Sheet growth approaches the configured cache-shard cap.'
     },
     timingsMs: marks,
