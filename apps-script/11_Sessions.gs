@@ -23,7 +23,6 @@ function trustedDeviceFromRow_(v, row) {
     deviceName:String(v[2] || '').trim(),
     platform:String(v[3] || '').trim(),
     browser:String(v[4] || '').trim(),
-    lastIp:String(v[5] || '').trim(),
     createdAt:v[6] || '',
     lastSeenAt:v[7] || '',
     expiresAt:v[8] || '',
@@ -41,8 +40,6 @@ function trustedDeviceFromRow_(v, row) {
     cpu:v[20] === '' ? '' : Number(v[20]),
     ramGb:v[21] === '' ? '' : Number(v[21]),
     network:String(v[22] || '').trim(),
-    publicIpv4:String(v[23] || '').trim(),
-    publicIpv6:String(v[24] || '').trim(),
     userAgent:String(v[25] || '').trim(),
     timezone:String(v[26] || '').trim(),
     language:String(v[27] || '').trim()
@@ -117,7 +114,7 @@ function trustedDeviceTelemetryValues_(ci, rec) {
     pick(ci.clientInstanceId,rec.clientInstanceId), pick(ci.deviceType,rec.deviceType), pick(ci.deviceModel,rec.model),
     pick(ci.screen,rec.screen), pick(ci.viewport,rec.viewport), pick(ci.pixelRatio,rec.pixelRatio),
     pick(ci.touchPoints,rec.touchPoints), pick(ci.hardwareConcurrency,rec.cpu), pick(ci.deviceMemoryGb,rec.ramGb),
-    trustedDeviceNetworkLabel_(ci) || rec.network || '', pick(ci.publicIpv4,rec.publicIpv4), pick(ci.publicIpv6,rec.publicIpv6),
+    trustedDeviceNetworkLabel_(ci) || rec.network || '', '', '',
     pick(ci.userAgent,rec.userAgent), pick(ci.timezone,rec.timezone), pick(ci.language,rec.language)
   ];
 }
@@ -210,7 +207,7 @@ function registerOrRefreshTrustedDevice_(user, clientInfo, existingCredential) {
     const exp = new Date(Date.now() + EK.SESSION.REMEMBER_DAYS * 24 * 60 * 60 * 1000);
     sh.appendRow([
       deviceId, user.email, deviceNameFromClientInfo_(ci), platformNameFromClientInfo_(ci), browserNameFromUa_(ci.userAgent),
-      ci.ip || '', now, now, exp, true, Math.max(1, Number(user.sessionVersion || 1)),
+      '', now, now, exp, true, Math.max(1, Number(user.sessionVersion || 1)),
       hashTrustedDeviceSecret_(deviceId, secret), '', ...trustedDeviceTelemetryValues_(ci)
     ]);
     const row = sh.getLastRow();
@@ -231,17 +228,15 @@ function touchTrustedDevice_(rec, clientInfo, extendExpiry) {
   const nextPlatform = platformNameFromClientInfo_(ci);
   const nextBrowser = browserNameFromUa_(ci.userAgent);
   const nextName = `${nextPlatform} · ${nextBrowser}`;
-  const nextIp = ci.ip || rec.lastIp || '';
   const telemetry = trustedDeviceTelemetryValues_(ci, rec);
-  const [nextClientInstanceId,nextDeviceType,nextModel,nextScreen,nextViewport,nextPixelRatio,nextTouchPoints,nextCpu,nextRamGb,nextNetwork,nextIpv4,nextIpv6,nextUserAgent,nextTimezone,nextLanguage] = telemetry;
+  const [nextClientInstanceId,nextDeviceType,nextModel,nextScreen,nextViewport,nextPixelRatio,nextTouchPoints,nextCpu,nextRamGb,nextNetwork,_legacyNetwork1,_legacyNetwork2,nextUserAgent,nextTimezone,nextLanguage] = telemetry;
   const lastSeenMs = dateMillis_(rec.lastSeenAt);
   const recent = lastSeenMs > 0 && (now.getTime() - lastSeenMs) < EK_TRUSTED_TOUCH_MIN_INTERVAL_MS_;
   const sameFingerprint = nextName === String(rec.deviceName || '') &&
     nextPlatform === String(rec.platform || '') && nextBrowser === String(rec.browser || '') &&
-    nextIp === String(rec.lastIp || '') && String(nextClientInstanceId || '') === String(rec.clientInstanceId || '') &&
+    String(nextClientInstanceId || '') === String(rec.clientInstanceId || '') &&
     String(nextDeviceType || '') === String(rec.deviceType || '') && String(nextModel || '') === String(rec.model || '') &&
-    String(nextScreen || '') === String(rec.screen || '') && String(nextIpv4 || '') === String(rec.publicIpv4 || '') &&
-    String(nextIpv6 || '') === String(rec.publicIpv6 || '');
+    String(nextScreen || '') === String(rec.screen || '');
 
   if (extendExpiry && recent && sameFingerprint) return rec;
 
@@ -249,15 +244,15 @@ function touchTrustedDevice_(rec, clientInfo, extendExpiry) {
   const sh = ensureTrustedDevicesSheet_();
   const exp = extendExpiry ? new Date(Date.now() + EK.SESSION.REMEMBER_DAYS * 24 * 60 * 60 * 1000) : rec.expiresAt;
   sh.getRange(rec.row, 3, 1, 7).setValues([[
-    nextName, nextPlatform, nextBrowser, nextIp,
+    nextName, nextPlatform, nextBrowser, '',
     rec.createdAt || now, now, exp
   ]]);
   sh.getRange(rec.row, 14, 1, telemetry.length).setValues([telemetry]);
-  rec.deviceName=nextName; rec.platform=nextPlatform; rec.browser=nextBrowser; rec.lastIp=nextIp;
+  rec.deviceName=nextName; rec.platform=nextPlatform; rec.browser=nextBrowser;
   rec.lastSeenAt=now; rec.expiresAt=exp; rec.clientInstanceId=nextClientInstanceId || '';
   rec.deviceType=nextDeviceType || ''; rec.model=nextModel || ''; rec.screen=nextScreen || ''; rec.viewport=nextViewport || '';
   rec.pixelRatio=nextPixelRatio; rec.touchPoints=nextTouchPoints; rec.cpu=nextCpu; rec.ramGb=nextRamGb;
-  rec.network=nextNetwork || ''; rec.publicIpv4=nextIpv4 || ''; rec.publicIpv6=nextIpv6 || '';
+  rec.network=nextNetwork || '';
   rec.userAgent=nextUserAgent || ''; rec.timezone=nextTimezone || ''; rec.language=nextLanguage || '';
   // Keep the shared trusted-device cache aligned with the successful touch.
   // This avoids a stale lastSeen/expiry view for up to the full cache TTL.
@@ -333,12 +328,11 @@ function publicTrustedDevice_(d) {
   return {
     deviceId:d.deviceId,
     deviceName:d.deviceName || 'Peranti',
-    platform:d.platform || '', browser:d.browser || '', lastIp:d.lastIp || '',
+    platform:d.platform || '', browser:d.browser || '',
     clientInstanceId:d.clientInstanceId || '', deviceType:d.deviceType || '', model:d.model || '',
     screen:d.screen || '', viewport:d.viewport || '', pixelRatio:d.pixelRatio === '' ? '' : d.pixelRatio,
     touchPoints:d.touchPoints === '' ? '' : d.touchPoints, cpu:d.cpu === '' ? '' : d.cpu,
     ramGb:d.ramGb === '' ? '' : d.ramGb, network:d.network || '',
-    publicIpv4:d.publicIpv4 || '', publicIpv6:d.publicIpv6 || '',
     timezone:d.timezone || '', language:d.language || '',
     createdAt:d.createdAt ? formatDateTime_(d.createdAt) : '',
     lastSeenAt:d.lastSeenAt ? formatDateTime_(d.lastSeenAt) : '',
