@@ -36,7 +36,14 @@ function syncProfilePhotosFromDrive_() {
   const rootId = String(settings.PROFILE_ROOT_FOLDER_ID || '').trim();
   if (!rootId) throw new Error('PROFILE_ROOT_FOLDER_ID belum ditetapkan.');
   const root = DriveApp.getFolderById(rootId);
-  const categoryNames = {Pengurusan:'01 - Pengurusan', Pentadbir:'01 - Pengurusan', PPP:'02 - Guru', AKP:'03 - Anggota Kumpulan Pelaksana'};
+  const categoryNames = {
+    Pengurusan:'01 - Pengurusan',
+    Pentadbir:'01 - Pengurusan',
+    PPP:'02 - Guru',
+    AKP:'03 - Anggota Kumpulan Pelaksana',
+    Praktikum:'04 - Praktikum',
+    MySTEP:'05 - MySTEP'
+  };
   const categoryFolders = {};
   Object.keys(categoryNames).forEach(cat => {
     const it = root.getFoldersByName(categoryNames[cat]);
