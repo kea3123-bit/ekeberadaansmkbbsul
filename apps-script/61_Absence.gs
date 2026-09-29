@@ -111,8 +111,9 @@ function generatePublicAbsencePresencePdf(token, filters) {
   const rows = filterPublicAbsencePresenceRows_(data.rows, filters);
   const title = `Senarai Tidak Hadir / Keberadaan ${data.fromDate} hingga ${data.toDate}`;
   const result = generatePdfReport_(title,
-    ['Nama','Jawatan','Kategori','Mod','Jenis','Tarikh / Tempoh','Masa','Status'],
-    rows.map(r => [
+    ['Bil.','Nama','Jawatan','Kategori','Mod','Jenis','Tarikh / Tempoh','Masa','Status'],
+    rows.map((r,index) => [
+      index+1,
       r.name,
       r.jobTitle||'',
       r.category||'',
