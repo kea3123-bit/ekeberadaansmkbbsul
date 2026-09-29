@@ -240,9 +240,6 @@ function punch(token, type, location, clientInfo) {
   type = String(type || '').toUpperCase();
   if (!['IN', 'OUT'].includes(type)) throw new Error('Jenis rekod waktu tidak sah.');
 
-  const ci = normalizeClientInfo_(clientInfo);
-  const ipTracking = String(settings.IP_TRACKING_ENABLED || 'TRUE').toUpperCase() !== 'FALSE';
-  const recordIp = ipTracking ? ci.ip : '';
   const loc = isTestMode
     ? {lat:'',lng:'',accuracyM:'',distanceM:0}
     : validateAndMeasureLocation_(location,settings);
@@ -266,11 +263,9 @@ function punch(token, type, location, clientInfo) {
   let punchFieldKey = '';
   let refTime = '';
   let exceptionType = '';
-  let ipCheck = {note:'',warning:'',blocked:false,registry:null,audit:null};
-  let strictIpLock = null;
   let writeMs = 0;
 
-  try {
+  {
     const sh = getSheetOrThrow_(EK.SHEETS.ATTENDANCE);
     // ensureAttendanceSlotForUser_ already resolves the current user's row.
     // Reuse it instead of performing a second attendance-index lookup + Sheet read
@@ -303,34 +298,19 @@ function punch(token, type, location, clientInfo) {
       if (type === 'OUT' && !provisionalSession1Out && nowMinutes < refMinutes) exceptionType = 'BALIK AWAL';
     }
 
-    // Only BLOCK requires strict cross-user ordering. WARN/OFF are advisory and
-    // must never serialize the morning punch burst.
-    const ipPolicy = normalizeIpPunchPolicy_(settings.IP_PUNCH_POLICY || 'WARN');
-    if (ipPolicy === 'BLOCK' && recordIp) {
-      strictIpLock = LockService.getScriptLock();
-      // Jangan biarkan Polisi IP memegang RPC punch sehingga melepasi timeout
-      // frontend. Dalam burst serentak, gagal cepat dengan mesej yang jelas dan
-      // pengguna boleh cuba semula tanpa risiko request "tergantung".
-      if (!strictIpLock.tryLock(2500)) {
-        throw new Error('Sistem sedang menerima banyak rekod waktu serentak. Sila cuba semula dalam beberapa saat.');
-      }
-    }
-    ipCheck = evaluatePunchIp_(user,type,recordIp,now,settings,isTestMode);
-    if (ipCheck.blocked) throw new Error(ipCheck.error || 'Rakaman waktu ditolak oleh Polisi IP.');
-
     values[2]=user.name; values[3]=user.category;
     if (session === 1 && type === 'IN') {
       punchFieldKey='IN';
-      values[4]=now; values[5]=loc.lat; values[6]=loc.lng; values[7]=loc.distanceM; values[8]=loc.accuracyM; values[19]=recordIp || '';
+      values[4]=now; values[5]=loc.lat; values[6]=loc.lng; values[7]=loc.distanceM; values[8]=loc.accuracyM; values[19]='';
     } else if (session === 1 && type === 'OUT') {
       punchFieldKey='OUT';
-      values[9]=now; values[10]=loc.lat; values[11]=loc.lng; values[12]=loc.distanceM; values[13]=loc.accuracyM; values[20]=recordIp || '';
+      values[9]=now; values[10]=loc.lat; values[11]=loc.lng; values[12]=loc.distanceM; values[13]=loc.accuracyM; values[20]='';
     } else if (session === 2 && type === 'IN') {
       punchFieldKey='IN2';
-      values[22]=now; values[23]=loc.lat; values[24]=loc.lng; values[25]=loc.distanceM; values[26]=loc.accuracyM; values[32]=recordIp || '';
+      values[22]=now; values[23]=loc.lat; values[24]=loc.lng; values[25]=loc.distanceM; values[26]=loc.accuracyM; values[32]='';
     } else if (session === 2 && type === 'OUT') {
       punchFieldKey='OUT2';
-      values[27]=now; values[28]=loc.lat; values[29]=loc.lng; values[30]=loc.distanceM; values[31]=loc.accuracyM; values[33]=recordIp || '';
+      values[27]=now; values[28]=loc.lat; values[29]=loc.lng; values[30]=loc.distanceM; values[31]=loc.accuracyM; values[33]='';
     }
     if(punchFieldKey){
       values[35]=String(values[35]||'').split(',').map(x=>x.trim().toUpperCase()).filter(x=>x&&x!==punchFieldKey).join(',');
@@ -342,7 +322,7 @@ function punch(token, type, location, clientInfo) {
     values[14]=attendanceStatusFromFlags_(flags);
     values[15]=isTestMode ? 'TEST' : 'GPS';
     values[18]=now;
-    values[21]=mergeIpCheckNote_(values[21],ipCheck.note);
+    values[21]='';
     if (presenceRequest && type === 'IN') {
       values[17]=mergeAttendanceReason_(values[17],presenceRequestReason_(presenceRequest,'CATATAN'));
     }
@@ -354,22 +334,10 @@ function punch(token, type, location, clientInfo) {
       try{cleanupSupersededSession1EarlyReviews_(dateKey,dateKey);}catch(_e){}
     }
 
-    // For WARN/OFF this cache registry is best-effort advisory state. Losing a
-    // simultaneous advisory update is preferable to serializing every staff
-    // write. BLOCK is protected by strictIpLock above.
-    registerPunchIpUse_(ipCheck,user,type,session,recordIp,now);
-  } finally {
-    if (strictIpLock) {
-      try { strictIpLock.releaseLock(); } catch (_e) {}
-    }
-  }
-
-  if (ipCheck && ipCheck.audit) {
-    audit_(ipCheck.audit.action,user.email,ipCheck.audit.details,user.email);
   }
 
   const action = `REKOD_${type === 'IN' ? 'MASUK' : 'KELUAR'}_SESI_${session}`;
-  audit_(action,user.email,`${exceptionType || 'TEPAT MASA'}; mod=${isTestMode ? 'TEST' : 'REAL'}; jarak=${loc.distanceM}m; akurasi=±${loc.accuracyM}m; radius=${settings.RADIUS_M}m; IP=${recordIp || '-'}; ${ipCheck.note || 'IP tiada isu'}; writeMs=${writeMs}; slotWaitMs=${slot.slotWaitMs}; slotsCreated=${slot.createdSlots}`,user.email);
+  audit_(action,user.email,`${exceptionType || 'TEPAT MASA'}; mod=${isTestMode ? 'TEST' : 'REAL'}; jarak=${loc.distanceM}m; akurasi=±${loc.accuracyM}m; radius=${settings.RADIUS_M}m; writeMs=${writeMs}; slotWaitMs=${slot.slotWaitMs}; slotsCreated=${slot.createdSlots}`,user.email);
 
   let timeReviewRecord = null;
   if (exceptionType) {
@@ -399,8 +367,6 @@ function punch(token, type, location, clientInfo) {
     distanceM:loc.distanceM,
     accuracyM:loc.accuracyM,
     radiusM:Number(settings.RADIUS_M),
-    ip:recordIp || '',
-    ipWarning:ipCheck.warning || '',
     timeException:timeReviewRecord ? publicTimeReview_(timeReviewRecord) : null,
     performance:{lockWaitMs:0,lockHeldMs:0,writeMs,slotWaitMs:slot.slotWaitMs,totalMs:Date.now()-perfStarted}
   };
