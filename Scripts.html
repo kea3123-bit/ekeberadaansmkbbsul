@@ -944,8 +944,16 @@ const state = {
       const cls=status==='PUBLIC_HOLIDAY'?'pc-row-holiday':status==='TIDAK HADIR'?'pc-row-absent':status==='WEEKEND'?'pc-row-weekend':(status.includes('LEWAT')||status.includes('BALIK AWAL'))?'pc-row-lewat':status==='HADIR'?'pc-row-hadir':'';
       if(status==='PUBLIC_HOLIDAY'){const label=String(r.reason||'CUTI UMUM').trim();html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-holiday-full"><span class="pc-holiday-label">CUTI UMUM</span><span class="pc-holiday-reason">${esc(label)}</span></td></tr>`;continue;}if(status==='WEEKEND'){const label=String(r.reason||'').trim().toUpperCase()||'CUTI';html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-weekend-full"><span>${esc(label)}</span></td></tr>`;continue;}
       if(status==='TIDAK HADIR'){const reason=String(r.reason||'').trim(),detail=reason&&reason.toUpperCase()!=='TIDAK HADIR'?reason:'TIADA PENJELASAN';html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-absence-full"><span class="pc-absence-label">TIDAK HADIR</span><span class="pc-absence-reason">${esc(detail)}</span></td></tr>`;continue;}
-      const reviews=r.reviewItems||[], flagged=(type,session)=>reviews.some(x=>String(x.type||'').toUpperCase()===type&&Number(x.session||1)===session), tc=(v,bad)=>`<td class="${bad?'pc-time-alert':''}">${esc(shortTime(v))}</td>`;
-      html+=`<tr class="${cls}"><td class="pc-day">${day}</td>${tc(r.inTime,flagged('LEWAT',1))}${tc(r.outTime,flagged('BALIK AWAL',1))}${tc(r.inTime2,flagged('LEWAT',2))}${tc(r.outTime2,flagged('BALIK AWAL',2))}<td class="pc-statement">${esc(cardStatement(r,compact))}</td><td class="pc-sign"></td></tr>`;
+      const reviews=r.reviewItems||[], flagged=(type,session)=>reviews.some(x=>String(x.type||'').toUpperCase()===type&&Number(x.session||1)===session);
+      const adminEdited=new Set((Array.isArray(r.adminEditedFields)?r.adminEditedFields:[]).map(x=>String(x||'').toUpperCase()));
+      if(!adminEdited.size&&String(r.source||'').toUpperCase()==='ADMIN'){
+        if(r.inTime)adminEdited.add('IN');if(r.outTime)adminEdited.add('OUT');if(r.inTime2)adminEdited.add('IN2');if(r.outTime2)adminEdited.add('OUT2');
+      }
+      const tc=(v,bad,field)=>{
+        const classes=[bad?'pc-time-alert':'',adminEdited.has(field)?'pc-time-admin-edit':''].filter(Boolean).join(' ');
+        return `<td class="${classes}">${esc(shortTime(v))}</td>`;
+      };
+      html+=`<tr class="${cls}"><td class="pc-day">${day}</td>${tc(r.inTime,flagged('LEWAT',1),'IN')}${tc(r.outTime,flagged('BALIK AWAL',1),'OUT')}${tc(r.inTime2,flagged('LEWAT',2),'IN2')}${tc(r.outTime2,flagged('BALIK AWAL',2),'OUT2')}<td class="pc-statement">${esc(cardStatement(r,compact))}</td><td class="pc-sign"></td></tr>`;
     }return html;
   }
   function shortTime(v){return v?String(v).slice(0,5):'';}
