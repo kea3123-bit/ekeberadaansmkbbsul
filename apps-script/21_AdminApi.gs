@@ -117,8 +117,12 @@ function adminSaveAttendance(token,payload) {
   };
   const nextTimes={IN:inTime,OUT:outTime,IN2:inTime2,OUT2:outTime2};
   const changedFields=Object.keys(nextTimes).filter(key=>String(beforeTimes[key]||'')!==String(nextTimes[key]||''));
-  const previousEdited=String(v[35]||'').split(',').map(x=>x.trim().toUpperCase()).filter(Boolean);
-  v[35]=Array.from(new Set(previousEdited.concat(changedFields))).filter(x=>['IN','OUT','IN2','OUT2'].includes(x)).join(',');
+  const previousEdited=String(v[35]||'').split(',').map(x=>x.trim().toUpperCase()).filter(x=>['IN','OUT','IN2','OUT2'].includes(x));
+  const mergedEdited=Array.from(new Set(previousEdited.concat(changedFields))).filter(x=>['IN','OUT','IN2','OUT2'].includes(x));
+  // NONE means this row was saved by the new metadata-aware code but no time
+  // field was changed. It prevents the legacy source=ADMIN fallback from
+  // incorrectly styling every populated time.
+  v[35]=mergedEdited.length?mergedEdited.join(','):'NONE';
 
   v[0]=dateKey;v[1]=email;v[2]=user.name;v[3]=user.category;
   v[4]=inTime?dateAndTime_(dateKey,inTime):'';v[9]=outTime?dateAndTime_(dateKey,outTime):'';
