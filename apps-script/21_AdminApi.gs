@@ -221,8 +221,6 @@ function adminSaveSettings(token, payload) {
     PUNCH_REMINDER_ENABLED: String(payload.punchReminderEnabled || 'TRUE').toUpperCase() === 'FALSE' ? 'FALSE' : 'TRUE',
     PUNCH_REMINDER_TIME: normalizeTime_(payload.punchReminderTime || '09:00'),
     WORKING_DAYS: normalizeWorkingDays_(payload.workingDays || EK.DEFAULT_SETTINGS.WORKING_DAYS),
-    IP_TRACKING_ENABLED: String(payload.ipTrackingEnabled || 'TRUE').toUpperCase() === 'FALSE' ? 'FALSE' : 'TRUE',
-    IP_PUNCH_POLICY: normalizeIpPunchPolicy_(payload.ipPunchPolicy || 'WARN'),
     SYSTEM_MODE: String(payload.systemMode || 'REAL').toUpperCase() === 'TEST' ? 'TEST' : 'REAL',
     // Tarikh mula sistem disenggara terus pada sheet TETAPAN supaya mudah diubah
     // tanpa perlu menambah medan baharu pada UI Pentadbir.
@@ -256,7 +254,7 @@ function adminSaveSettings(token, payload) {
   // tidak membatalkan simpanan tetapan; pemilik boleh guna menu Aktifkan / baiki notifikasi emel.
   try { installEmailNotifications_({silent: true}); }
   catch (e) { audit_('TRIGGER_NOTIFIKASI_GAGAL', EK.SHEETS.SETTINGS, String(e && e.message ? e.message : e), admin.email); }
-  audit_('SIMPAN_TETAPAN', EK.SHEETS.SETTINGS, `Oleh ${admin.email}; mode=${next.SYSTEM_MODE}; S1=${next.DEFAULT_S1_IN}-${next.DEFAULT_S1_OUT}; S2=${next.DEFAULT_S2_IN || '-'}-${next.DEFAULT_S2_OUT || '-'}; radius=${next.RADIUS_M}m; reminder=${next.PUNCH_REMINDER_ENABLED}@${next.PUNCH_REMINDER_TIME}; hari=${next.WORKING_DAYS}; IP=${next.IP_TRACKING_ENABLED}/${next.IP_PUNCH_POLICY}`, admin.email);
+  audit_('SIMPAN_TETAPAN', EK.SHEETS.SETTINGS, `Oleh ${admin.email}; mode=${next.SYSTEM_MODE}; S1=${next.DEFAULT_S1_IN}-${next.DEFAULT_S1_OUT}; S2=${next.DEFAULT_S2_IN || '-'}-${next.DEFAULT_S2_OUT || '-'}; radius=${next.RADIUS_M}m; reminder=${next.PUNCH_REMINDER_ENABLED}@${next.PUNCH_REMINDER_TIME}; hari=${next.WORKING_DAYS}`, admin.email);
   return {ok: true, settings: publicSettings_(updatedSettings)};
 }
 
