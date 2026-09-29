@@ -156,6 +156,17 @@ jobs:
           grep -q "CATEGORIES: \['Pengurusan', 'AKP', 'PPP', 'Praktikum', 'MySTEP'\]" apps-script/00_Core.gs
           grep -q "Praktikum:'04 - Praktikum'" apps-script/70_Profile.gs
           grep -q "MySTEP:'05 - MySTEP'" apps-script/70_Profile.gs
+          # Attendance admin-edit provenance must survive backend -> both punch cards.
+          grep -q "'MedanDisuntingPentadbir'" apps-script/00_Core.gs
+          grep -q "adminEditedFieldsForCard_" apps-script/20_UserApi.gs
+          grep -q "changedFields" apps-script/21_AdminApi.gs
+          grep -q "pc-time-admin-edit" Styles.html
+          grep -q "pc-time-admin-edit" web/config.js
+          # Public absence list defaults to newest submission and has sortable numbering.
+          grep -q "default:'submitted_desc'" Scripts.html
+          grep -q "sort-absencePublic-order" Index.html
+          grep -q "submittedMs" apps-script/61_Absence.gs
+          grep -q "\['Bil.','Nama','Jawatan','Kategori','Mod','Jenis','Tarikh / Tempoh','Masa','Status'\]" apps-script/61_Absence.gs
           grep -R -q 'EK_RUNTIME_ABSENCE_ROWS_' apps-script
           grep -R -q 'Asia/Kuala_Lumpur' apps-script/appsscript.json
           grep -R -q 'function isPagesWebOriginAllowed_' apps-script/Bridges.gs
