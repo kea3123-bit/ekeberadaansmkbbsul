@@ -988,13 +988,15 @@ const state = {
     const requiredAbsenceTypes=[
       'CUTI REHAT KHAS','CUTI REHAT','CUTI SAKIT (AWAM)','CUTI SAKIT (SWASTA)',
       'CUTI TANPA REKOD KELOMPOK','CUTI KUARANTIN',
+      'CUTI BERSALIN','CUTI BARAH','CUTI HAJI','CUTI MENJAGA ANAK',
+      'CUTI TANPA GAJI','CUTI BELAJAR (BERGAJI PENUH)','CUTI BELAJAR (SEPARUH GAJI)',
       ...requiredExternalOfficialTypes,
       'AKTIVITI KOKURIKULUM','AKTIVITI SUKAN/PERMAINAN','URUSAN PEPERIKSAAN','LAIN-LAIN'
     ];
     const requiredPresenceTypes=[
       'PROGRAM DALAMAN SEKOLAH','URUSAN PERIBADI (MASUK LEWAT)','URUSAN PERIBADI (BALIK AWAL)',
-      'MESYUARAT DALAM SEKOLAH',
       ...requiredExternalOfficialTypes,
+      'AKTIVITI KOKURIKULUM','AKTIVITI SUKAN/PERMAINAN',
       'URUSAN PEPERIKSAAN','LAIN-LAIN - KEBERADAAN'
     ];
     const serverTypes=mode==='KEBERADAAN'?(d.presenceTypes||[]):(d.types||[]);
@@ -1007,6 +1009,24 @@ const state = {
     if(typeSel)typeSel.innerHTML='<option value="">Pilih jenis</option>'+types.map(x=>`<option value="${attr(x)}">${esc(x)}</option>`).join('');
     ['absenceStartTimeWrap','absenceEndTimeWrap'].forEach(id=>document.getElementById(id)?.classList.toggle('hidden',mode!=='KEBERADAAN'));
     const st=document.getElementById('absenceStartTime'),et=document.getElementById('absenceEndTime');if(st)st.required=mode==='KEBERADAAN';if(et)et.required=mode==='KEBERADAAN';
+    updateAbsenceDateLimit();
+  }
+
+  function updateAbsenceDateLimit(){
+    const mode=document.getElementById('absenceMode')?.value||'TIDAK_HADIR';
+    const type=document.getElementById('absenceType')?.value||'';
+    const start=document.getElementById('absenceStartDate')?.value||'';
+    const end=document.getElementById('absenceEndDate');
+    const hint=document.getElementById('absenceDurationHint');
+    const maternity=mode==='TIDAK_HADIR'&&type==='CUTI BERSALIN';
+    if(end){
+      end.min=start||getSystemStartDateClient();
+      // 90 calendar days inclusive: start date is counted as day one.
+      end.max=maternity&&start?addClientDays(start,89):'';
+    }
+    if(hint)hint.textContent=maternity
+      ? 'Cuti Bersalin: maksimum 90 hari kalendar termasuk tarikh mula dan akhir.'
+      : '';
   }
 
   function renderAbsence(){
@@ -1032,6 +1052,10 @@ const state = {
       }
     }
     p.type=selectedType;
+    if(mode==='TIDAK_HADIR'&&selectedType==='CUTI BERSALIN'&&p.startDate&&p.endDate&&p.endDate>addClientDays(p.startDate,89)){
+      toast('Cuti Bersalin maksimum 90 hari termasuk tarikh mula dan akhir.',5000);
+      return;
+    }
     try{const r=await runServer('submitAbsenceRequest',state.token,p);toast(r.message,5000);ev.target.reset();invalidateClientCache('absence','absencePublic','absenceManagement');document.getElementById('absenceMode').value='TIDAK_HADIR';await loadAbsenceData(true);}
     catch(e){handleServerError(e);}
   }
@@ -1440,6 +1464,8 @@ const state = {
     printMyPunchCard,
     printAdminPunchCard,
     loadAbsenceData,
+    updateAbsenceModeUi,
+    updateAbsenceDateLimit,
     submitAbsence,
     cancelAbsence,
     loadAbsencePublic,
