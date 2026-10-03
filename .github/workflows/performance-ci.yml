@@ -42,6 +42,60 @@ jobs:
           cat apps-script/*.gs > /tmp/apps-script-backend.js
           node --check /tmp/apps-script-backend.js
 
+      - name: Verify absence categories and maternity duration
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const stored = [];
+          const ctx = {
+            Utilities: {getUuid: () => 'abcdefab-0000-0000-0000-000000000000'},
+            requireSessionUser_: () => ({email:'test@example.edu.my', name:'Test', category:'PPP', jobTitle:'Guru'}),
+            validateDateKey_: key => key,
+            getSystemStartDate_: () => '2026-09-01',
+            normalizeTime_: value => String(value || ''),
+            timeToMinutes_: value => {const [hours,minutes]=value.split(':').map(Number);return hours*60+minutes},
+            todayKey_: () => '2026-10-03',
+            getSheetOrThrow_: () => ({getLastRow: () => 1, appendRow: row => stored.push(row)}),
+            invalidateAbsenceRows_: () => {},
+            audit_: () => {},
+            notifyAbsenceSubmitted_: () => ({ok:false})
+          };
+          vm.createContext(ctx);
+          vm.runInContext(fs.readFileSync('apps-script/00_Core.gs','utf8'),ctx);
+          vm.runInContext(fs.readFileSync('apps-script/61_Absence.gs','utf8'),ctx);
+          vm.runInContext('readAbsenceRows_ = () => []',ctx);
+          const settings = vm.runInContext('EK',ctx);
+          const leaves = [
+            'CUTI BERSALIN','CUTI BARAH','CUTI HAJI','CUTI MENJAGA ANAK',
+            'CUTI TANPA GAJI','CUTI BELAJAR (BERGAJI PENUH)',
+            'CUTI BELAJAR (SEPARUH GAJI)'
+          ];
+          leaves.forEach(type=>{
+            assert(settings.ABSENCE_TYPES.includes(type),type+' missing from Tidak Hadir');
+            assert(!settings.PRESENCE_TYPES.includes(type),type+' must not appear under Keberadaan');
+          });
+          ['AKTIVITI KOKURIKULUM','AKTIVITI SUKAN/PERMAINAN'].forEach(type=>{
+            assert(settings.ABSENCE_TYPES.includes(type));
+            assert(settings.PRESENCE_TYPES.includes(type));
+          });
+          assert(!settings.PRESENCE_TYPES.includes('MESYUARAT DALAM SEKOLAH'));
+          assert.equal(settings.MATERNITY_LEAVE_MAX_DAYS,90);
+          const request = (type,endDate,mode='TIDAK_HADIR') => ({
+            type,mode,startDate:'2026-10-01',endDate,startTime:'08:30',endTime:'16:30'
+          });
+          assert.equal(ctx.submitAbsenceRequest('session',request('CUTI BERSALIN','2026-12-29')).ok,true);
+          assert.throws(()=>ctx.submitAbsenceRequest('session',request('CUTI BERSALIN','2026-12-30')),/maksimum 90 hari/);
+          assert.throws(()=>ctx.submitAbsenceRequest('session',request('CUTI REHAT','2026-12-29')),/maksimum 60 hari/);
+          assert.equal(ctx.submitAbsenceRequest('session',request('AKTIVITI KOKURIKULUM','2026-10-01','KEBERADAAN')).ok,true);
+          assert.throws(()=>ctx.submitAbsenceRequest('session',request('MESYUARAT DALAM SEKOLAH','2026-10-01','KEBERADAAN')),/tidak sah/);
+          assert.equal(stored.length,2);
+          console.log('ABSENCE_POLICY_OK: leave categories, activities, removed option, 90 vs 91 days');
+          NODE
+
       - name: Browser runtime smoke
         shell: bash
         run: |
