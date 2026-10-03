@@ -24,15 +24,18 @@ const EK = Object.freeze({
   ABSENCE_TYPES: [
     'CUTI REHAT KHAS','CUTI REHAT','CUTI SAKIT (AWAM)','CUTI SAKIT (SWASTA)',
     'CUTI TANPA REKOD KELOMPOK','CUTI KUARANTIN',
+    'CUTI BERSALIN','CUTI BARAH','CUTI HAJI','CUTI MENJAGA ANAK',
+    'CUTI TANPA GAJI','CUTI BELAJAR (BERGAJI PENUH)','CUTI BELAJAR (SEPARUH GAJI)',
     ...EK_EXTERNAL_OFFICIAL_TYPES,
     'AKTIVITI KOKURIKULUM','AKTIVITI SUKAN/PERMAINAN','URUSAN PEPERIKSAAN','LAIN-LAIN'
   ],
   PRESENCE_TYPES: [
     'PROGRAM DALAMAN SEKOLAH','URUSAN PERIBADI (MASUK LEWAT)','URUSAN PERIBADI (BALIK AWAL)',
-    'MESYUARAT DALAM SEKOLAH',
     ...EK_EXTERNAL_OFFICIAL_TYPES,
+    'AKTIVITI KOKURIKULUM','AKTIVITI SUKAN/PERMAINAN',
     'URUSAN PEPERIKSAAN','LAIN-LAIN - KEBERADAAN'
   ],
+  MATERNITY_LEAVE_MAX_DAYS: 90,
   USER_HEADERS: ['Aktif', 'Nama', 'Emel', 'Kategori', 'Pentadbir', 'WaktuLewat', 'MaksMasuk', 'WaktuBalik', 'Catatan', 'PasswordSalt', 'PasswordHash', 'WajibTukarPassword', 'VersiSesi', 'GagalLogin', 'DikunciSehingga', 'PasswordDikemaskiniPada', 'FotoProfilFileId', 'FotoProfilDikemaskiniPada', 'AuthType', 'Jawatan', 'Sesi1Masuk', 'Sesi1Keluar', 'Sesi2Masuk', 'Sesi2Keluar'],
   ATT_HEADERS: ['Tarikh', 'Emel', 'Nama', 'Kategori', 'Masuk', 'MasukLat', 'MasukLng', 'MasukJarakM', 'MasukAkurasiM', 'Balik', 'BalikLat', 'BalikLng', 'BalikJarakM', 'BalikAkurasiM', 'Status', 'Sumber', 'DisuntingOleh', 'SebabEdit', 'DikemaskiniPada', 'MasukIP', 'BalikIP', 'IPSemakan', 'Masuk2', 'Masuk2Lat', 'Masuk2Lng', 'Masuk2JarakM', 'Masuk2AkurasiM', 'Balik2', 'Balik2Lat', 'Balik2Lng', 'Balik2JarakM', 'Balik2AkurasiM', 'Masuk2IP', 'Balik2IP', 'StatusWaktu', 'MedanDisuntingPentadbir'],
   AUDIT_HEADERS: ['Masa', 'Pelaku', 'Tindakan', 'Sasaran', 'Butiran'],
