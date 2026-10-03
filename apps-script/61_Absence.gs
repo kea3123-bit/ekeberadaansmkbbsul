@@ -142,7 +142,15 @@ function submitAbsenceRequest(token, payload) {
   const validTypes = mode === 'KEBERADAAN' ? EK.PRESENCE_TYPES : EK.ABSENCE_TYPES;
   if (!validTypes.includes(type)) throw new Error(`Jenis ${mode === 'KEBERADAAN' ? 'keberadaan' : 'tidak hadir'} tidak sah.`);
   if (endDate < startDate) throw new Error('Tarikh akhir tidak boleh sebelum tarikh mula.');
-  if (daysBetweenKeys_(startDate, endDate) > 60) throw new Error('Permohonan maksimum 60 hari bagi satu rekod.');
+  const durationDays = daysBetweenKeys_(startDate, endDate) + 1; // inclusive calendar days
+  if (mode === 'TIDAK_HADIR' && type === 'CUTI BERSALIN') {
+    if (durationDays > EK.MATERNITY_LEAVE_MAX_DAYS) {
+      throw new Error(`Cuti Bersalin maksimum ${EK.MATERNITY_LEAVE_MAX_DAYS} hari termasuk tarikh mula dan tarikh akhir.`);
+    }
+  } else if (daysBetweenKeys_(startDate, endDate) > 60) {
+    // Keep the existing limit for all other request types unchanged.
+    throw new Error('Permohonan maksimum 60 hari bagi satu rekod.');
+  }
   if (mode === 'KEBERADAAN' && timeToMinutes_(endTime) <= timeToMinutes_(startTime)) throw new Error('Masa akhir Keberadaan mesti selepas masa mula.');
 
   const duplicate = readAbsenceRows_().find(r => {
