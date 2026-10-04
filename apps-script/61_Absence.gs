@@ -1,12 +1,15 @@
 // ---------- Tidak Hadir / Permohonan kepada Pengetua ----------
 
+// Semakan Tidak Hadir / Keberadaan is reserved for accounts explicitly
+// marked as Pentadbir Sistem (PENGGUNA.Pentadbir = TRUE). The Pengurusan
+// category alone does not grant access to review data or approval actions.
 function isManagementUser_(user) {
-  return !!(user && (user.isAdmin || ['Pengurusan','Pentadbir'].includes(String(user.category || ''))));
+  return !!(user && user.isAdmin);
 }
 
 function requireManagementUser_(token) {
   const user = requireSessionUser_(token);
-  if (!isManagementUser_(user)) throw new Error('Fungsi ini hanya untuk Pengurusan atau Pentadbir Sistem.');
+  if (!isManagementUser_(user)) throw new Error('Akses Pentadbir Sistem diperlukan untuk Semakan Tidak Hadir / Keberadaan.');
   return user;
 }
 
