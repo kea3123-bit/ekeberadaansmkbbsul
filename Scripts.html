@@ -551,7 +551,15 @@ const state = {
     // Clear protected review data on role changes or a newly restricted session.
     if(!b.user.isAdmin){
       invalidateClientCache('absenceManagement');
-      if(state.currentScreen==='absencemanage')navigate('home');
+      // Also erase rendered review rows on a role change; hiding the menu
+      // alone would leave previously loaded private records in the DOM.
+      const reviewRows=document.getElementById('absenceManageRows');
+      if(reviewRows)reviewRows.replaceChildren();
+      text('absenceManageCount','0 rekod');
+      if(state.currentScreen==='absencemanage'){
+        closeModal();
+        navigate('home');
+      }
     }
     document.getElementById('testModeBanner').classList.toggle('hidden',!test);
     text('punchInstruction',test?'Mod TEST aktif — rekod waktu boleh dibuat tanpa semakan lokasi/status waktu.':'');
