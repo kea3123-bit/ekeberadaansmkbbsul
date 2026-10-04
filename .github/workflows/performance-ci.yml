@@ -96,6 +96,42 @@ jobs:
           console.log('ABSENCE_POLICY_OK: leave categories, activities, removed option, 90 vs 91 days');
           NODE
 
+      - name: Verify system-admin-only absence review access
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const backend = fs.readFileSync('apps-script/61_Absence.gs','utf8');
+          const frontend = fs.readFileSync('Scripts.html','utf8');
+          const markup = fs.readFileSync('Index.html','utf8');
+          const ctx = {
+            requireSessionUser_: () => ({email:'initial@example.edu.my',category:'PPP',isAdmin:false})
+          };
+          vm.createContext(ctx);
+          vm.runInContext(backend,ctx);
+          for (const category of ['Pengurusan','Pentadbir','PPP','AKP']) {
+            ctx.requireSessionUser_ = () => ({email:'ordinary@example.edu.my',category,isAdmin:false});
+            assert.equal(ctx.isManagementUser_(ctx.requireSessionUser_('token')),false);
+            assert.throws(() => ctx.getAbsenceManagementData('token'),/Akses Pentadbir Sistem/);
+            assert.throws(() => ctx.reviewAbsenceRequest('token','TH-test','DILULUSKAN',''),/Akses Pentadbir Sistem/);
+            assert.throws(() => ctx.generateAbsencePresencePdf('token',{}),/Akses Pentadbir Sistem/);
+            assert.throws(() => ctx.checkUserAvailabilityForClass('token','test@example.edu.my','2026-10-04','08:30'),/Akses Pentadbir Sistem/);
+          }
+          ctx.requireSessionUser_ = () => ({email:'admin@example.edu.my',category:'PPP',isAdmin:true});
+          assert.equal(ctx.isManagementUser_(ctx.requireSessionUser_('token')),true);
+          assert.equal(ctx.requireManagementUser_('token').email,'admin@example.edu.my');
+          assert.match(frontend,/absenceManageMenu'\)\?\.classList\.toggle\('hidden',!b\.user\.isAdmin\)/);
+          assert.match(frontend,/name==='absencemanage'&&!state\.boot\?\.user\?\.isAdmin/);
+          assert.match(frontend,/async function loadAbsenceManagement\(force=false\)\{\s*if\(!state\.boot\?\.user\?\.isAdmin\)return/);
+          assert.match(markup,/Khas Pentadbir Sistem<\/div><h1>Semakan Tidak Hadir \/ Keberadaan/);
+          assert.match(frontend,/if\(name==='absencepublic'\)loadAbsencePublic\(\)/);
+          assert.match(frontend,/if\(name==='absence'\)loadAbsenceData\(\)/);
+          console.log('ABSENCE_ADMIN_ONLY_OK: management users denied, marked admins authorized, public/own routes retained');
+          NODE
+
       - name: Browser runtime smoke
         shell: bash
         run: |
