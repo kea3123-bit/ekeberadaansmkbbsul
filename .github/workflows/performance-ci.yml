@@ -266,6 +266,15 @@ jobs:
           # Public absence list defaults to newest submission and has sortable numbering.
           grep -q "default:'submitted_desc'" Scripts.html
           grep -q "sort-absencePublic-order" Index.html
+          # Absence form quick dates and start->end synchronization.
+          grep -q "setAbsenceQuickDate('today')" Index.html
+          grep -q "setAbsenceQuickDate('tomorrow')" Index.html
+          grep -q 'onchange="syncAbsenceDatesFromStart()"' Index.html
+          grep -q "function setAbsenceQuickDate" Scripts.html
+          grep -q "function syncAbsenceDatesFromStart" Scripts.html
+          grep -q "end.value=start.value" Scripts.html
+          grep -q "absenceTodayShortcutDate" Scripts.html
+          grep -q "absenceTomorrowShortcutDate" Scripts.html
           grep -q "submittedMs" apps-script/61_Absence.gs
           grep -q "\['Bil.','Nama','Jawatan','Kategori','Mod','Jenis','Tarikh / Tempoh','Masa','Status'\]" apps-script/61_Absence.gs
           grep -R -q 'EK_RUNTIME_ABSENCE_ROWS_' apps-script
