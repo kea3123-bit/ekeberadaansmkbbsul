@@ -864,6 +864,9 @@
 
   /* v14.4 — Senarai Tidak Hadir / Keberadaan awam */
   .absence-form-full{max-width:none;width:100%}
+  .absence-date-shortcuts{display:flex;align-items:center;gap:8px;margin:-2px 0 0}
+  .absence-date-shortcut{display:inline-flex;align-items:center;gap:6px;padding:7px 10px!important;border-radius:999px!important;font-size:12px!important;white-space:nowrap}
+  .absence-date-shortcut span{font-weight:900;color:#073f91}
   .absence-note-field textarea{display:block;width:100%;min-height:150px;margin-top:5px;border:1px solid #c8d5e6;border-radius:10px;padding:12px;background:#fff;color:var(--ink);line-height:1.55;resize:vertical;box-shadow:0 2px 0 rgba(4,42,98,.018) inset;transition:border-color .15s ease,box-shadow .15s ease}
   .absence-note-field textarea:focus{outline:none;border-color:#75a9eb;box-shadow:0 0 0 4px rgba(7,83,185,.09)}
   .absence-public-filter{grid-template-columns:repeat(6,minmax(115px,1fr))}
@@ -872,7 +875,7 @@
   .public-list-note{margin:12px 2px 0}
   #screen-absencepublic .panel::before{background:linear-gradient(180deg,var(--blue),rgba(7,83,185,.16))}
   @media(max-width:1050px){.absence-public-filter{grid-template-columns:repeat(3,1fr)}}
-  @media(max-width:760px){.absence-public-filter{grid-template-columns:1fr 1fr}.absence-public-filter .span-search{grid-column:span 2}.absence-public-summary{grid-template-columns:1fr 1fr}}
+  @media(max-width:760px){.absence-public-filter{grid-template-columns:1fr 1fr}.absence-public-filter .span-search{grid-column:span 2}.absence-public-summary{grid-template-columns:1fr 1fr}.absence-date-shortcuts{grid-column:auto;flex-wrap:wrap}.absence-date-shortcut{flex:1;justify-content:center;min-width:150px}}
   @media(max-width:520px){.absence-public-filter{grid-template-columns:1fr}.absence-public-filter .span-search{grid-column:auto}.absence-public-summary{grid-template-columns:1fr 1fr}}
 
   /* Table-header sorting: sorting belongs to the data columns, not the filter form. */
