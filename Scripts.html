@@ -1025,6 +1025,32 @@ const state = {
     updateAbsenceDateLimit();
   }
 
+  function formatAbsenceShortcutDate(key){
+    const m=String(key||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m?m[3]+'/'+m[2]+'/'+m[1]:'—';
+  }
+
+  function getAbsenceTodayKey(){
+    return state.absence?.today||state.boot?.today||localDateKey(new Date());
+  }
+
+  function setAbsenceQuickDate(kind){
+    const today=getAbsenceTodayKey();
+    const key=kind==='tomorrow'?addClientDays(today,1):today;
+    const start=document.getElementById('absenceStartDate');
+    const end=document.getElementById('absenceEndDate');
+    if(start)start.value=key;
+    if(end)end.value=key;
+    updateAbsenceDateLimit();
+  }
+
+  function syncAbsenceDatesFromStart(){
+    const start=document.getElementById('absenceStartDate');
+    const end=document.getElementById('absenceEndDate');
+    if(start?.value&&end)end.value=start.value;
+    updateAbsenceDateLimit();
+  }
+
   function updateAbsenceDateLimit(){
     const mode=document.getElementById('absenceMode')?.value||'TIDAK_HADIR';
     const type=document.getElementById('absenceType')?.value||'';
@@ -1044,7 +1070,10 @@ const state = {
 
   function renderAbsence(){
     const d=state.absence;if(!d)return;
-    const s=document.getElementById('absenceStartDate'),e=document.getElementById('absenceEndDate'),systemStart=d.systemStartDate||getSystemStartDateClient();if(s){s.min=systemStart;if(!s.value||s.value<systemStart)s.value=d.today<systemStart?systemStart:d.today;}if(e){e.min=systemStart;if(!e.value||e.value<systemStart)e.value=d.today<systemStart?systemStart:d.today;}
+    const today=d.today||getAbsenceTodayKey(),tomorrow=addClientDays(today,1);
+    text('absenceTodayShortcutDate',formatAbsenceShortcutDate(today));
+    text('absenceTomorrowShortcutDate',formatAbsenceShortcutDate(tomorrow));
+    const s=document.getElementById('absenceStartDate'),e=document.getElementById('absenceEndDate'),systemStart=d.systemStartDate||getSystemStartDateClient();if(s){s.min=systemStart;if(!s.value||s.value<systemStart)s.value=today<systemStart?systemStart:today;}if(e){e.min=systemStart;if(!e.value||e.value<systemStart)e.value=s?.value||((today<systemStart)?systemStart:today);}
     updateAbsenceModeUi();
     const own=d.own||[];
     document.getElementById('absenceOwnRows').innerHTML=own.length?own.map(r=>`<tr><td>${esc(r.submittedAt||'—')}</td><td><b>${esc(r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir')}</b></td><td>${esc(r.type)}</td><td>${esc(formatDateRange(r.startDate,r.endDate))}</td><td>${r.mode==='KEBERADAAN'?esc(`${r.startTime||'—'} – ${r.endTime||'—'}`):'—'}</td><td><span class="request-status ${absenceStatusClass(r.status)}">${esc(r.status)}</span></td><td>${esc(r.comment||'—')}</td><td>${r.status==='MENUNGGU'?`<button class="action-link warn-link" onclick='cancelAbsence(${JSON.stringify(r.id)})'>Batalkan</button>`:'—'}</td></tr>`).join(''):'<tr><td colspan="8" class="empty-cell">Belum ada permohonan.</td></tr>';
@@ -1481,6 +1510,8 @@ const state = {
     loadAbsenceData,
     updateAbsenceModeUi,
     updateAbsenceDateLimit,
+    setAbsenceQuickDate,
+    syncAbsenceDatesFromStart,
     submitAbsence,
     cancelAbsence,
     loadAbsencePublic,
