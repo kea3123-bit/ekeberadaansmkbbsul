@@ -167,7 +167,7 @@ function buildAttendancePresencePeriodReport_(fromDate, toDate) {
     startDate:r.startDate < fromDate ? fromDate : r.startDate, endDate:r.endDate > toDate ? toDate : r.endDate, startTime:r.startTime, endTime:r.endTime,
     status:r.status, note:r.note || '', reviewedBy:r.reviewedBy || ''
   }));
-  return {fromDate, toDate, workingDays:dates.filter(d => isWorkingDay_(d,settings)).length, summary, detail, presence:presenceRows};
+  return {fromDate, toDate, workingDays:dates.filter(d => isWorkingDay_(d,settings)).length, summary, detail, presence:presenceRows, attendanceValues};
 }
 
 
@@ -217,6 +217,54 @@ function attendanceReportDetailKey_(email,dateKey) {
   return normalizeEmail_(email)+'|'+String(dateKey||'');
 }
 
+function buildAttendanceAbnormalTemplateRows_(data,usersByEmail) {
+  const abnormalMap={},settings=getSettings_();
+  (data.attendanceValues||[]).forEach(raw=>{
+    const v=padAttendanceValues_(raw),date=dateCellToKey_(v[0]),email=normalizeEmail_(v[1]),user=usersByEmail[email];
+    if(!date||!email||!user||String(v[14]||'').toUpperCase()==='TIDAK HADIR'||String(v[15]||'').toUpperCase()==='TEST')return;
+    const flags=inferAttendanceFlags_(v,user,settings,date);
+    if(!flags.length)return;
+    const checks=[];
+    if(flags.includes('LEWAT')){
+      if(v[4])checks.push({type:'LEWAT',session:1,value:v[4],key:'s1In'});
+      if(v[22])checks.push({type:'LEWAT',session:2,value:v[22],key:'s2In'});
+    }
+    if(flags.includes('BALIK AWAL')){
+      const usesSession2=!!v[22],value=usesSession2?v[27]:v[9],session=usesSession2?2:1;
+      if(value)checks.push({type:'BALIK AWAL',session,value,key:'FINAL_OUT'});
+    }
+    checks.forEach(x=>{
+      const ctx=getScheduleTimingContext_(user,settings,x.value);
+      if(!ctx.known)return;
+      const ref=x.key==='FINAL_OUT'
+        ? getFinalOutReferenceFromTimingContext_(ctx,date,v)
+        : String(ctx.schedule[x.key]||'').trim();
+      if(!ref)return;
+      const recordTime=formatTime_(x.value),actual=timeToMinutes_(recordTime),expected=timeToMinutes_(ref);
+      if(!Number.isFinite(actual)||!Number.isFinite(expected))return;
+      const minutes=x.type==='LEWAT'?Math.max(0,actual-expected):Math.max(0,expected-actual);
+      if(minutes<=0)return;
+      const key=attendanceReportDetailKey_(email,date),detail=(data.detailMap||{})[key]||{};
+      if(!abnormalMap[key]){
+        abnormalMap[key]={
+          email,date,name:user.name||email,jobTitle:user.jobTitle||'',category:user.category||'',
+          inTime:detail.inTime||'',outTime:detail.outTime||'',inTime2:detail.inTime2||'',outTime2:detail.outTime2||'',
+          lateMinutes:0,earlyMinutes:0,lateSessions:[],earlySessions:[],reason:detail.reason||''
+        };
+      }
+      const row=abnormalMap[key];
+      if(x.type==='LEWAT'){
+        row.lateMinutes+=minutes;
+        if(!row.lateSessions.includes(x.session))row.lateSessions.push(x.session);
+      }else{
+        row.earlyMinutes+=minutes;
+        if(!row.earlySessions.includes(x.session))row.earlySessions.push(x.session);
+      }
+    });
+  });
+  return Object.values(abnormalMap).sort((a,b)=>a.date.localeCompare(b.date)||a.name.localeCompare(b.name));
+}
+
 function decorateAttendanceTemplateData_(data) {
   data=data||{};
   const fromDate=data.fromDate,toDate=data.toDate;
@@ -226,33 +274,9 @@ function decorateAttendanceTemplateData_(data) {
   const detailMap={};
   (data.detail||[]).forEach(r=>detailMap[attendanceReportDetailKey_(r.email,r.date)]=r);
 
-  // The existing review engine already stores the historical reference time
-  // used for LEWAT/BALIK AWAL, so report minutes remain consistent with the app.
-  try{ensureTimeReviewRowsForRange_(fromDate,toDate);}catch(e){}
-  const reviewRows=readTimeReviewRows_().filter(r=>r.date>=fromDate&&r.date<=toDate);
-  const abnormalMap={};
-  reviewRows.forEach(r=>{
-    const key=attendanceReportDetailKey_(r.email,r.date);
-    const detail=detailMap[key]||{};
-    if(!abnormalMap[key]){
-      const u=usersByEmail[r.email]||{};
-      abnormalMap[key]={
-        email:r.email,date:r.date,name:r.name||u.name||r.email,jobTitle:r.jobTitle||u.jobTitle||'',category:r.category||u.category||'',
-        inTime:detail.inTime||'',outTime:detail.outTime||'',inTime2:detail.inTime2||'',outTime2:detail.outTime2||'',
-        lateMinutes:0,earlyMinutes:0,lateSessions:[],earlySessions:[],reviewStatus:[],reason:detail.reason||''
-      };
-    }
-    const row=abnormalMap[key],actual=timeToMinutes_(r.recordTime),ref=timeToMinutes_(r.referenceTime),session=Number(r.session||1);
-    if(String(r.type||'').toUpperCase()==='LEWAT'){
-      if(Number.isFinite(actual)&&Number.isFinite(ref))row.lateMinutes+=Math.max(0,actual-ref);
-      if(!row.lateSessions.includes(session))row.lateSessions.push(session);
-    }else if(String(r.type||'').toUpperCase()==='BALIK AWAL'){
-      if(Number.isFinite(actual)&&Number.isFinite(ref))row.earlyMinutes+=Math.max(0,ref-actual);
-      if(!row.earlySessions.includes(session))row.earlySessions.push(session);
-    }
-    if(r.reviewStatus&&!row.reviewStatus.includes(r.reviewStatus))row.reviewStatus.push(r.reviewStatus);
-  });
-  const abnormal=Object.values(abnormalMap).sort((a,b)=>a.date.localeCompare(b.date)||a.name.localeCompare(b.name));
+  // Report generation is read-only: derive exception minutes from attendance
+  // + timestamped schedule history without creating/updating review rows.
+  const abnormal=buildAttendanceAbnormalTemplateRows_(data,usersByEmail);
 
   const statByEmail={};
   users.forEach(u=>statByEmail[u.email]={attendedDays:0,lateCount:0,lateMinutes:0,earlyCount:0,earlyMinutes:0});
@@ -383,7 +407,7 @@ function writeAttendanceAbnormalTemplate_(sh,data) {
     i+1,r.name,[r.jobTitle,r.category].filter(Boolean).join(' / '),r.date,
     r.inTime||'',r.outTime||'',r.inTime2||'',r.outTime2||'',
     r.lateMinutes,r.earlyMinutes,r.lateMinutes+r.earlyMinutes,
-    [r.reason,(r.reviewStatus||[]).join(' / ')].filter(Boolean).join(' — ')
+    r.reason||''
   ]);
   if(rows.length){
     const rg=sh.getRange(5,1,rows.length,lastCol);rg.setValues(rows);templateBorder_(rg);rg.setVerticalAlignment('middle');
