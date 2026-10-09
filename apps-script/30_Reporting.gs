@@ -266,11 +266,20 @@ function decorateAttendanceTemplateData_(data) {
   });
   (data.summary||[]).forEach(r=>Object.assign(r,statByEmail[r.email]||{}));
 
+  const settings=getSettings_(),holidayByDate={},workingByDate={};
+  dates.forEach(dateKey=>{
+    holidayByDate[dateKey]=getPublicHolidayByDate_(dateKey)||null;
+    workingByDate[dateKey]=isWorkingDay_(dateKey,settings);
+  });
   data.users=users;
   data.usersByEmail=usersByEmail;
   data.dates=dates;
   data.detailMap=detailMap;
   data.abnormal=abnormal;
+  data.settings=settings;
+  data.holidayByDate=holidayByDate;
+  data.workingByDate=workingByDate;
+  data.summary=(data.summary||[]).slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
   return data;
 }
 
@@ -281,6 +290,13 @@ function resetAttendanceTemplateSheet_(ss,name) {
   sh.clear();
   sh.setHiddenGridlines(true);
   return sh;
+}
+
+function ensureAttendanceTemplateGrid_(sh,minRows,minCols) {
+  minRows=Math.max(1,Number(minRows)||1);minCols=Math.max(1,Number(minCols)||1);
+  const maxRows=sh.getMaxRows(),maxCols=sh.getMaxColumns();
+  if(maxRows<minRows)sh.insertRowsAfter(maxRows,minRows-maxRows);
+  if(maxCols<minCols)sh.insertColumnsAfter(maxCols,minCols-maxCols);
 }
 
 function templateBorder_(range) {
@@ -309,6 +325,7 @@ function styleTemplateHeader_(range) {
 
 function writeAttendanceSummaryTemplate_(sh,data) {
   const c=EK_REPORT_TEMPLATE_COLORS_,school=attendanceReportSchoolName_(),lastCol=12;
+  ensureAttendanceTemplateGrid_(sh,Math.max(10,5+(data.summary||[]).length),lastCol);
   sh.getRange(1,1,1,lastCol).merge();
   sh.getRange(1,1).setValue(school+' — Ringkasan Kehadiran');
   styleTemplateTitle_(sh.getRange(1,1,1,lastCol));sh.setRowHeight(1,38);
@@ -349,6 +366,7 @@ function writeAttendanceSummaryTemplate_(sh,data) {
 
 function writeAttendanceAbnormalTemplate_(sh,data) {
   const c=EK_REPORT_TEMPLATE_COLORS_,school=attendanceReportSchoolName_(),lastCol=12;
+  ensureAttendanceTemplateGrid_(sh,Math.max(10,5+(data.abnormal||[]).length),lastCol);
   sh.getRange(1,1,1,lastCol).merge();sh.getRange(1,1).setValue(school+' — Laporan Lewat / Balik Awal');
   styleTemplateTitle_(sh.getRange(1,1,1,lastCol));sh.setRowHeight(1,38);
   sh.getRange(2,1).setValue('Tempoh Statistik:').setFontWeight('bold').setFontColor(c.greenText);
@@ -385,7 +403,7 @@ function writeAttendanceAbnormalTemplate_(sh,data) {
 
 function templateCellForDate_(data,user,dateKey) {
   const detail=data.detailMap[attendanceReportDetailKey_(user.email,dateKey)]||null;
-  const holiday=getPublicHolidayByDate_(dateKey),working=isWorkingDay_(dateKey,getSettings_());
+  const holiday=(data.holidayByDate||{})[dateKey]||null,working=!!(data.workingByDate||{})[dateKey];
   if(!detail){
     if(holiday)return {text:'CUTI UMUM\n'+holiday.name,status:'CUTI UMUM',holiday:true};
     if(!working)return {text:'HUJUNG MINGGU',status:'HUJUNG MINGGU',holiday:true};
@@ -398,6 +416,7 @@ function templateCellForDate_(data,user,dateKey) {
 
 function writeAttendancePunchTemplate_(sh,data,dates) {
   const c=EK_REPORT_TEMPLATE_COLORS_,count=Math.max(1,dates.length),school=attendanceReportSchoolName_();
+  ensureAttendanceTemplateGrid_(sh,Math.max(10,2+(data.users||[]).length*4),count);
   sh.getRange(1,1,1,count).merge();sh.getRange(1,1).setValue(school+' — '+reportPeriodLabel_({fromDate:dates[0],toDate:dates[dates.length-1]})+'  Punch');
   sh.getRange(1,1,1,count).setFontWeight('bold').setFontSize(13).setHorizontalAlignment('center');
   let row=2;
@@ -419,6 +438,7 @@ function writeAttendancePunchTemplate_(sh,data,dates) {
 
 function writeAttendanceDailyTemplate_(sh,data,dates) {
   const c=EK_REPORT_TEMPLATE_COLORS_,half=16,school=attendanceReportSchoolName_();
+  ensureAttendanceTemplateGrid_(sh,Math.max(24,1+(data.users||[]).length*23),16);
   let row=1;
   (data.users||[]).forEach((u,index)=>{
     const left=dates.slice(0,half),right=dates.slice(half,31);
