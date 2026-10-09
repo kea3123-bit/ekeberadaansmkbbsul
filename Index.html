@@ -308,8 +308,8 @@
             <div id="tab-report-builder" class="tab-body">
               <section class="report-builder">
                 <div class="report-builder-head">
-                  <div><div class="eyebrow">Jana laporan</div><h3>Laporan Kehadiran / Keberadaan</h3><p>Pilih tempoh laporan. Sistem menggabungkan rekod kehadiran, lewat/balik awal, tidak hadir dan rekod keberadaan.</p></div>
-                  <div class="report-builder-actions"><button class="btn primary" type="button" onclick="generateAttendancePresenceReportPdfClient()">Jana PDF</button><button class="btn ghost" type="button" onclick="generateAttendancePresenceReportSheetClient()">Jana ke Sheet</button></div>
+                  <div><div class="eyebrow">Jana laporan</div><h3>Pakej Laporan Kehadiran</h3><p>Menggunakan format template Ringkasan, Lewat/Balik Awal, Log Punch dan Kehadiran Harian. Data Tidak Hadir dan Keberadaan digabungkan secara automatik.</p></div>
+                  <div class="report-builder-actions"><button class="btn primary" type="button" onclick="generateAttendancePresenceReportPdfClient()">Jana PDF Template</button><button class="btn ghost" type="button" onclick="generateAttendancePresenceReportSheetClient()">Jana Template ke Sheet</button></div>
                 </div>
                 <div class="report-builder-grid">
                   <label>Jenis laporan<select id="attendanceReportType" onchange="updateAttendanceReportPeriod()"><option value="DAILY">Harian</option><option value="WEEKLY">Mingguan</option><option value="MONTHLY">Bulanan</option><option value="RANGE">Tempoh</option></select></label>
@@ -319,6 +319,7 @@
                   <label id="attendanceReportToWrap" class="hidden">Hingga<input id="attendanceReportTo" type="date" onchange="updateAttendanceReportPeriod()"></label>
                 </div>
                 <div class="report-period-readout"><span>Tempoh laporan</span><b id="attendanceReportRangeText">—</b></div>
+                <p class="tiny report-template-note">Output: <b>Ringkasan</b> · <b>Lewat/Balik Awal</b> · <b>Log Punch</b> · <b>Kehadiran Harian</b>. Tempoh melebihi 31 hari akan dipecahkan kepada beberapa blok Punch/Harian.</p>
               </section>
             </div>
 
