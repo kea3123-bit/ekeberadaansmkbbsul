@@ -180,6 +180,7 @@ const EK_REPORT_TEMPLATE_COLORS_ = Object.freeze({
   subHeader:'#C9F5F5',
   border:'#2D9D68',
   orange:'#FFD09B',
+  yellow:'#FFF2CC',
   red:'#FF2A20',
   soft:'#F7FBFF',
   white:'#FFFFFF',
@@ -435,7 +436,8 @@ function templateCellForDate_(data,user,dateKey) {
   }
   if(detail.status==='TIDAK HADIR')return {text:'TIDAK HADIR'+(detail.reason?'\n'+detail.reason:''),status:detail.status,absence:true,detail};
   const times=[detail.inTime,detail.outTime,detail.inTime2,detail.outTime2].filter(Boolean);
-  return {text:times.length?times.join('\n'):(detail.status||'—'),status:detail.status,detail};
+  const missingOut=detail.inTime2 ? !detail.outTime2 : (!!detail.inTime && !detail.outTime);
+  return {text:times.length?times.join('\n'):(detail.status||'—'),status:detail.status,detail,missingOut};
 }
 
 function writeAttendancePunchTemplate_(sh,data,dates) {
@@ -452,7 +454,7 @@ function writeAttendancePunchTemplate_(sh,data,dates) {
     const cells=dates.map(d=>templateCellForDate_(data,u,d));
     sh.getRange(row+2,1,1,count).setValues([cells.map(x=>x.text)]).setWrap(true).setVerticalAlignment('top').setHorizontalAlignment('center');
     templateBorder_(sh.getRange(row+2,1,1,count));
-    const bgs=[cells.map(x=>x.holiday||x.absence?c.orange:(x.status&&(/LEWAT|BALIK AWAL/.test(x.status))?c.red:c.white))];
+    const bgs=[cells.map(x=>x.holiday||x.absence?c.orange:(x.missingOut?c.yellow:(x.status&&(/LEWAT|BALIK AWAL/.test(x.status))?c.red:c.white)))];
     sh.getRange(row+2,1,1,count).setBackgrounds(bgs);
     sh.setRowHeight(row+2,52);
     row+=4;
@@ -492,6 +494,11 @@ function writeAttendanceDailyTemplate_(sh,data,dates) {
         for(let j=0;j<8;j++)rowBg[offset+j]=(cell.holiday||cell.absence)?c.orange:c.white;
         if(cell.status&&/LEWAT/.test(cell.status)){rowBg[offset+2]=c.red;if(d.inTime2)rowBg[offset+4]=c.red;}
         if(cell.status&&/BALIK AWAL/.test(cell.status)){rowBg[offset+(d.inTime2?5:3)]=c.red;}
+        if(cell.missingOut){
+          // Highlight only the missing final return cell: Keluar 2 if Sesi 2
+          // exists, otherwise Keluar 1.
+          rowBg[offset+(d.inTime2?5:3)]=c.yellow;
+        }
       });
       values.push(rowVals);backgrounds.push(rowBg);
     }
@@ -500,7 +507,7 @@ function writeAttendanceDailyTemplate_(sh,data,dates) {
     const sum=(data.summary||[]).find(x=>x.email===u.email)||{};
     const summaryText='Hari bekerja: '+Number(sum.expectedDays||0)+'   Hari hadir: '+Number(sum.attendedDays||0)+'   Tidak hadir: '+Number(sum.absent||0)+'   Lewat: '+Number(sum.lateCount||0)+' ('+Number(sum.lateMinutes||0)+' min)   Balik awal: '+Number(sum.earlyCount||0)+' ('+Number(sum.earlyMinutes||0)+' min)   Keberadaan: '+Number(sum.presence||0);
     sh.getRange(row+19,1,1,16).merge().setValue(summaryText);templateBorder_(sh.getRange(row+19,1,1,16));
-    sh.getRange(row+20,1,1,16).merge().setValue('Catatan: '+school);templateBorder_(sh.getRange(row+20,1,1,16));
+    sh.getRange(row+20,1,1,16).merge().setValue('Petunjuk: Merah = Lewat / Balik Awal · Kuning = Tiada Waktu Balik · Jingga = Cuti / Tidak Hadir / Hujung Minggu');templateBorder_(sh.getRange(row+20,1,1,16));
     sh.getRange(row+21,1,1,16).merge().setValue('Disahkan oleh:                                      Diluluskan oleh:');templateBorder_(sh.getRange(row+21,1,1,16));
     row+=23;
   });
