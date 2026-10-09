@@ -275,6 +275,14 @@ jobs:
           grep -q "end.value=start.value" Scripts.html
           grep -q "absenceTodayShortcutDate" Scripts.html
           grep -q "absenceTomorrowShortcutDate" Scripts.html
+          # Admin attendance report pack follows the supplied Summary/Abnormal/Punch/Daily templates.
+          grep -q "function writeAttendanceSummaryTemplate_" apps-script/30_Reporting.gs
+          grep -q "function writeAttendanceAbnormalTemplate_" apps-script/30_Reporting.gs
+          grep -q "function writeAttendancePunchTemplate_" apps-script/30_Reporting.gs
+          grep -q "function writeAttendanceDailyTemplate_" apps-script/30_Reporting.gs
+          grep -q "function ensureAttendanceTemplateGrid_" apps-script/30_Reporting.gs
+          grep -q "Jana PDF Template" Index.html
+          grep -q "Jana Template ke Sheet" Index.html
           grep -q "submittedMs" apps-script/61_Absence.gs
           grep -q "\['Bil.','Nama','Jawatan','Kategori','Mod','Jenis','Tarikh / Tempoh','Masa','Status'\]" apps-script/61_Absence.gs
           grep -R -q 'EK_RUNTIME_ABSENCE_ROWS_' apps-script
