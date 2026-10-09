@@ -171,6 +171,332 @@ function buildAttendancePresencePeriodReport_(fromDate, toDate) {
 }
 
 
+// ---------- Attendance report templates ----------
+// Layout is adapted from the two reference workbooks supplied for eKeberadaan:
+// Summary Table / Abnormal Report / Punch / Daily Attendance.
+const EK_REPORT_TEMPLATE_COLORS_ = Object.freeze({
+  title:'#C9F5F5',
+  header:'#91C6F4',
+  subHeader:'#C9F5F5',
+  border:'#2D9D68',
+  orange:'#FFD09B',
+  red:'#FF2A20',
+  soft:'#F7FBFF',
+  white:'#FFFFFF',
+  greenText:'#26985E',
+  ink:'#172033'
+});
+
+function attendanceReportSchoolName_() {
+  const s=getSettings_();
+  return String(s.SCHOOL_NAME || 'e-Keberadaan').trim() || 'e-Keberadaan';
+}
+
+function reportPeriodLabel_(data) {
+  return data.fromDate===data.toDate ? data.fromDate : data.fromDate+' hingga '+data.toDate;
+}
+
+function reportTemplateChunk_(items,size) {
+  const out=[];size=Math.max(1,Number(size)||31);
+  for(let i=0;i<items.length;i+=size)out.push(items.slice(i,i+size));
+  return out;
+}
+
+function reportDayLabel_(dateKey) {
+  const names=['Ahd','Isn','Sel','Rab','Kha','Jum','Sab'];
+  const d=new Date(String(dateKey)+'T12:00:00');
+  return names[d.getDay()]||'';
+}
+
+function reportShortDate_(dateKey) {
+  const x=String(dateKey||'').split('-');
+  return x.length===3 ? x[2]+'/'+x[1] : String(dateKey||'');
+}
+
+function attendanceReportDetailKey_(email,dateKey) {
+  return normalizeEmail_(email)+'|'+String(dateKey||'');
+}
+
+function decorateAttendanceTemplateData_(data) {
+  data=data||{};
+  const fromDate=data.fromDate,toDate=data.toDate;
+  const users=getAllUsers_().filter(u=>u.active).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+  const usersByEmail={};users.forEach((u,index)=>{usersByEmail[u.email]=u;u._reportNumber=index+1;});
+  const dates=dateKeysBetween_(fromDate,toDate);
+  const detailMap={};
+  (data.detail||[]).forEach(r=>detailMap[attendanceReportDetailKey_(r.email,r.date)]=r);
+
+  // The existing review engine already stores the historical reference time
+  // used for LEWAT/BALIK AWAL, so report minutes remain consistent with the app.
+  try{ensureTimeReviewRowsForRange_(fromDate,toDate);}catch(e){}
+  const reviewRows=readTimeReviewRows_().filter(r=>r.date>=fromDate&&r.date<=toDate);
+  const abnormalMap={};
+  reviewRows.forEach(r=>{
+    const key=attendanceReportDetailKey_(r.email,r.date);
+    const detail=detailMap[key]||{};
+    if(!abnormalMap[key]){
+      const u=usersByEmail[r.email]||{};
+      abnormalMap[key]={
+        email:r.email,date:r.date,name:r.name||u.name||r.email,jobTitle:r.jobTitle||u.jobTitle||'',category:r.category||u.category||'',
+        inTime:detail.inTime||'',outTime:detail.outTime||'',inTime2:detail.inTime2||'',outTime2:detail.outTime2||'',
+        lateMinutes:0,earlyMinutes:0,lateSessions:[],earlySessions:[],reviewStatus:[],reason:detail.reason||''
+      };
+    }
+    const row=abnormalMap[key],actual=timeToMinutes_(r.recordTime),ref=timeToMinutes_(r.referenceTime),session=Number(r.session||1);
+    if(String(r.type||'').toUpperCase()==='LEWAT'){
+      if(Number.isFinite(actual)&&Number.isFinite(ref))row.lateMinutes+=Math.max(0,actual-ref);
+      if(!row.lateSessions.includes(session))row.lateSessions.push(session);
+    }else if(String(r.type||'').toUpperCase()==='BALIK AWAL'){
+      if(Number.isFinite(actual)&&Number.isFinite(ref))row.earlyMinutes+=Math.max(0,ref-actual);
+      if(!row.earlySessions.includes(session))row.earlySessions.push(session);
+    }
+    if(r.reviewStatus&&!row.reviewStatus.includes(r.reviewStatus))row.reviewStatus.push(r.reviewStatus);
+  });
+  const abnormal=Object.values(abnormalMap).sort((a,b)=>a.date.localeCompare(b.date)||a.name.localeCompare(b.name));
+
+  const statByEmail={};
+  users.forEach(u=>statByEmail[u.email]={attendedDays:0,lateCount:0,lateMinutes:0,earlyCount:0,earlyMinutes:0});
+  (data.detail||[]).forEach(r=>{
+    if((r.inTime||r.outTime||r.inTime2||r.outTime2)&&statByEmail[r.email])statByEmail[r.email].attendedDays++;
+  });
+  abnormal.forEach(r=>{
+    const st=statByEmail[r.email];if(!st)return;
+    if(r.lateMinutes>0||r.lateSessions.length){st.lateCount+=r.lateSessions.length||1;st.lateMinutes+=r.lateMinutes;}
+    if(r.earlyMinutes>0||r.earlySessions.length){st.earlyCount+=r.earlySessions.length||1;st.earlyMinutes+=r.earlyMinutes;}
+  });
+  (data.summary||[]).forEach(r=>Object.assign(r,statByEmail[r.email]||{}));
+
+  data.users=users;
+  data.usersByEmail=usersByEmail;
+  data.dates=dates;
+  data.detailMap=detailMap;
+  data.abnormal=abnormal;
+  return data;
+}
+
+function resetAttendanceTemplateSheet_(ss,name) {
+  let sh=ss.getSheetByName(name);
+  if(!sh)sh=ss.insertSheet(name);
+  try{sh.getDataRange().breakApart();}catch(e){}
+  sh.clear();
+  sh.setHiddenGridlines(true);
+  return sh;
+}
+
+function templateBorder_(range) {
+  range.setBorder(true,true,true,true,true,true,EK_REPORT_TEMPLATE_COLORS_.border,SpreadsheetApp.BorderStyle.SOLID);
+  return range;
+}
+
+function styleTemplateTitle_(range) {
+  range.setBackground(EK_REPORT_TEMPLATE_COLORS_.title)
+    .setFontColor(EK_REPORT_TEMPLATE_COLORS_.greenText)
+    .setFontWeight('bold')
+    .setFontSize(18)
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle');
+}
+
+function styleTemplateHeader_(range) {
+  templateBorder_(range);
+  range.setBackground(EK_REPORT_TEMPLATE_COLORS_.header)
+    .setFontColor(EK_REPORT_TEMPLATE_COLORS_.greenText)
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle')
+    .setWrap(true);
+}
+
+function writeAttendanceSummaryTemplate_(sh,data) {
+  const c=EK_REPORT_TEMPLATE_COLORS_,school=attendanceReportSchoolName_(),lastCol=12;
+  sh.getRange(1,1,1,lastCol).merge();
+  sh.getRange(1,1).setValue(school+' — Ringkasan Kehadiran');
+  styleTemplateTitle_(sh.getRange(1,1,1,lastCol));sh.setRowHeight(1,38);
+
+  sh.getRange(2,1).setValue('Tempoh Kehadiran:').setFontWeight('bold').setFontColor(c.greenText);
+  sh.getRange(2,2,1,4).merge().setValue(reportPeriodLabel_(data)).setFontWeight('bold').setFontColor(c.greenText);
+  sh.getRange(2,10,1,3).merge().setValue('Dijana: '+formatDateTime_(new Date())).setHorizontalAlignment('right');
+
+  const merges=['A3:A4','B3:B4','C3:C4','D3:E3','F3:G3','H3:I3','J3:J4','K3:K4','L3:L4'];
+  merges.forEach(a=>sh.getRange(a).merge());
+  sh.getRange('A3').setValue('Bil.');
+  sh.getRange('B3').setValue('Nama');
+  sh.getRange('C3').setValue('Jawatan / Kategori');
+  sh.getRange('D3').setValue('Kehadiran');
+  sh.getRange('D4:E4').setValues([['Hari Kerja','Hari Hadir']]);
+  sh.getRange('F3').setValue('Lewat');
+  sh.getRange('F4:G4').setValues([['Bil.','Min.']]);
+  sh.getRange('H3').setValue('Balik Awal');
+  sh.getRange('H4:I4').setValues([['Bil.','Min.']]);
+  sh.getRange('J3').setValue('Tidak Hadir\n(Hari)');
+  sh.getRange('K3').setValue('Keberadaan\n(Rekod)');
+  sh.getRange('L3').setValue('Catatan');
+  styleTemplateHeader_(sh.getRange(3,1,2,lastCol));
+
+  const rows=(data.summary||[]).map((r,i)=>[
+    i+1,r.name,[r.jobTitle,r.category].filter(Boolean).join(' / '),
+    r.expectedDays,Number(r.attendedDays||0),Number(r.lateCount||0),Number(r.lateMinutes||0),
+    Number(r.earlyCount||0),Number(r.earlyMinutes||0),r.absent,r.presence,''
+  ]);
+  if(rows.length){
+    const rg=sh.getRange(5,1,rows.length,lastCol);rg.setValues(rows);templateBorder_(rg);rg.setVerticalAlignment('middle');
+    sh.getRange(5,12,rows.length,1).setBackground(c.orange);
+  }
+  sh.setFrozenRows(4);
+  sh.setColumnWidth(1,48);sh.setColumnWidth(2,180);sh.setColumnWidth(3,210);
+  sh.setColumnWidths(4,8,82);sh.setColumnWidth(12,200);
+}
+
+function writeAttendanceAbnormalTemplate_(sh,data) {
+  const c=EK_REPORT_TEMPLATE_COLORS_,school=attendanceReportSchoolName_(),lastCol=12;
+  sh.getRange(1,1,1,lastCol).merge();sh.getRange(1,1).setValue(school+' — Laporan Lewat / Balik Awal');
+  styleTemplateTitle_(sh.getRange(1,1,1,lastCol));sh.setRowHeight(1,38);
+  sh.getRange(2,1).setValue('Tempoh Statistik:').setFontWeight('bold').setFontColor(c.greenText);
+  sh.getRange(2,2,1,4).merge().setValue(reportPeriodLabel_(data)).setFontWeight('bold').setFontColor(c.greenText);
+
+  ['A3:A4','B3:B4','C3:C4','D3:D4','E3:F3','G3:H3','I3:I4','J3:J4','K3:K4','L3:L4'].forEach(a=>sh.getRange(a).merge());
+  sh.getRange('A3').setValue('Bil.');sh.getRange('B3').setValue('Nama');sh.getRange('C3').setValue('Jawatan / Kategori');sh.getRange('D3').setValue('Tarikh');
+  sh.getRange('E3').setValue('Sesi 1');sh.getRange('E4:F4').setValues([['Masuk','Keluar']]);
+  sh.getRange('G3').setValue('Sesi 2');sh.getRange('G4:H4').setValues([['Masuk','Keluar']]);
+  sh.getRange('I3').setValue('Lewat\n(Min.)');sh.getRange('J3').setValue('Balik Awal\n(Min.)');sh.getRange('K3').setValue('Jumlah\n(Min.)');sh.getRange('L3').setValue('Catatan');
+  styleTemplateHeader_(sh.getRange(3,1,2,lastCol));
+
+  const rows=(data.abnormal||[]).map((r,i)=>[
+    i+1,r.name,[r.jobTitle,r.category].filter(Boolean).join(' / '),r.date,
+    r.inTime||'',r.outTime||'',r.inTime2||'',r.outTime2||'',
+    r.lateMinutes,r.earlyMinutes,r.lateMinutes+r.earlyMinutes,
+    [r.reason,(r.reviewStatus||[]).join(' / ')].filter(Boolean).join(' — ')
+  ]);
+  if(rows.length){
+    const rg=sh.getRange(5,1,rows.length,lastCol);rg.setValues(rows);templateBorder_(rg);rg.setVerticalAlignment('middle');
+    const bg=Array.from({length:rows.length},()=>Array(lastCol).fill(c.white));
+    (data.abnormal||[]).forEach((r,i)=>{
+      (r.lateSessions||[]).forEach(session=>{bg[i][session===2?6:4]=c.red;});
+      (r.earlySessions||[]).forEach(session=>{bg[i][session===2?7:5]=c.red;});
+    });
+    rg.setBackgrounds(bg);
+  }else{
+    sh.getRange(5,1,1,lastCol).merge().setValue('Tiada rekod Lewat / Balik Awal dalam tempoh ini.').setHorizontalAlignment('center');
+    templateBorder_(sh.getRange(5,1,1,lastCol));
+  }
+  sh.setFrozenRows(4);sh.setColumnWidth(1,48);sh.setColumnWidth(2,180);sh.setColumnWidth(3,210);sh.setColumnWidth(4,90);
+  sh.setColumnWidths(5,7,82);sh.setColumnWidth(12,250);
+}
+
+function templateCellForDate_(data,user,dateKey) {
+  const detail=data.detailMap[attendanceReportDetailKey_(user.email,dateKey)]||null;
+  const holiday=getPublicHolidayByDate_(dateKey),working=isWorkingDay_(dateKey,getSettings_());
+  if(!detail){
+    if(holiday)return {text:'CUTI UMUM\n'+holiday.name,status:'CUTI UMUM',holiday:true};
+    if(!working)return {text:'HUJUNG MINGGU',status:'HUJUNG MINGGU',holiday:true};
+    return {text:'—',status:'BELUM HADIR'};
+  }
+  if(detail.status==='TIDAK HADIR')return {text:'TIDAK HADIR'+(detail.reason?'\n'+detail.reason:''),status:detail.status,absence:true,detail};
+  const times=[detail.inTime,detail.outTime,detail.inTime2,detail.outTime2].filter(Boolean);
+  return {text:times.length?times.join('\n'):(detail.status||'—'),status:detail.status,detail};
+}
+
+function writeAttendancePunchTemplate_(sh,data,dates) {
+  const c=EK_REPORT_TEMPLATE_COLORS_,count=Math.max(1,dates.length),school=attendanceReportSchoolName_();
+  sh.getRange(1,1,1,count).merge();sh.getRange(1,1).setValue(school+' — '+reportPeriodLabel_({fromDate:dates[0],toDate:dates[dates.length-1]})+'  Punch');
+  sh.getRange(1,1,1,count).setFontWeight('bold').setFontSize(13).setHorizontalAlignment('center');
+  let row=2;
+  (data.users||[]).forEach((u,index)=>{
+    sh.getRange(row,1,1,count).merge().setValue('Bil:'+(index+1)+'   Nama:'+u.name+'   Jawatan:'+(u.jobTitle||'—')+'   Kategori:'+u.category);
+    templateBorder_(sh.getRange(row,1,1,count));sh.getRange(row,1).setFontWeight('bold').setBackground(c.soft);
+    const headers=dates.map(d=>reportShortDate_(d)+'\n'+reportDayLabel_(d));
+    sh.getRange(row+1,1,1,count).setValues([headers]);styleTemplateHeader_(sh.getRange(row+1,1,1,count));
+    const cells=dates.map(d=>templateCellForDate_(data,u,d));
+    sh.getRange(row+2,1,1,count).setValues([cells.map(x=>x.text)]).setWrap(true).setVerticalAlignment('top').setHorizontalAlignment('center');
+    templateBorder_(sh.getRange(row+2,1,1,count));
+    const bgs=[cells.map(x=>x.holiday||x.absence?c.orange:(x.status&&(/LEWAT|BALIK AWAL/.test(x.status))?c.red:c.white))];
+    sh.getRange(row+2,1,1,count).setBackgrounds(bgs);
+    sh.setRowHeight(row+2,52);
+    row+=4;
+  });
+  sh.setFrozenRows(1);sh.setColumnWidths(1,count,68);
+}
+
+function writeAttendanceDailyTemplate_(sh,data,dates) {
+  const c=EK_REPORT_TEMPLATE_COLORS_,half=16,school=attendanceReportSchoolName_();
+  let row=1;
+  (data.users||[]).forEach((u,index)=>{
+    const left=dates.slice(0,half),right=dates.slice(half,31);
+    sh.getRange(row,1,1,3).merge().setValue('Bil:'+(index+1));
+    sh.getRange(row,4,1,3).merge().setValue('Nama:'+u.name);
+    sh.getRange(row,7,1,3).merge().setValue('Jawatan/Kategori:'+[u.jobTitle,u.category].filter(Boolean).join(' / '));
+    sh.getRange(row,10,1,7).merge().setValue('Tempoh:'+reportPeriodLabel_({fromDate:dates[0],toDate:dates[dates.length-1]}));
+    sh.getRange(row,1,1,16).setBackground(c.header).setFontWeight('bold');templateBorder_(sh.getRange(row,1,1,16));
+
+    sh.getRange(row+1,3,1,2).merge().setValue('Sesi 1');sh.getRange(row+1,5,1,2).merge().setValue('Sesi 2');sh.getRange(row+1,7,1,2).merge().setValue('Status / Catatan');
+    sh.getRange(row+1,11,1,2).merge().setValue('Sesi 1');sh.getRange(row+1,13,1,2).merge().setValue('Sesi 2');sh.getRange(row+1,15,1,2).merge().setValue('Status / Catatan');
+    sh.getRange(row+1,1,1,16).setBackground(c.subHeader).setHorizontalAlignment('center');templateBorder_(sh.getRange(row+1,1,1,16));
+
+    const hdr=['Tarikh','Hari','Masuk','Keluar','Masuk','Keluar','Status','Catatan','Tarikh','Hari','Masuk','Keluar','Masuk','Keluar','Status','Catatan'];
+    sh.getRange(row+2,1,1,16).setValues([hdr]);styleTemplateHeader_(sh.getRange(row+2,1,1,16));
+
+    const values=[],backgrounds=[];
+    for(let i=0;i<half;i++){
+      const pair=[left[i]||'',right[i]||''],rowVals=[],rowBg=[];
+      pair.forEach((dateKey,side)=>{
+        const offset=side*8;
+        if(!dateKey){for(let j=0;j<8;j++){rowVals[offset+j]='';rowBg[offset+j]=c.white;}return;}
+        const cell=templateCellForDate_(data,u,dateKey),d=cell.detail||{};
+        rowVals[offset]=reportShortDate_(dateKey);rowVals[offset+1]=reportDayLabel_(dateKey);
+        rowVals[offset+2]=d.inTime||'';rowVals[offset+3]=d.outTime||'';rowVals[offset+4]=d.inTime2||'';rowVals[offset+5]=d.outTime2||'';
+        rowVals[offset+6]=cell.status||'';rowVals[offset+7]=d.reason||((cell.holiday||cell.absence)?cell.text:'');
+        for(let j=0;j<8;j++)rowBg[offset+j]=(cell.holiday||cell.absence)?c.orange:c.white;
+        if(cell.status&&/LEWAT/.test(cell.status)){rowBg[offset+2]=c.red;if(d.inTime2)rowBg[offset+4]=c.red;}
+        if(cell.status&&/BALIK AWAL/.test(cell.status)){rowBg[offset+(d.inTime2?5:3)]=c.red;}
+      });
+      values.push(rowVals);backgrounds.push(rowBg);
+    }
+    const body=sh.getRange(row+3,1,half,16);body.setValues(values);body.setBackgrounds(backgrounds);body.setWrap(true).setVerticalAlignment('middle');templateBorder_(body);
+
+    const sum=(data.summary||[]).find(x=>x.email===u.email)||{};
+    const summaryText='Hari bekerja: '+Number(sum.expectedDays||0)+'   Hari hadir: '+Number(sum.attendedDays||0)+'   Tidak hadir: '+Number(sum.absent||0)+'   Lewat: '+Number(sum.lateCount||0)+' ('+Number(sum.lateMinutes||0)+' min)   Balik awal: '+Number(sum.earlyCount||0)+' ('+Number(sum.earlyMinutes||0)+' min)   Keberadaan: '+Number(sum.presence||0);
+    sh.getRange(row+19,1,1,16).merge().setValue(summaryText);templateBorder_(sh.getRange(row+19,1,1,16));
+    sh.getRange(row+20,1,1,16).merge().setValue('Catatan: '+school);templateBorder_(sh.getRange(row+20,1,1,16));
+    sh.getRange(row+21,1,1,16).merge().setValue('Disahkan oleh:                                      Diluluskan oleh:');templateBorder_(sh.getRange(row+21,1,1,16));
+    row+=23;
+  });
+  sh.setColumnWidths(1,16,72);
+  sh.setColumnWidth(7,95);sh.setColumnWidth(8,180);sh.setColumnWidth(15,95);sh.setColumnWidth(16,180);
+}
+
+function writeAttendanceTemplatePack_(ss,data,prefix) {
+  prefix=String(prefix||'').trim();
+  const name=s=>prefix?prefix+' '+s:s;
+  const names=[];
+  let sh=resetAttendanceTemplateSheet_(ss,name('RINGKASAN'));writeAttendanceSummaryTemplate_(sh,data);names.push(sh.getName());
+  sh=resetAttendanceTemplateSheet_(ss,name('LEWAT AWAL'));writeAttendanceAbnormalTemplate_(sh,data);names.push(sh.getName());
+
+  const chunks=reportTemplateChunk_(data.dates||[],31);
+  chunks.forEach((dates,i)=>{
+    const suffix=chunks.length>1?' '+String(i+1).padStart(2,'0'):'';
+    let p=resetAttendanceTemplateSheet_(ss,name('PUNCH')+suffix);writeAttendancePunchTemplate_(p,data,dates);names.push(p.getName());
+    let d=resetAttendanceTemplateSheet_(ss,name('HARIAN')+suffix);writeAttendanceDailyTemplate_(d,data,dates);names.push(d.getName());
+  });
+  return names;
+}
+
+function buildTemporaryAttendanceTemplateSpreadsheet_(data) {
+  const name='eKeberadaan Laporan '+data.fromDate+' '+data.toDate;
+  const ss=SpreadsheetApp.create(name);
+  const first=ss.getSheets()[0];first.setName('RINGKASAN');
+  writeAttendanceSummaryTemplate_(first,data);
+  const abnormal=ss.insertSheet('LEWAT AWAL');writeAttendanceAbnormalTemplate_(abnormal,data);
+  const chunks=reportTemplateChunk_(data.dates||[],31);
+  chunks.forEach((dates,i)=>{
+    const suffix=chunks.length>1?' '+String(i+1).padStart(2,'0'):'';
+    const p=ss.insertSheet('PUNCH'+suffix);writeAttendancePunchTemplate_(p,data,dates);
+    const d=ss.insertSheet('HARIAN'+suffix);writeAttendanceDailyTemplate_(d,data,dates);
+  });
+  SpreadsheetApp.flush();
+  return ss;
+}
+
+
 function setPdfLandscape_(body) {
   // A4 landscape in points (297 mm × 210 mm at 72 pt/in).
   // Apply modest margins so wide report tables have more usable space.
@@ -185,73 +511,37 @@ function setPdfLandscape_(body) {
 
 function generateAttendancePresenceReportPdf(token, payload) {
   requireSessionAdmin_(token);
-  const range = normalizeAttendancePresenceRange_(payload);
-  const data = buildAttendancePresencePeriodReport_(range.fromDate, range.toDate);
-  const periodLabel = data.fromDate === data.toDate ? data.fromDate : `${data.fromDate} hingga ${data.toDate}`;
-  const fileName = `Laporan_Kehadiran_Keberadaan_${data.fromDate}_${data.toDate}.pdf`;
-  const doc = DocumentApp.create(fileName.replace(/\.pdf$/i,''));
-  const body = doc.getBody();
-  setPdfLandscape_(body);
-  body.appendParagraph('Laporan Kehadiran / Keberadaan').setHeading(DocumentApp.ParagraphHeading.HEADING1);
-  body.appendParagraph(`Tempoh: ${periodLabel} · Hari bekerja dalam tempoh: ${data.workingDays}`);
-  body.appendParagraph(`Dijana: ${formatDateTime_(new Date())}`);
-
-  body.appendParagraph('Ringkasan Pegawai').setHeading(DocumentApp.ParagraphHeading.HEADING2);
-  const summaryHeaders = ['Nama','Jawatan / Kategori','Hari Kerja','Hadir','Lewat','Balik Awal','Tidak Hadir','Belum Hadir','Keberadaan'];
-  const summaryRows = data.summary.map(r => [r.name,[r.jobTitle,r.category].filter(Boolean).join(' / '),r.expectedDays,r.normal,r.late,r.early,r.absent,r.pending,r.presence]);
-  const summaryTable = body.appendTable([summaryHeaders].concat(summaryRows.map(r => r.map(v => String(v == null ? '' : v)))));
-  if (summaryTable.getNumRows()) { const hr=summaryTable.getRow(0); for(let c=0;c<hr.getNumCells();c++) hr.getCell(c).editAsText().setBold(true); }
-
-  const exceptions = data.detail.filter(r => r.status !== 'HADIR' || r.reason);
-  body.appendParagraph('Butiran Kehadiran Yang Perlu Perhatian').setHeading(DocumentApp.ParagraphHeading.HEADING2);
-  if (exceptions.length) {
-    const h=['Tarikh','Nama','Status','Masuk','Balik','Masuk 2','Balik 2','Sumber / Sebab'];
-    const rows=exceptions.map(r=>[r.date,r.name,r.status,r.inTime||'—',r.outTime||'—',r.inTime2||'—',r.outTime2||'—',[r.source,r.reason].filter(Boolean).join(' — ')]);
-    const t=body.appendTable([h].concat(rows.map(r=>r.map(v=>String(v==null?'':v))))); const hr=t.getRow(0);for(let c=0;c<hr.getNumCells();c++)hr.getCell(c).editAsText().setBold(true);
-  } else body.appendParagraph('Tiada rekod lewat, balik awal, tidak hadir atau rekod lain yang memerlukan perhatian dalam tempoh ini.');
-
-  body.appendParagraph('Rekod Keberadaan').setHeading(DocumentApp.ParagraphHeading.HEADING2);
-  if (data.presence.length) {
-    const h=['Nama','Jenis','Tarikh','Masa','Status','Catatan'];
-    const rows=data.presence.map(r=>[r.name,r.type,r.startDate===r.endDate?r.startDate:`${r.startDate} - ${r.endDate}`,`${r.startTime||'—'} - ${r.endTime||'—'}`,r.status,r.note||'']);
-    const t=body.appendTable([h].concat(rows.map(r=>r.map(v=>String(v==null?'':v))))); const hr=t.getRow(0);for(let c=0;c<hr.getNumCells();c++)hr.getCell(c).editAsText().setBold(true);
-  } else body.appendParagraph('Tiada rekod keberadaan dalam tempoh ini.');
-
-  doc.saveAndClose();
-  const f=DriveApp.getFileById(doc.getId());
-  const blob=f.getAs(MimeType.PDF).setName(fileName);f.setTrashed(true);
-  audit_('JANA_LAPORAN_KEHADIRAN_KEBERADAAN_PDF',periodLabel,`Ringkasan=${data.summary.length}; detail=${data.detail.length}; keberadaan=${data.presence.length}`);
+  const range=normalizeAttendancePresenceRange_(payload);
+  const data=decorateAttendanceTemplateData_(buildAttendancePresencePeriodReport_(range.fromDate,range.toDate));
+  const fileName='Laporan_eKeberadaan_'+data.fromDate+'_'+data.toDate+'.pdf';
+  const temp=buildTemporaryAttendanceTemplateSpreadsheet_(data);
+  let blob;
+  try{
+    Utilities.sleep(700);
+    blob=DriveApp.getFileById(temp.getId()).getAs(MimeType.PDF).setName(fileName);
+  }finally{
+    try{DriveApp.getFileById(temp.getId()).setTrashed(true);}catch(e){}
+  }
+  audit_('JANA_LAPORAN_TEMPLATE_PDF',reportPeriodLabel_(data),'Template=Ringkasan/LewatAwal/Punch/Harian; pegawai='+data.users.length);
   return {fileName,mimeType:'application/pdf',base64:Utilities.base64Encode(blob.getBytes())};
 }
 
 function generateAttendancePresenceReportSheet(token, payload) {
   requireSessionAdmin_(token);
-  const range = normalizeAttendancePresenceRange_(payload);
-  const data = buildAttendancePresencePeriodReport_(range.fromDate, range.toDate);
-  const ss = getSpreadsheet_();
-  const sheetName = 'LAPORAN KEHADIRAN';
-  const sh = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
-  sh.clear();
-  sh.getRange(1,1).setValue('LAPORAN KEHADIRAN / KEBERADAAN').setFontWeight('bold').setFontSize(14);
-  sh.getRange(2,1).setValue(`Tempoh: ${data.fromDate}${data.fromDate===data.toDate?'':` hingga ${data.toDate}`} · Hari bekerja: ${data.workingDays}`);
-  sh.getRange(4,1).setValue('RINGKASAN PEGAWAI').setFontWeight('bold');
-  const sumHeaders=['Nama','Emel','Jawatan','Kategori','Hari Kerja','Hadir','Lewat','Balik Awal','Tidak Hadir','Belum Hadir','Keberadaan'];
-  sh.getRange(5,1,1,sumHeaders.length).setValues([sumHeaders]).setFontWeight('bold');
-  if(data.summary.length) sh.getRange(6,1,data.summary.length,sumHeaders.length).setValues(data.summary.map(r=>[r.name,r.email,r.jobTitle,r.category,r.expectedDays,r.normal,r.late,r.early,r.absent,r.pending,r.presence]));
-
-  let row=6+data.summary.length+2;
-  sh.getRange(row,1).setValue('BUTIRAN KEHADIRAN').setFontWeight('bold');row++;
-  const detailHeaders=['Tarikh','Nama','Emel','Jawatan','Kategori','Status','Masuk 1','Balik 1','Masuk 2','Balik 2','Sumber','Sebab'];
-  sh.getRange(row,1,1,detailHeaders.length).setValues([detailHeaders]).setFontWeight('bold');row++;
-  if(data.detail.length){sh.getRange(row,1,data.detail.length,detailHeaders.length).setValues(data.detail.map(r=>[r.date,r.name,r.email,r.jobTitle,r.category,r.status,r.inTime,r.outTime,r.inTime2,r.outTime2,r.source,r.reason]));row+=data.detail.length;}
-
-  row+=2;sh.getRange(row,1).setValue('REKOD KEBERADAAN').setFontWeight('bold');row++;
-  const pHeaders=['Nama','Emel','Jawatan','Kategori','Jenis','Tarikh Mula','Tarikh Akhir','Masa Mula','Masa Akhir','Status','Catatan','Disemak Oleh'];
-  sh.getRange(row,1,1,pHeaders.length).setValues([pHeaders]).setFontWeight('bold');row++;
-  if(data.presence.length) sh.getRange(row,1,data.presence.length,pHeaders.length).setValues(data.presence.map(r=>[r.name,r.email,r.jobTitle,r.category,r.type,r.startDate,r.endDate,r.startTime,r.endTime,r.status,r.note,r.reviewedBy]));
-  sh.autoResizeColumns(1,12);sh.setFrozenRows(5);
-  audit_('JANA_LAPORAN_KEHADIRAN_KEBERADAAN_SHEET',`${data.fromDate}-${data.toDate}`,`Detail=${data.detail.length}; keberadaan=${data.presence.length}`);
-  return {ok:true,sheetName,fromDate:data.fromDate,toDate:data.toDate,summaryCount:data.summary.length,detailCount:data.detail.length,presenceCount:data.presence.length};
+  const range=normalizeAttendancePresenceRange_(payload);
+  const data=decorateAttendanceTemplateData_(buildAttendancePresencePeriodReport_(range.fromDate,range.toDate));
+  const ss=getSpreadsheet_();
+  const sheetNames=writeAttendanceTemplatePack_(ss,data,'LAP');
+  audit_('JANA_LAPORAN_TEMPLATE_SHEET',reportPeriodLabel_(data),'Sheets='+sheetNames.join(',')+'; pegawai='+data.users.length);
+  return {
+    ok:true,
+    sheetName:sheetNames[0]||'LAP RINGKASAN',
+    sheetNames,
+    fromDate:data.fromDate,
+    toDate:data.toDate,
+    summaryCount:data.summary.length,
+    abnormalCount:data.abnormal.length
+  };
 }
 
 function writeReportSheet_(dateKey, report) {
