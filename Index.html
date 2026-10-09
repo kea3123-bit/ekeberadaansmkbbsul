@@ -308,7 +308,7 @@
             <div id="tab-report-builder" class="tab-body">
               <section class="report-builder">
                 <div class="report-builder-head">
-                  <div><div class="eyebrow">Jana laporan</div><h3>Pakej Laporan Kehadiran</h3><p>Menggunakan format template Ringkasan, Lewat/Balik Awal, Log Punch dan Kehadiran Harian. Data Tidak Hadir dan Keberadaan digabungkan secara automatik.</p></div>
+                  <div><div class="eyebrow">Jana laporan</div><h3>Pakej Laporan Kehadiran</h3><p>Menggunakan format Ringkasan, Lewat/Balik Awal, Laporan Perakam Waktu dan Laporan Individu. Data Tidak Hadir dan Keberadaan digabungkan secara automatik.</p></div>
                   <div class="report-builder-actions"><button class="btn primary" type="button" onclick="generateAttendancePresenceReportPdfClient()">Jana PDF Template</button><button class="btn ghost" type="button" onclick="generateAttendancePresenceReportSheetClient()">Jana Template ke Sheet</button></div>
                 </div>
                 <div class="report-builder-grid">
@@ -319,7 +319,7 @@
                   <label id="attendanceReportToWrap" class="hidden">Hingga<input id="attendanceReportTo" type="date" onchange="updateAttendanceReportPeriod()"></label>
                 </div>
                 <div class="report-period-readout"><span>Tempoh laporan</span><b id="attendanceReportRangeText">—</b></div>
-                <p class="tiny report-template-note">Output: <b>Ringkasan</b> · <b>Lewat/Balik Awal</b> · <b>Log Punch</b> · <b>Kehadiran Harian</b>. Tempoh melebihi 31 hari akan dipecahkan kepada beberapa blok Punch/Harian.</p>
+                <p class="tiny report-template-note">Output: <b>Ringkasan</b> · <b>Lewat/Balik Awal</b> · <b>Laporan Perakam Waktu</b> · <b>Laporan Individu</b>. Dalam PDF, blok Perakam Waktu tidak memisahkan nama daripada jadual, dan setiap laporan individu menggunakan satu halaman sendiri.</p>
               </section>
             </div>
 
