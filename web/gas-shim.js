@@ -189,19 +189,44 @@
     const buttonState=startRequestButton(takeActionButton());
     beginGlobalLoading();
 
-    // Punch melibatkan GPS, semakan Sheet dan kemungkinan cold-start Apps Script.
-    // Beri ruang lebih panjang daripada RPC biasa supaya frontend tidak melaporkan
-    // timeout palsu selepas backend sudah menerima/menulis rekod.
-    const requestTimeoutMs=method==='punch'?Math.max(timeoutMs,60000):timeoutMs;
+    // Different RPC classes have very different execution costs. In particular,
+    // the attendance template report can create multiple sheets, hundreds of
+    // formatted ranges and a PDF. Treating that work like a normal 30-second
+    // RPC caused a false "backend not responding" error while Apps Script was
+    // still legitimately generating the file.
+    const longReportMethods=new Set([
+      'generateAttendancePresenceReportPdf',
+      'generateAttendancePresenceReportSheet'
+    ]);
+    const reportMethods=new Set([
+      'generateAbsencePresencePdf',
+      'generatePublicAbsencePresencePdf',
+      'generateTimeReviewPdf',
+      'generateReportSheet',
+      'adminSyncProfilePhotos'
+    ]);
+    const requestTimeoutMs=longReportMethods.has(method)
+      ? Math.max(timeoutMs,300000)
+      : reportMethods.has(method)
+        ? Math.max(timeoutMs,120000)
+        : method==='punch'
+          ? Math.max(timeoutMs,60000)
+          : timeoutMs;
     const timer=setTimeout(()=>{
       const p=pending.get(id);
       if(!p)return;
       pending.delete(id);
       cleanupRequest(p);
       ready=false;
-      failure(new Error(method==='punch'
-        ? 'Rekod waktu mengambil masa terlalu lama. Jangan tekan berulang kali; muat semula dahulu untuk semak sama ada rekod sudah diterima.'
-        : 'Backend tidak memberi respons. Semak deployment Apps Script atau sambungan internet.'));
+      let message='Backend tidak memberi respons. Semak deployment Apps Script atau sambungan internet.';
+      if(method==='punch'){
+        message='Rekod waktu mengambil masa terlalu lama. Jangan tekan berulang kali; segar semula dahulu untuk semak sama ada rekod sudah diterima.';
+      }else if(longReportMethods.has(method)){
+        message='Penjanaan laporan melebihi 5 minit. Jangan jana sekali lagi; semak Sheet/Drive dahulu kerana Apps Script mungkin sudah menyiapkan laporan.';
+      }else if(reportMethods.has(method)){
+        message='Penjanaan laporan mengambil masa terlalu lama. Cuba semula selepas semak sambungan dan deployment Apps Script.';
+      }
+      failure(new Error(message));
     },requestTimeoutMs);
 
     pending.set(id,{success,failure,timer,frame,form,buttonState,cleaned:false});
