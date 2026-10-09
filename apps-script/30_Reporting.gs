@@ -571,8 +571,9 @@ function writeAttendanceDailySinglePage_(sh,data,dates,user,index) {
   styleTemplateHeader_(sh.getRange(3,1,1,16));
   sh.getRange(20,1,1,16).merge();sh.getRange(21,1,1,16).merge();sh.getRange(22,1,1,16).merge();
   templateBorder_(sh.getRange(1,1,22,16));
-  sh.setColumnWidths(1,16,58);
-  sh.setColumnWidth(7,82);sh.setColumnWidth(8,145);sh.setColumnWidth(15,82);sh.setColumnWidth(16,145);
+  sh.getRange(2,1,21,16).setFontSize(7);
+  sh.setColumnWidths(1,16,50);
+  sh.setColumnWidth(7,74);sh.setColumnWidth(8,120);sh.setColumnWidth(15,74);sh.setColumnWidth(16,120);
   sh.setRowHeights(4,16,22);
   sh.setRowHeight(1,30);sh.setRowHeight(2,26);sh.setRowHeight(3,28);
 }
@@ -607,13 +608,18 @@ function buildTemporaryAttendanceTemplateSpreadsheet_(data) {
     // Keep every employee name together with their Perakam Waktu table.
     // Six compact employee blocks fit comfortably on one landscape PDF page;
     // separate sheets act as explicit page boundaries for Drive PDF export.
-    const userPages=reportTemplateChunk_(data.users||[],6);
+    const userPages=reportTemplateChunk_(data.users||[],5);
     userPages.forEach(users=>{
       perakamPage++;
       const pageData=Object.assign({},data,{users});
       const sheetName='PERAKAM '+String(perakamPage).padStart(2,'0');
       const p=ss.insertSheet(sheetName);
       writeAttendancePunchTemplate_(p,pageData,dates);
+      // Keep the whole Perakam Waktu block inside one landscape page.
+      // 31 date columns × 38 px remains within an A4-landscape printable width.
+      p.setColumnWidths(1,Math.max(1,dates.length),38);
+      const punchRows=Math.max(1,p.getLastRow()-2);
+      p.getRange(3,1,punchRows,Math.max(1,dates.length)).setFontSize(7);
     });
 
     // Individual report: one employee per sheet/page. The template is only
