@@ -444,10 +444,12 @@ function templateCellForDate_(data,user,dateKey) {
 
 function writeAttendancePunchTemplate_(sh,data,dates) {
   const c=EK_REPORT_TEMPLATE_COLORS_,count=Math.max(1,dates.length),school=attendanceReportSchoolName_();
-  ensureAttendanceTemplateGrid_(sh,Math.max(10,2+(data.users||[]).length*4),count);
-  sh.getRange(1,1,1,count).merge();sh.getRange(1,1).setValue(school+' — '+reportPeriodLabel_({fromDate:dates[0],toDate:dates[dates.length-1]})+'  Punch');
-  sh.getRange(1,1,1,count).setFontWeight('bold').setFontSize(13).setHorizontalAlignment('center');
-  let row=2;
+  ensureAttendanceTemplateGrid_(sh,Math.max(12,3+(data.users||[]).length*4),count);
+  sh.getRange(1,1,1,count).merge();sh.getRange(1,1).setValue('Laporan Perakam Waktu');
+  sh.getRange(1,1,1,count).setFontWeight('bold').setFontSize(15).setHorizontalAlignment('center').setBackground(c.title).setFontColor(c.greenText);
+  sh.getRange(2,1,1,count).merge();sh.getRange(2,1).setValue(school+' · '+reportPeriodLabel_({fromDate:dates[0],toDate:dates[dates.length-1]}));
+  sh.getRange(2,1,1,count).setFontWeight('bold').setHorizontalAlignment('center').setBackground(c.soft);
+  let row=3;
   (data.users||[]).forEach((u,index)=>{
     sh.getRange(row,1,1,count).merge().setValue('Bil:'+(index+1)+'   Nama:'+u.name+'   Jawatan:'+(u.jobTitle||'—')+'   Kategori:'+u.category);
     templateBorder_(sh.getRange(row,1,1,count));sh.getRange(row,1).setFontWeight('bold').setBackground(c.soft);
@@ -461,7 +463,7 @@ function writeAttendancePunchTemplate_(sh,data,dates) {
     sh.setRowHeight(row+2,52);
     row+=4;
   });
-  sh.setFrozenRows(1);sh.setColumnWidths(1,count,68);
+  sh.setFrozenRows(2);sh.setColumnWidths(1,count,68);
 }
 
 function writeAttendanceDailyTemplate_(sh,data,dates) {
@@ -527,8 +529,8 @@ function writeAttendanceTemplatePack_(ss,data,prefix) {
   const chunks=reportTemplateChunk_(data.dates||[],31);
   chunks.forEach((dates,i)=>{
     const suffix=chunks.length>1?' '+String(i+1).padStart(2,'0'):'';
-    let p=resetAttendanceTemplateSheet_(ss,name('PUNCH')+suffix);writeAttendancePunchTemplate_(p,data,dates);names.push(p.getName());
-    let d=resetAttendanceTemplateSheet_(ss,name('HARIAN')+suffix);writeAttendanceDailyTemplate_(d,data,dates);names.push(d.getName());
+    let p=resetAttendanceTemplateSheet_(ss,name('PERAKAM WAKTU')+suffix);writeAttendancePunchTemplate_(p,data,dates);names.push(p.getName());
+    let d=resetAttendanceTemplateSheet_(ss,name('INDIVIDU')+suffix);writeAttendanceDailyTemplate_(d,data,dates);names.push(d.getName());
   });
   return names;
 }
@@ -539,11 +541,33 @@ function buildTemporaryAttendanceTemplateSpreadsheet_(data) {
   const first=ss.getSheets()[0];first.setName('RINGKASAN');
   writeAttendanceSummaryTemplate_(first,data);
   const abnormal=ss.insertSheet('LEWAT AWAL');writeAttendanceAbnormalTemplate_(abnormal,data);
-  const chunks=reportTemplateChunk_(data.dates||[],31);
-  chunks.forEach((dates,i)=>{
-    const suffix=chunks.length>1?' '+String(i+1).padStart(2,'0'):'';
-    const p=ss.insertSheet('PUNCH'+suffix);writeAttendancePunchTemplate_(p,data,dates);
-    const d=ss.insertSheet('HARIAN'+suffix);writeAttendanceDailyTemplate_(d,data,dates);
+
+  const dateChunks=reportTemplateChunk_(data.dates||[],31);
+  let perakamPage=0,individualPage=0;
+
+  dateChunks.forEach((dates,dateIndex)=>{
+    // Keep every employee name together with their Perakam Waktu table.
+    // Six compact employee blocks fit comfortably on one landscape PDF page;
+    // separate sheets act as explicit page boundaries for Drive PDF export.
+    const userPages=reportTemplateChunk_(data.users||[],6);
+    userPages.forEach(users=>{
+      perakamPage++;
+      const pageData=Object.assign({},data,{users});
+      const sheetName='PERAKAM '+String(perakamPage).padStart(2,'0');
+      const p=ss.insertSheet(sheetName);
+      writeAttendancePunchTemplate_(p,pageData,dates);
+    });
+
+    // Individual report: one employee per sheet/page. The template is only
+    // 22 rows high and uses 1–16 on the left / 17–31 on the right, so it
+    // remains a single printable page and can never break mid-person.
+    (data.users||[]).forEach(user=>{
+      individualPage++;
+      const pageData=Object.assign({},data,{users:[user]});
+      const sheetName='IND '+String(individualPage).padStart(3,'0');
+      const d=ss.insertSheet(sheetName);
+      writeAttendanceDailyTemplate_(d,pageData,dates);
+    });
   });
   SpreadsheetApp.flush();
   return ss;
@@ -575,7 +599,7 @@ function generateAttendancePresenceReportPdf(token, payload) {
   }finally{
     try{DriveApp.getFileById(temp.getId()).setTrashed(true);}catch(e){}
   }
-  audit_('JANA_LAPORAN_TEMPLATE_PDF',reportPeriodLabel_(data),'Template=Ringkasan/LewatAwal/Punch/Harian; pegawai='+data.users.length);
+  audit_('JANA_LAPORAN_TEMPLATE_PDF',reportPeriodLabel_(data),'Template=Ringkasan/LewatAwal/PerakamWaktu/Individu; pegawai='+data.users.length);
   return {fileName,mimeType:'application/pdf',base64:Utilities.base64Encode(blob.getBytes())};
 }
 
