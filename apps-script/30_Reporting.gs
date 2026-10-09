@@ -519,6 +519,64 @@ function writeAttendanceDailyTemplate_(sh,data,dates) {
   sh.setColumnWidth(7,95);sh.setColumnWidth(8,180);sh.setColumnWidth(15,95);sh.setColumnWidth(16,180);
 }
 
+
+function writeAttendanceDailySinglePage_(sh,data,dates,user,index) {
+  const c=EK_REPORT_TEMPLATE_COLORS_,left=dates.slice(0,16),right=dates.slice(16,31);
+  ensureAttendanceTemplateGrid_(sh,22,16);
+
+  const values=Array.from({length:22},()=>Array(16).fill(''));
+  const backgrounds=Array.from({length:22},()=>Array(16).fill(c.white));
+
+  values[0][0]='Laporan Individu';
+  values[1][0]='Bil: '+index;
+  values[1][4]='Nama: '+user.name;
+  values[1][8]='Jawatan/Kategori: '+[user.jobTitle,user.category].filter(Boolean).join(' / ');
+  values[1][12]='Tempoh: '+reportPeriodLabel_({fromDate:dates[0],toDate:dates[dates.length-1]});
+
+  values[2]=['Tarikh','Hari','Masuk','Keluar','Masuk','Keluar','Status','Catatan','Tarikh','Hari','Masuk','Keluar','Masuk','Keluar','Status','Catatan'];
+
+  for(let i=0;i<16;i++){
+    const pair=[left[i]||'',right[i]||''];
+    pair.forEach((dateKey,side)=>{
+      const offset=side*8,row=3+i;
+      if(!dateKey)return;
+      const cell=templateCellForDate_(data,user,dateKey),d=cell.detail||{};
+      values[row][offset]=reportShortDate_(dateKey);
+      values[row][offset+1]=reportDayLabel_(dateKey);
+      values[row][offset+2]=d.inTime||'';
+      values[row][offset+3]=d.outTime||'';
+      values[row][offset+4]=d.inTime2||'';
+      values[row][offset+5]=d.outTime2||'';
+      values[row][offset+6]=cell.status||'';
+      values[row][offset+7]=d.reason||((cell.holiday||cell.absence)?cell.text:'');
+      for(let j=0;j<8;j++)backgrounds[row][offset+j]=(cell.holiday||cell.absence)?c.orange:c.white;
+      if(cell.status&&/LEWAT/.test(cell.status)){
+        backgrounds[row][offset+2]=c.red;
+        if(d.inTime2)backgrounds[row][offset+4]=c.red;
+      }
+      if(cell.status&&/BALIK AWAL/.test(cell.status))backgrounds[row][offset+(d.inTime2?5:3)]=c.red;
+      if(cell.missingOut)backgrounds[row][offset+(d.inTime2?5:3)]=c.yellow;
+    });
+  }
+
+  const sum=(data.summary||[]).find(x=>x.email===user.email)||{};
+  values[19][0]='Hari bekerja: '+Number(sum.expectedDays||0)+'   Hari hadir: '+Number(sum.attendedDays||0)+'   Tidak hadir: '+Number(sum.absent||0)+'   Lewat: '+Number(sum.lateCount||0)+' ('+Number(sum.lateMinutes||0)+' min)   Balik awal: '+Number(sum.earlyCount||0)+' ('+Number(sum.earlyMinutes||0)+' min)   Keberadaan: '+Number(sum.presence||0);
+  values[20][0]='Petunjuk: Merah = Lewat / Balik Awal · Kuning = Tiada Waktu Balik · Jingga = Cuti / Tidak Hadir / Hujung Minggu';
+  values[21][0]='Disahkan oleh:                                      Diluluskan oleh:';
+
+  sh.getRange(1,1,22,16).setValues(values).setBackgrounds(backgrounds).setVerticalAlignment('middle').setWrap(true);
+  sh.getRange(1,1,1,16).merge().setFontWeight('bold').setFontSize(15).setHorizontalAlignment('center').setBackground(c.title).setFontColor(c.greenText);
+  sh.getRange(2,1,1,4).merge();sh.getRange(2,5,1,4).merge();sh.getRange(2,9,1,4).merge();sh.getRange(2,13,1,4).merge();
+  sh.getRange(2,1,1,16).setBackground(c.subHeader).setFontWeight('bold');
+  styleTemplateHeader_(sh.getRange(3,1,1,16));
+  sh.getRange(20,1,1,16).merge();sh.getRange(21,1,1,16).merge();sh.getRange(22,1,1,16).merge();
+  templateBorder_(sh.getRange(1,1,22,16));
+  sh.setColumnWidths(1,16,58);
+  sh.setColumnWidth(7,82);sh.setColumnWidth(8,145);sh.setColumnWidth(15,82);sh.setColumnWidth(16,145);
+  sh.setRowHeights(4,16,22);
+  sh.setRowHeight(1,30);sh.setRowHeight(2,26);sh.setRowHeight(3,28);
+}
+
 function writeAttendanceTemplatePack_(ss,data,prefix) {
   prefix=String(prefix||'').trim();
   const name=s=>prefix?prefix+' '+s:s;
@@ -566,7 +624,7 @@ function buildTemporaryAttendanceTemplateSpreadsheet_(data) {
       const pageData=Object.assign({},data,{users:[user]});
       const sheetName='IND '+String(individualPage).padStart(3,'0');
       const d=ss.insertSheet(sheetName);
-      writeAttendanceDailyTemplate_(d,pageData,dates);
+      writeAttendanceDailySinglePage_(d,pageData,dates,user,individualPage);
     });
   });
   SpreadsheetApp.flush();
