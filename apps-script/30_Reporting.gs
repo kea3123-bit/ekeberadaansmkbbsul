@@ -250,6 +250,7 @@ function buildAttendanceAbnormalTemplateRows_(data,usersByEmail) {
         abnormalMap[key]={
           email,date,name:user.name||email,jobTitle:user.jobTitle||'',category:user.category||'',
           inTime:detail.inTime||'',outTime:detail.outTime||'',inTime2:detail.inTime2||'',outTime2:detail.outTime2||'',
+          missingOut:detail.inTime2 ? !detail.outTime2 : (!!detail.inTime && !detail.outTime),
           lateMinutes:0,earlyMinutes:0,lateSessions:[],earlySessions:[],reason:detail.reason||''
         };
       }
@@ -416,6 +417,7 @@ function writeAttendanceAbnormalTemplate_(sh,data) {
     (data.abnormal||[]).forEach((r,i)=>{
       (r.lateSessions||[]).forEach(session=>{bg[i][session===2?6:4]=c.red;});
       (r.earlySessions||[]).forEach(session=>{bg[i][session===2?7:5]=c.red;});
+      if(r.missingOut)bg[i][r.inTime2?7:5]=c.yellow;
     });
     rg.setBackgrounds(bg);
   }else{
