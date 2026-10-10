@@ -204,6 +204,55 @@ jobs:
           console.log('COLOUR_ONLY_REPORT_OK: Punch, Sheet Individu, PDF Individu and pending absence');
           NODE
 
+      - name: Verify monthly-only admin attendance reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const html = fs.readFileSync('Index.html','utf8');
+          const script = fs.readFileSync('Scripts.html','utf8');
+          const backend = fs.readFileSync('apps-script/30_Reporting.gs','utf8');
+          assert.match(html, /id="attendanceReportMonth" type="month"/);
+          for (const oldId of ['attendanceReportType','attendanceReportDate','attendanceReportFrom','attendanceReportTo']){
+            assert(!html.includes('id="'+oldId+'"'),'legacy period selector must not be displayed: '+oldId);
+          }
+          const clientFn=script.slice(script.indexOf('  function getAttendanceReportPeriod(){'),script.indexOf('  async function generateAttendancePresenceReportPdfClient()'));
+          assert(clientFn.includes("type:'MONTHLY'"));
+          const input={value:'2026-10'};
+          const client={
+            document:{getElementById:id=>id==='attendanceReportMonth'?input:null},
+            getSystemStartDateClient:()=> '2026-09-15'
+          };
+          vm.createContext(client);vm.runInContext(clientFn,client);
+          const report=()=>client.getAttendanceReportPeriod();
+          assert.equal(JSON.stringify(report()),JSON.stringify({type:'MONTHLY',month:'2026-10',fromDate:'2026-10-01',toDate:'2026-10-31'}));
+          input.value='2028-02';assert.equal(report().toDate,'2028-02-29');
+          input.value='2026-09';assert.equal(report().fromDate,'2026-09-15');
+          input.value='2026-08';assert.throws(report,/Tiada data sistem/);
+          input.value='2026-13';assert.throws(report,/Pilih bulan laporan/);
+
+          const backendFn=backend.slice(backend.indexOf('function normalizeAttendancePresenceRange_(payload) {'),backend.indexOf('function buildAttendancePresencePeriodReport_'));
+          const context={getSettings_:()=>({}),getSystemStartDate_:()=> '2026-09-15'};
+          vm.createContext(context);vm.runInContext(backendFn,context);
+          const normalize=p=>context.normalizeAttendancePresenceRange_(p);
+          const oct=normalize({type:'MONTHLY',month:'2026-10',fromDate:'2026-10-12',toDate:'2026-10-12'});
+          assert.equal(oct.fromDate,'2026-10-01','ignore arbitrary submitted date range');
+          assert.equal(oct.toDate,'2026-10-31');
+          assert.equal(normalize({month:'2026-09'}).fromDate,'2026-09-15');
+          assert.equal(normalize({month:'2028-02'}).toDate,'2028-02-29');
+          assert.equal(normalize({month:'2027-04'}).toDate,'2027-04-30');
+          for (const type of ['DAILY','WEEKLY','RANGE','YEARLY']){
+            assert.throws(()=>normalize({type,month:'2026-10'}),/hanya menyokong Bulanan/);
+          }
+          assert.throws(()=>normalize({month:'2026-07'}),/Tiada data sistem/);
+          assert.throws(()=>normalize({month:'2026-00'}),/Pilih bulan laporan/);
+          assert.throws(()=>normalize({}),/Pilih bulan laporan/);
+          console.log('MONTHLY_REPORT_ONLY_OK: frontend, backend, month boundaries and restricted report types');
+          NODE
+
       - name: Browser runtime smoke
         shell: bash
         run: |
