@@ -80,15 +80,24 @@ function summarizeReport_(report) {
 
 function normalizeAttendancePresenceRange_(payload) {
   payload = payload || {};
-  const settings = getSettings_();
-  let fromDate = validateDateKey_(payload.fromDate || todayKey_());
-  const toDate = validateDateKey_(payload.toDate || fromDate);
-  if (toDate < fromDate) throw new Error('Tarikh akhir tidak boleh sebelum tarikh mula.');
-  const systemStartDate = getSystemStartDate_(settings);
-  if (toDate < systemStartDate) throw new Error(`Tiada data sistem sebelum ${systemStartDate}. Ubah SYSTEM_START_DATE di sheet TETAPAN jika perlu.`);
-  fromDate = clampToSystemStart_(fromDate, settings);
-  if (daysBetweenKeys_(fromDate, toDate) > 366) throw new Error('Tempoh laporan maksimum ialah 367 hari.');
-  return {fromDate, toDate, type:String(payload.type || 'RANGE').toUpperCase(), systemStartDate};
+  if(String(payload.type||'MONTHLY').toUpperCase()!=='MONTHLY'){
+    throw new Error('Laporan Pentadbir Sistem hanya menyokong Bulanan.');
+  }
+  const month=String(payload.month||'').trim();
+  if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)){
+    throw new Error('Pilih bulan laporan yang sah.');
+  }
+  const settings=getSettings_(),systemStartDate=getSystemStartDate_(settings);
+  const [year,number]=month.split('-').map(Number);
+  const lastDay=new Date(year,number,0).getDate();
+  const toDate=`${month}-${String(lastDay).padStart(2,'0')}`;
+  if(toDate<systemStartDate){
+    throw new Error(`Tiada data sistem sebelum ${systemStartDate}. Ubah SYSTEM_START_DATE di sheet TETAPAN jika perlu.`);
+  }
+  // The first active system month may have fewer reportable days. Other
+  // months always cover their entire calendar month.
+  const fromDate=month+'-01'<systemStartDate?systemStartDate:month+'-01';
+  return {fromDate,toDate,type:'MONTHLY',month,systemStartDate};
 }
 
 function buildAttendancePresencePeriodReport_(fromDate, toDate) {
