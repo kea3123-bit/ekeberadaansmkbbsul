@@ -132,6 +132,78 @@ jobs:
           console.log('ABSENCE_ADMIN_ONLY_OK: management users denied, marked admins authorized, public/own routes retained');
           NODE
 
+      - name: Verify colour-only absence and presence report cells
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const ctx = {
+            normalizeEmail_: value => String(value||'').toLowerCase(),
+            getSettings_: () => ({SCHOOL_NAME:'Test School'}),
+            SpreadsheetApp: {BorderStyle:{SOLID:'SOLID'}}
+          };
+          vm.createContext(ctx);
+          vm.runInContext(fs.readFileSync('apps-script/30_Reporting.gs','utf8'),ctx);
+          const palette = vm.runInContext('EK_REPORT_TEMPLATE_COLORS_',ctx);
+          const user = {email:'test@example.edu.my',name:'Pegawai',jobTitle:'Guru',category:'PPP'};
+          const dates = ['2026-10-07','2026-10-08','2026-10-09'];
+          const data = {
+            users:[user],dates,fromDate:dates[0],toDate:dates[2],summary:[],
+            detailMap:{
+              'test@example.edu.my|2026-10-07':{status:'TIDAK HADIR',source:'TIDAK_HADIR',reason:'CUTI REHAT - CATATAN PANJANG'},
+              'test@example.edu.my|2026-10-08':{status:'BELUM HADIR',source:'KEBERADAAN',reason:'MESYUARAT LUAR - CATATAN PANJANG'},
+              'test@example.edu.my|2026-10-09':{status:'HADIR',inTime:'07:30',outTime:'16:00'}
+            },
+            presenceDateMap:{'test@example.edu.my|2026-10-08':true},
+            holidayByDate:{},workingByDate:{'2026-10-07':true,'2026-10-08':true,'2026-10-09':true}
+          };
+          function fakeSheet(){
+            const ranges={};
+            const sheet={
+              ranges,getMaxRows:()=>1000,getMaxColumns:()=>26,
+              getRange(...args){
+                const key=args.join(':');
+                const range={
+                  setValues(value){ranges[key]={...(ranges[key]||{}),values:value};return range},
+                  setBackgrounds(value){ranges[key]={...(ranges[key]||{}),colors:value};return range}
+                };
+                for(const method of ['setValue','merge','setBackground','setFontColor','setFontSize','setFontWeight','setHorizontalAlignment','setVerticalAlignment','setWrap','setBorder']){
+                  range[method]=()=>range;
+                }
+                return range;
+              }
+            };
+            for(const method of ['setColumnWidth','setColumnWidths','setFrozenRows','setRowHeights','setRowHeight','insertRowsAfter','insertColumnsAfter'])sheet[method]=()=>{};
+            return sheet;
+          }
+          const punch=fakeSheet(),daily=fakeSheet(),pdf=fakeSheet();
+          ctx.writeAttendancePunchTemplate_(punch,data,dates);
+          ctx.writeAttendanceDailyTemplate_(daily,data,dates);
+          ctx.writeAttendanceDailySinglePage_(pdf,data,dates,user,1);
+          const punchRow=punch.ranges['5:1:1:3'];
+          assert.deepEqual(Array.from(punchRow.values[0]),['','','07:30\n16:00']);
+          assert.deepEqual(Array.from(punchRow.colors[0]),[palette.orange,palette.presence,palette.white]);
+          for(const [sheet,key,start] of [[daily,'4:1:16:16',0],[pdf,'1:1:22:16',3]]){
+            const block=sheet.ranges[key];
+            for(let i=0;i<2;i++){
+              assert(block.values[start+i][0],'date must remain visible');
+              assert(block.values[start+i].slice(2,8).every(v=>v===''),'no absence/presence text or reason');
+              assert(block.colors[start+i].slice(0,8).every(c=>c===([palette.orange,palette.presence][i])));
+            }
+            assert.equal(block.values[start+2][2],'07:30','actual punch times must be retained');
+          }
+          const pending=ctx.templateCellForDate_({
+            detailMap:{'test@example.edu.my|2026-10-07':{status:'BELUM HADIR',source:'TIDAK_HADIR',reason:'CUTI'}},
+            workingByDate:{'2026-10-07':true}
+          },user,'2026-10-07');
+          assert.equal(pending.text,'');
+          assert.equal(ctx.templateCellBackground_(pending,palette),palette.orange);
+          console.log('COLOUR_ONLY_REPORT_OK: Punch, Sheet Individu, PDF Individu and pending absence');
+          NODE
+
       - name: Browser runtime smoke
         shell: bash
         run: |
