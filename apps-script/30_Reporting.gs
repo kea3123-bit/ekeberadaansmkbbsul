@@ -447,10 +447,13 @@ function templateCellForDate_(data,user,dateKey) {
   const holiday=(data.holidayByDate||{})[dateKey]||null,working=!!(data.workingByDate||{})[dateKey];
   // An absence is displayed through colour only: never include category,
   // reason, status text or the potentially very long application note.
-  if(detail&&String(detail.status||'').toUpperCase()==='TIDAK HADIR'){
+  const times=detail?[detail.inTime,detail.outTime,detail.inTime2,detail.outTime2].filter(Boolean):[];
+  // A submitted absence can still be pending (BELUM HADIR) for future dates;
+  // the approved/pending request source is enough to colour it orange.
+  if(detail&&(String(detail.status||'').toUpperCase()==='TIDAK HADIR'||
+      (!times.length&&String(detail.source||'').toUpperCase()==='TIDAK_HADIR'))){
     return {text:'',status:'TIDAK HADIR',absence:true,detail};
   }
-  const times=detail?[detail.inTime,detail.outTime,detail.inTime2,detail.outTime2].filter(Boolean):[];
   // A real punch takes precedence over a Keberadaan application: keep actual
   // times visible, including exception and missing-final-out indicators.
   if(!times.length&&((data.presenceDateMap||{})[key]||String(detail?.source||'').toUpperCase()==='KEBERADAAN')){
