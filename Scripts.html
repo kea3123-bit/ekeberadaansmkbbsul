@@ -1445,26 +1445,33 @@ const state = {
   function getSystemStartDateClient(){return state.boot?.settings?.systemStartDate||'2026-09-01';}
   function applySystemDateLimits(){
     const start=getSystemStartDateClient(),startMonth=start.slice(0,7);
-    ['absenceStartDate','absenceEndDate','absencePublicFrom','absencePublicTo','absenceManageFrom','absenceManageTo','timeReviewFrom','timeReviewTo','attendanceReportDate','attendanceReportFrom','attendanceReportTo','reportDate'].forEach(id=>{const el=document.getElementById(id);if(!el)return;el.min=start;if(el.value&&el.value<start)el.value=start;});
+    ['absenceStartDate','absenceEndDate','absencePublicFrom','absencePublicTo','absenceManageFrom','absenceManageTo','timeReviewFrom','timeReviewTo','reportDate'].forEach(id=>{const el=document.getElementById(id);if(!el)return;el.min=start;if(el.value&&el.value<start)el.value=start;});
     ['myCardMonth','attendanceReportMonth','adminCardMonth'].forEach(id=>{const el=document.getElementById(id);if(!el)return;el.min=startMonth;if(el.value&&el.value<startMonth)el.value=startMonth;});
   }
   function initAttendanceReportBuilder(){
     const today=state.boot?.today||localDateKey(new Date());
-    const date=document.getElementById('attendanceReportDate'),month=document.getElementById('attendanceReportMonth'),from=document.getElementById('attendanceReportFrom'),to=document.getElementById('attendanceReportTo');
-    if(date&&!date.value)date.value=today;if(month&&!month.value)month.value=today.slice(0,7);if(from&&!from.value)from.value=today;if(to&&!to.value)to.value=today;updateAttendanceReportPeriod();
+    const month=document.getElementById('attendanceReportMonth');
+    if(month&&!month.value)month.value=today.slice(0,7);
+    applySystemDateLimits();
+    updateAttendanceReportPeriod();
   }
   function updateAttendanceReportPeriod(){
-    const type=document.getElementById('attendanceReportType')?.value||'DAILY',dateWrap=document.getElementById('attendanceReportDateWrap'),monthWrap=document.getElementById('attendanceReportMonthWrap'),fromWrap=document.getElementById('attendanceReportFromWrap'),toWrap=document.getElementById('attendanceReportToWrap');
-    dateWrap?.classList.toggle('hidden',type==='MONTHLY'||type==='RANGE');monthWrap?.classList.toggle('hidden',type!=='MONTHLY');fromWrap?.classList.toggle('hidden',type!=='RANGE');toWrap?.classList.toggle('hidden',type!=='RANGE');
-    try{const p=getAttendanceReportPeriod();text('attendanceReportRangeText',p.fromDate===p.toDate?p.fromDate:`${p.fromDate} hingga ${p.toDate}`);}catch(e){text('attendanceReportRangeText','Lengkapkan pilihan tarikh');}
+    try{
+      const p=getAttendanceReportPeriod();
+      text('attendanceReportRangeText',`${p.fromDate} hingga ${p.toDate}`);
+    }catch(e){
+      text('attendanceReportRangeText',e.message||'Pilih bulan laporan');
+    }
   }
   function getAttendanceReportPeriod(){
-    const type=document.getElementById('attendanceReportType')?.value||'DAILY';let fromDate='',toDate='';
-    if(type==='DAILY'){fromDate=toDate=document.getElementById('attendanceReportDate')?.value||'';}
-    else if(type==='WEEKLY'){const key=document.getElementById('attendanceReportDate')?.value||'';if(!key)throw new Error('Pilih tarikh rujukan.');const [y,m,d]=key.split('-').map(Number),dt=new Date(y,m-1,d),start=new Date(y,m-1,d-dt.getDay()),end=new Date(start);end.setDate(start.getDate()+6);fromDate=localDateKey(start);toDate=localDateKey(end);}
-    else if(type==='MONTHLY'){const month=document.getElementById('attendanceReportMonth')?.value||'';if(!/^\d{4}-\d{2}$/.test(month))throw new Error('Pilih bulan laporan.');const [y,m]=month.split('-').map(Number);fromDate=`${month}-01`;toDate=localDateKey(new Date(y,m,0));}
-    else{fromDate=document.getElementById('attendanceReportFrom')?.value||'';toDate=document.getElementById('attendanceReportTo')?.value||'';}
-    if(!fromDate||!toDate)throw new Error('Lengkapkan tempoh laporan.');if(toDate<fromDate)throw new Error('Tarikh akhir tidak boleh sebelum tarikh mula.');const systemStart=getSystemStartDateClient();if(toDate<systemStart)throw new Error(`Tiada data sistem sebelum ${systemStart}.`);if(fromDate<systemStart)fromDate=systemStart;return {type,fromDate,toDate};
+    const month=document.getElementById('attendanceReportMonth')?.value||'';
+    if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month))throw new Error('Pilih bulan laporan.');
+    const systemStart=getSystemStartDateClient();
+    if(month<systemStart.slice(0,7))throw new Error(`Tiada data sistem sebelum ${systemStart}.`);
+    const [year,number]=month.split('-').map(Number);
+    const lastDay=new Date(year,number,0).getDate();
+    const fromDate=month+'-01'<systemStart?systemStart:month+'-01';
+    return {type:'MONTHLY',month,fromDate,toDate:`${month}-${String(lastDay).padStart(2,'0')}`};
   }
   async function generateAttendancePresenceReportPdfClient(){try{const p=getAttendanceReportPeriod();const r=await runServer('generateAttendancePresenceReportPdf',state.token,p);downloadPdfResult(r);toast(`Laporan ${p.fromDate===p.toDate?p.fromDate:`${p.fromDate} hingga ${p.toDate}`} dijana.`);}catch(e){handleServerError(e);}}
   async function generateAttendancePresenceReportSheetClient(){try{const p=getAttendanceReportPeriod();const r=await runServer('generateAttendancePresenceReportSheet',state.token,p);const names=Array.isArray(r.sheetNames)&&r.sheetNames.length?r.sheetNames.join(', '):(r.sheetName||'LAP RINGKASAN');toast(`Pakej template dijana: ${names}.`,6500);}catch(e){handleServerError(e);}}
