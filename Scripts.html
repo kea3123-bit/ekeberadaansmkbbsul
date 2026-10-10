@@ -1465,7 +1465,7 @@ const state = {
   }
   function getAttendanceReportPeriod(){
     const month=document.getElementById('attendanceReportMonth')?.value||'';
-    if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month))throw new Error('Pilih bulan laporan.');
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))throw new Error('Pilih bulan laporan.');
     const systemStart=getSystemStartDateClient();
     if(month<systemStart.slice(0,7))throw new Error(`Tiada data sistem sebelum ${systemStart}.`);
     const [year,number]=month.split('-').map(Number);
