@@ -854,13 +854,14 @@
 .report-builder-head h3{margin:2px 0 5px;font-size:20px}.report-builder-head p{margin:0;color:var(--muted);max-width:720px}
 .report-builder-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .report-builder-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;align-items:end}
+.report-builder-grid.report-builder-monthly{grid-template-columns:minmax(220px,340px)}
 .report-builder-grid label{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:800;color:var(--muted)}
 .report-period-readout{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-top:12px;padding:11px 13px;border-radius:12px;background:#eef5ff;border:1px solid #d6e4f8}
 .report-period-readout span{font-size:12px;color:var(--muted);font-weight:700}.report-period-readout b{text-align:right}
 .report-section-label{display:flex;justify-content:space-between;align-items:center;margin:18px 0 8px;padding-top:4px;border-top:1px solid var(--line)}
 .report-section-label>div{padding-top:14px}.report-section-label b{display:block}.report-section-label small{display:block;color:var(--muted);margin-top:2px}
 @media(max-width:900px){.report-builder-grid{grid-template-columns:1fr 1fr}.report-builder-head{flex-direction:column}.report-builder-actions{justify-content:flex-start}}
-@media(max-width:600px){.home-schedule-grid,.home-punch-times,.report-builder-grid{grid-template-columns:1fr}.report-builder-actions{width:100%}.report-builder-actions .btn{flex:1}.report-period-readout{align-items:flex-start;flex-direction:column}.report-period-readout b{text-align:left}}
+@media(max-width:600px){.home-schedule-grid,.home-punch-times,.report-builder-grid,.report-builder-grid.report-builder-monthly{grid-template-columns:1fr}.report-builder-actions{width:100%}.report-builder-actions .btn{flex:1}.report-period-readout{align-items:flex-start;flex-direction:column}.report-period-readout b{text-align:left}}
 
   /* v14.4 — Senarai Tidak Hadir / Keberadaan awam */
   .absence-form-full{max-width:none;width:100%}
