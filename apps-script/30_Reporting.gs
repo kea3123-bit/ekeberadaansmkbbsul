@@ -84,7 +84,7 @@ function normalizeAttendancePresenceRange_(payload) {
     throw new Error('Laporan Pentadbir Sistem hanya menyokong Bulanan.');
   }
   const month=String(payload.month||'').trim();
-  if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)){
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)){
     throw new Error('Pilih bulan laporan yang sah.');
   }
   const settings=getSettings_(),systemStartDate=getSystemStartDate_(settings);
