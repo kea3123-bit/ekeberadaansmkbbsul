@@ -11,6 +11,7 @@ const state = {
     settingsCurrentMarker:null, settingsAccuracyCircle:null,
     homeLocationMap:null, homeSchoolMarker:null, homeRadiusCircle:null, homeCurrentMarker:null, homeAccuracyCircle:null,
     liveLocation:null, locationWatchId:null, locationUpdatedAt:0, locationRefreshPromise:null,
+    locationPermissionState:'unknown', locationPermissionProblem:'', locationPermissionStatus:null,
     photoCache:new Map(), clientInfo:null, clientInfoPromise:null, leafletPromise:null
   };
 
@@ -447,7 +448,8 @@ const state = {
     try{if(state.token)await runServer('logoutApp',state.token);}catch(e){}
     clearStoredSession();
     stopLiveLocationTracking();
-    Object.assign(state,{token:'',deviceToken:'',boot:null,admin:null,myCardLoaded:false,myCardData:null,adminCardData:null,absence:null,absencePublic:null,absenceManagement:null,timeReview:null,cacheTimes:{},liveLocation:null,locationUpdatedAt:0});
+    if(state.locationPermissionStatus)state.locationPermissionStatus.onchange=null;
+    Object.assign(state,{token:'',deviceToken:'',boot:null,admin:null,myCardLoaded:false,myCardData:null,adminCardData:null,absence:null,absencePublic:null,absenceManagement:null,timeReview:null,cacheTimes:{},liveLocation:null,locationUpdatedAt:0,locationPermissionState:'unknown',locationPermissionProblem:'',locationPermissionStatus:null});
     state.selectedUserEmails.clear(); state.photoCache.clear(); closeMobileMenu(); await showLogin(); toast('Anda telah keluar dari peranti ini.');
   }
 
@@ -513,6 +515,9 @@ const state = {
     // Start GPS immediately after authentication so punch actions can reuse a
     // fresh, already-resolved position instead of waiting for a new GPS fix.
     setTimeout(()=>startLiveLocationTracking(false).catch(()=>{}),0);
+    // Permissions API is optional on Safari/iOS; the native GPS callback
+    // remains authoritative. Permission never gets overridden by the app.
+    observeLocationPermission().catch(()=>{});
     // Keep first paint responsive; Drive photo loading and device telemetry refresh happen
     // after the dashboard is already usable.
     setTimeout(()=>loadOwnProfilePhoto(),180);
@@ -570,6 +575,7 @@ const state = {
     else if(state.liveLocation) renderLiveLocationStatus(state.liveLocation);
     else gps('busy','Mengesan lokasi secara langsung…');
     updateHomeLocationMap(state.liveLocation).catch(()=>{});
+    updateLocationPermissionUi();
     applySystemDateLimits();
   }
 
@@ -637,6 +643,86 @@ const state = {
     const maxAccuracy=Math.min(140,punchGpsPolicy().configuredMaxAccuracyM);
     return !!pos?.coords&&liveLocationAgeMs()<=maxAgeMs&&Number.isFinite(accuracy)&&accuracy>=0&&accuracy<=maxAccuracy;
   }
+  function locationIsIphone(){
+    return /iPhone|iPad|iPod/i.test(navigator.userAgent||'')||
+      (navigator.platform==='MacIntel'&&Number(navigator.maxTouchPoints||0)>1);
+  }
+  function locationIsAndroid(){return /Android/i.test(navigator.userAgent||'');}
+  function updateLocationPermissionUi(){
+    const test=String(state.boot?.settings?.systemMode||'REAL')==='TEST';
+    const enabled=!!state.boot&&!test&&state.boot.locationReady!==false;
+    const active=!!state.liveLocation&&!state.locationPermissionProblem;
+    const problem=state.locationPermissionProblem;
+    document.getElementById('enableLocationBtn')?.classList.toggle('hidden',!enabled||active);
+    const needsHelp=['denied','unavailable','timeout','unsupported'].includes(problem);
+    document.getElementById('locationPermissionHelp')?.classList.toggle('hidden',!enabled||!needsHelp);
+    const iphone=locationIsIphone(),android=!iphone&&locationIsAndroid();
+    document.getElementById('locationPermissionIphone')?.classList.toggle('hidden',!iphone);
+    document.getElementById('locationPermissionAndroid')?.classList.toggle('hidden',!android);
+    document.getElementById('locationPermissionOther')?.classList.toggle('hidden',iphone||android);
+    if(needsHelp){
+      text('locationPermissionHelpTitle',problem==='denied'?'Akses lokasi disekat':
+        problem==='unsupported'?'GPS tidak disokong':'Lokasi belum dapat dikesan');
+      text('locationPermissionHelpText',problem==='denied'
+        ?'Semak kebenaran lokasi dalam tetapan telefon/pelayar. Butang tidak boleh mengubah tetapan peranti secara automatik.'
+        :problem==='unsupported'
+          ?'Pelayar ini tidak menyediakan lokasi. Cuba Safari pada iPhone atau Chrome pada Android.'
+          :'Pastikan Location Services/GPS dan lokasi tepat dihidupkan. Selepas itu cuba semula.');
+    }
+  }
+  function reportLocationPermissionError(err){
+    const code=Number(err?.code)||0;
+    if(code===1){
+      state.locationPermissionState='denied';
+      state.locationPermissionProblem='denied';
+      state.liveLocation=null;state.locationUpdatedAt=0;
+      // Clear stale user pin if location access is revoked.
+      for(const [map,marker] of [[state.homeLocationMap,'homeCurrentMarker'],[state.homeLocationMap,'homeAccuracyCircle'],[state.locationMap,'settingsCurrentMarker'],[state.locationMap,'settingsAccuracyCircle']]){
+        if(map&&state[marker]){try{map.removeLayer(state[marker]);}catch(e){}state[marker]=null;}
+      }
+    }else if(!navigator.geolocation){
+      state.locationPermissionProblem='unsupported';
+    }else if(!state.liveLocation){
+      state.locationPermissionProblem=code===2?'unavailable':code===3?'timeout':'unavailable';
+    }
+    updateLocationPermissionUi();
+  }
+  async function observeLocationPermission(){
+    if(!navigator.permissions?.query)return;
+    try{
+      const status=await navigator.permissions.query({name:'geolocation'});
+      if(!state.boot)return;
+      if(state.locationPermissionStatus&&state.locationPermissionStatus!==status){
+        state.locationPermissionStatus.onchange=null;
+      }
+      state.locationPermissionStatus=status;
+      const update=()=>{
+        if(state.locationPermissionStatus!==status)return;
+        state.locationPermissionState=status.state;
+        if(status.state==='denied'){
+          reportLocationPermissionError({code:1});
+          stopLiveLocationTracking();
+          gps('','Akses lokasi disekat. Tekan Benarkan lokasi untuk bantuan.');
+        }else{
+          if(state.locationPermissionProblem==='denied')state.locationPermissionProblem='';
+          updateLocationPermissionUi();
+          if(status.state==='granted'&&state.locationWatchId===null){
+            startLiveLocationTracking(false).catch(()=>{});
+          }
+        }
+      };
+      status.onchange=update;
+      update();
+    }catch(e){
+      // Permissions API might not expose geolocation in some iOS versions.
+    }
+  }
+  function requestLocationPermission(){
+    // Direct button gesture enables the native browser permission prompt
+    // where allowed. Denied/system-disabled permissions require Settings.
+    if(!state.boot||String(state.boot.settings?.systemMode||'REAL')==='TEST')return;
+    refreshLiveLocation().catch(()=>{});
+  }
   function renderLiveLocationStatus(pos){
     if(!pos?.coords)return;
     const accuracy=Math.round(Number(pos.coords.accuracy)||0),distance=Math.round(punchGpsDistance(pos));
@@ -681,6 +767,8 @@ const state = {
   function acceptLiveLocation(pos){
     if(!pos?.coords)return;
     state.liveLocation=pos;state.locationUpdatedAt=Date.now();
+    state.locationPermissionProblem='';state.locationPermissionState='granted';
+    updateLocationPermissionUi();
     renderLiveLocationStatus(pos);
     updateHomeLocationMap(pos).catch(()=>{});
     syncCurrentLocationMarker(state.locationMap,'settingsCurrentMarker','settingsAccuracyCircle',pos);
@@ -693,7 +781,7 @@ const state = {
   }
   async function startLiveLocationTracking(force=false){
     if(String(state.boot?.settings?.systemMode||'REAL')==='TEST')return null;
-    if(!navigator.geolocation)throw new Error('Pelayar ini tidak menyokong geolocation.');
+    if(!navigator.geolocation){reportLocationPermissionError({code:0});throw new Error('Pelayar ini tidak menyokong geolocation.');}
     if(force)stopLiveLocationTracking();
     if(state.locationWatchId!==null){
       if(state.liveLocation)renderLiveLocationStatus(state.liveLocation);
@@ -703,8 +791,13 @@ const state = {
     state.locationWatchId=navigator.geolocation.watchPosition(pos=>{
       acceptLiveLocation(pos);
     },err=>{
-      if(err?.code===1)gps('','Akses lokasi ditolak. Benarkan Location untuk laman ini.');
-      else if(!state.liveLocation)gps('busy','GPS sedang mencari lokasi…');
+      reportLocationPermissionError(err);
+      if(err?.code===1){
+        stopLiveLocationTracking();
+        gps('','Akses lokasi disekat. Tekan Benarkan lokasi untuk bantuan.');
+      }else if(!state.liveLocation){
+        gps('','GPS belum dapat dikesan. Pastikan Location Services dihidupkan.');
+      }
     },{enableHighAccuracy:true,timeout:15000,maximumAge:5000});
     return state.liveLocation;
   }
@@ -792,8 +885,8 @@ const state = {
         const chosen=best||pos;
         gps('busy',describe('Mengesan lokasi',chosen));
       },err=>{
-        if(err?.code===1)return finish(new Error('Akses lokasi ditolak. Benarkan Location untuk laman ini.'));
-        if(!best&&err?.code===2)gps('busy',`GPS belum mendapat lokasi · sasaran ±${threshold()}m · mencuba lagi…`);
+        if(err?.code===1){reportLocationPermissionError(err);return finish(new Error('Akses lokasi disekat. Tekan Benarkan lokasi untuk bantuan.'));}
+        if(!best&&err?.code===2){reportLocationPermissionError(err);gps('busy',`GPS belum mendapat lokasi · sasaran ±${threshold()}m · mencuba lagi…`);}
       },{enableHighAccuracy:true,timeout:policy.timeoutMs+1000,maximumAge:0});
     });
   }
@@ -826,7 +919,19 @@ const state = {
     }catch(e){gps('',e.message);handleServerError(e,false);}finally{setPunchBusy(false);}
   }
 
-  function currentPosition(){return new Promise((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error('Pelayar ini tidak menyokong geolocation.'));navigator.geolocation.getCurrentPosition(resolve,err=>{const msg={1:'Akses lokasi ditolak. Benarkan Location untuk laman ini.',2:'Lokasi tidak dapat dikesan.',3:'Masa mendapatkan lokasi tamat.'}[err.code]||err.message;reject(new Error(msg));},{enableHighAccuracy:true,timeout:18000,maximumAge:0});});}
+  function currentPosition(){
+    return new Promise((resolve,reject)=>{
+      if(!navigator.geolocation){
+        reportLocationPermissionError({code:0});
+        return reject(new Error('Pelayar ini tidak menyokong geolocation.'));
+      }
+      navigator.geolocation.getCurrentPosition(resolve,err=>{
+        reportLocationPermissionError(err);
+        const msg={1:'Akses lokasi disekat. Tekan Benarkan lokasi untuk bantuan.',2:'Lokasi tidak dapat dikesan. Semak Location Services/GPS.',3:'Masa mendapatkan lokasi tamat. Cuba semula.'}[err.code]||err.message;
+        reject(new Error(msg));
+      },{enableHighAccuracy:true,timeout:18000,maximumAge:0});
+    });
+  }
   function gps(cls,msg){const d=document.getElementById('gpsDot');if(d)d.className='gps-dot '+cls;text('locationText',msg);}
   function setPunchBusy(b){const step=state.boot?.attendance?.nextRecord||{type:'IN',session:1,complete:false},i=document.getElementById('btnIn'),o=document.getElementById('btnOut');if(i)i.disabled=b||step.complete||step.type!=='IN';if(o)o.disabled=b||step.complete||step.type!=='OUT';}
 
@@ -1510,6 +1615,7 @@ const state = {
     navigate,
     startPunch,
     refreshLiveLocation,
+    requestLocationPermission,
     loadMyCard,
     setMyCardHalf,
     printMyPunchCard,
