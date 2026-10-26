@@ -156,8 +156,16 @@
               <div class="location-status-copy"><b id="locationTitle">Lokasi semasa</b><div id="locationText" class="muted">Mengesan lokasi secara langsung…</div></div>
               <div class="location-actions">
                 <span id="gpsDot" class="gps-dot"></span>
-                <button id="refreshLocationBtn" class="btn ghost small" type="button" onclick="refreshLiveLocation()">↻ Segar semula</button>
+                <button id="enableLocationBtn" class="btn primary small hidden" type="button" onclick="requestLocationPermission()">Benarkan lokasi</button>
+                <button id="refreshLocationBtn" class="btn ghost small" type="button" onclick="refreshLiveLocation().catch(()=>{})">↻ Segar semula</button>
               </div>
+            </div>
+            <div id="locationPermissionHelp" class="location-permission-help hidden" role="status" aria-live="polite">
+              <b id="locationPermissionHelpTitle">Lokasi belum dibenarkan</b>
+              <p id="locationPermissionHelpText">Benarkan lokasi pada peranti untuk menggunakan Rekod Waktu.</p>
+              <div id="locationPermissionIphone" class="hidden">iPhone: Buka <b>Settings → Privacy &amp; Security → Location Services</b>, aktifkan Location Services, kemudian pilih <b>eKeberadaan / Safari Websites</b> jika dipaparkan. Pilih <b>While Using the App</b> dan hidupkan <b>Precise Location</b>. Untuk Safari, semak juga <b>Settings → Apps → Safari → Location → Allow</b>.</div>
+              <div id="locationPermissionOther" class="hidden">Aktifkan Location/GPS pada tetapan peranti dan benarkan lokasi untuk aplikasi atau laman web ini pada tetapan pelayar.</div>
+              <button class="btn ghost small" type="button" onclick="requestLocationPermission()">Cuba semula selepas benarkan</button>
             </div>
             <div id="homeLocationMap" class="home-location-map" aria-label="Peta lokasi semasa dan radius sekolah"></div>
             <div id="homePunchTimes" class="punch-times home-punch-times single-session">
