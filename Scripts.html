@@ -651,7 +651,7 @@ const state = {
   function updateLocationPermissionUi(){
     const test=String(state.boot?.settings?.systemMode||'REAL')==='TEST';
     const enabled=!!state.boot&&!test&&state.boot.locationReady!==false;
-    const active=!!state.liveLocation&&!state.locationPermissionProblem;
+    const active=!!state.liveLocation&&liveLocationAgeMs()<90000&&!state.locationPermissionProblem;
     const problem=state.locationPermissionProblem;
     document.getElementById('enableLocationBtn')?.classList.toggle('hidden',!enabled||active);
     const needsHelp=['denied','unavailable','timeout','unsupported'].includes(problem);
@@ -682,8 +682,12 @@ const state = {
       }
     }else if(!navigator.geolocation){
       state.locationPermissionProblem='unsupported';
-    }else if(!state.liveLocation){
-      state.locationPermissionProblem=code===2?'unavailable':code===3?'timeout':'unavailable';
+    }else if(code===2){
+      // Location Services turned off may report POSITION_UNAVAILABLE even
+      // when a previously cached fix exists. Keep that failure visible.
+      state.locationPermissionProblem='unavailable';
+    }else if(!state.liveLocation||liveLocationAgeMs()>45000){
+      state.locationPermissionProblem=code===3?'timeout':'unavailable';
     }
     updateLocationPermissionUi();
   }
