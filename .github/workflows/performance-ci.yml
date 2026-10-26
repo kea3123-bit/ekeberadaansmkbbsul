@@ -253,6 +253,55 @@ jobs:
           console.log('MONTHLY_REPORT_ONLY_OK: frontend, backend, month boundaries and restricted report types');
           NODE
 
+      - name: Verify mobile location permission recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const assert=require('node:assert/strict');
+          const fs=require('node:fs');
+          const html=fs.readFileSync('Index.html','utf8');
+          const script=fs.readFileSync('Scripts.html','utf8');
+          new Function(script);
+          assert(html.includes('id="enableLocationBtn"'));
+          assert(html.includes('onclick="requestLocationPermission()"'));
+          assert(html.includes('id="locationPermissionIphone"'));
+          assert(html.includes('id="locationPermissionAndroid"'));
+          const start=script.indexOf('  function locationIsIphone(){');
+          const end=script.indexOf('  function renderLiveLocationStatus(pos){',start);
+          assert(start>=0&&end>start);
+          const factory=new Function('state','navigator','document','text','liveLocationAgeMs','gps',
+            'stopLiveLocationTracking','startLiveLocationTracking','refreshLiveLocation',
+            script.slice(start,end)+';return {reportLocationPermissionError,requestLocationPermission};');
+          function runScenario(userAgent,code){
+            const elements={};const state={boot:{settings:{systemMode:'REAL'},locationReady:true},
+              liveLocation:null,locationPermissionProblem:'',locationPermissionStatus:null,locationWatchId:null};
+            const document={getElementById(id){
+              if(!elements[id])elements[id]={classList:{hidden:false,toggle(_,hidden){this.hidden=hidden}}};
+              return elements[id];
+            }};
+            let retries=0;
+            const navigator={userAgent,platform:'Linux',maxTouchPoints:5,geolocation:{}};
+            const app=factory(state,navigator,document,()=>{},()=>900000,()=>{},()=>{},
+              ()=>Promise.resolve(),()=>{retries++;return Promise.resolve()});
+            app.reportLocationPermissionError({code});
+            app.requestLocationPermission();
+            return {elements,retries,state};
+          }
+          const android=runScenario('Mozilla/5.0 (Linux; Android 15; Pixel) Chrome/130',2);
+          assert(!android.elements.enableLocationBtn.classList.hidden);
+          assert(!android.elements.locationPermissionHelp.classList.hidden);
+          assert(!android.elements.locationPermissionAndroid.classList.hidden);
+          assert(android.elements.locationPermissionIphone.classList.hidden);
+          assert.equal(android.retries,1);
+          const iphone=runScenario('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',1);
+          assert(!iphone.elements.enableLocationBtn.classList.hidden);
+          assert(!iphone.elements.locationPermissionIphone.classList.hidden);
+          assert(iphone.elements.locationPermissionAndroid.classList.hidden);
+          assert.equal(iphone.state.locationPermissionProblem,'denied');
+          console.log('MOBILE_LOCATION_RECOVERY_OK: Android GPS unavailable; iPhone denied; button retries');
+          NODE
+
       - name: Browser runtime smoke
         shell: bash
         run: |
