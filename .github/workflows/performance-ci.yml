@@ -132,6 +132,68 @@ jobs:
           console.log('ABSENCE_ADMIN_ONLY_OK: management users denied, marked admins authorized, public/own routes retained');
           NODE
 
+      - name: Verify absence management Bil. follows application submission order
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const assert=require('node:assert/strict');
+          const fs=require('node:fs');
+          const vm=require('node:vm');
+          const backend=fs.readFileSync('apps-script/61_Absence.gs','utf8');
+          const script=fs.readFileSync('Scripts.html','utf8');
+          const html=fs.readFileSync('Index.html','utf8');
+          const ctx={
+            EK:{ABSENCE_TYPES:[],PRESENCE_TYPES:[]},
+            requireSessionUser_:()=>({email:'admin@example.edu.my',isAdmin:true}),
+            getSettings_:()=>({}),todayKey_:()=> '2026-10-29',
+            getSystemStartDate_:()=> '2026-09-01',
+            validateDateKey_:v=>v,clampToSystemStart_:v=>v,
+            getAllUsers_:()=>[],getAttendanceValuesInDateRange_:()=>[],
+            publicUser_:u=>u,formatDateTime_:v=>String(v),
+            dateValueMs_:v=>v?new Date(v).getTime()||0:0,
+            getReviewerJobTitleFromEmail_:()=> '',
+            generatePdfReport_:(title,headers,rows)=>({title,headers,rows})
+          };
+          vm.createContext(ctx);
+          vm.runInContext(backend,ctx);
+          // The first applicant's leave date is later, so sorting by leave date fails.
+          ctx.readAbsenceRows_=()=>[
+            {id:'early',name:'Pemohon Awal',email:'a@example.edu.my',
+             startDate:'2026-10-25',endDate:'2026-10-25',
+             submittedAt:'2026-10-01T09:00:00',submittedMs:1790845200000,
+             mode:'TIDAK_HADIR',status:'MENUNGGU'},
+            {id:'late',name:'Pemohon Kemudian',email:'b@example.edu.my',
+             startDate:'2026-10-10',endDate:'2026-10-10',
+             submittedAt:'2026-10-04T09:00:00',submittedMs:1791104400000,
+             mode:'KEBERADAAN',status:'MENUNGGU'}
+          ];
+          ctx.buildUnexplainedAbsenceEntries_=()=>[];
+          const data=ctx.getAbsenceManagementData('admin','2026-10-01','2026-10-31');
+          assert.equal(data.requests[0].id,'early');
+          assert.equal(data.requests[1].id,'late');
+          assert(data.requests[0].submittedMs<data.requests[1].submittedMs);
+          const pdf=ctx.generateAbsencePresencePdf('admin',{fromDate:'2026-10-01',toDate:'2026-10-31'});
+          assert.equal(pdf.headers[0],'Bil.');
+          assert.equal(pdf.rows[0][0],1);
+          assert.equal(pdf.rows[0][1],'Pemohon Awal');
+          assert.equal(pdf.rows[1][0],2);
+          const reversed=ctx.generateAbsencePresencePdf('admin',{fromDate:'2026-10-01',toDate:'2026-10-31',sort:'submitted_desc'});
+          assert.equal(reversed.rows[0][1],'Pemohon Kemudian');
+          assert.equal(reversed.rows[0][0],1);
+
+          assert.match(html,/id="sort-absenceManage-order"/);
+          assert.match(html,/toggleTableSort\('absenceManage','order'\)/);
+          assert.match(script,/absenceManage:\{default:'submitted_asc',order:\['submitted_asc','submitted_desc'\]/);
+          assert(script.includes('list.map((r,index)'));
+          assert(script.includes('class="absence-public-number"'));
+          assert.match(script,/colspan="8" class="empty-cell">Tiada rekod sepadan/);
+          assert.match(script,/sort:getTableSort\('absenceManage'\)/);
+          // Public list defaults stay unchanged.
+          assert.match(script,/absencePublic:\{default:'submitted_desc'/);
+          console.log('ABSENCE_MANAGEMENT_FIFO_OK: Bil, submission timestamps and PDF');
+          NODE
+
       - name: Verify colour-only absence and presence report cells
         shell: bash
         run: |
