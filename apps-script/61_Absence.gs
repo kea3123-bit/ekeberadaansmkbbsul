@@ -208,7 +208,12 @@ function getAbsenceManagementData(token, fromDate, toDate) {
     .map(r=>publicAbsenceManagement_(r));
   const unexplained = buildUnexplainedAbsenceEntries_(from,to,'',context).map(publicUnexplainedAbsenceManagement_);
   return {manager:publicUser_(manager),types:EK.ABSENCE_TYPES.slice(),presenceTypes:EK.PRESENCE_TYPES.slice(),fromDate:from,toDate:to,
-    requests:requests.concat(unexplained).sort((a,b)=>String(b.startDate||'').localeCompare(String(a.startDate||''))||String(b.submittedAt||'').localeCompare(String(a.submittedAt||'')))};
+    // First application first. Synthetic "TIDAK MOHON" entries use their detected date.
+    requests:requests.concat(unexplained).sort((a,b)=>
+      (Number(a.submittedMs||0)-Number(b.submittedMs||0)) ||
+      String(a.submittedAt||'').localeCompare(String(b.submittedAt||'')) ||
+      String(a.startDate||'').localeCompare(String(b.startDate||'')) ||
+      String(a.name||'').localeCompare(String(b.name||'')))};
 }
 
 function reviewAbsenceRequest(token, requestId, decision, comment) {
@@ -261,7 +266,7 @@ function readAbsenceRows_() {
 function invalidateAbsenceRows_(){EK_RUNTIME_ABSENCE_ROWS_=null;try{getScriptCache_().remove(EK_ABSENCE_CACHE_KEY_);}catch(e){}}
 function findAbsenceById_(id){return readAbsenceRows_().find(r=>r.id===String(id||'').trim())||null;}
 function publicAbsenceOwn_(r){return {id:r.id,type:r.type,mode:r.mode,startDate:r.startDate,endDate:r.endDate,startTime:r.startTime,endTime:r.endTime,note:r.note,status:r.status,reviewedBy:r.reviewedBy,reviewedAt:r.reviewedAt?formatDateTime_(r.reviewedAt):'',comment:r.comment,submittedAt:r.submittedAt?formatDateTime_(r.submittedAt):''};}
-function publicAbsenceManagement_(r){return {id:r.id,submittedAt:r.submittedAt?formatDateTime_(r.submittedAt):'',email:r.email,name:r.name,jobTitle:r.jobTitle||'',category:r.category,type:r.type,mode:r.mode,startDate:r.startDate,endDate:r.endDate,startTime:r.startTime,endTime:r.endTime,note:r.note,status:r.status,reviewerJobTitle:getReviewerJobTitleFromEmail_(r.reviewedBy),reviewedAt:r.reviewedAt?formatDateTime_(r.reviewedAt):'',comment:r.comment};}
+function publicAbsenceManagement_(r){return {id:r.id,submittedAt:r.submittedAt?formatDateTime_(r.submittedAt):'',submittedMs:Number(r.submittedMs||dateValueMs_(r.submittedAt)||dateValueMs_(r.startDate)||0),email:r.email,name:r.name,jobTitle:r.jobTitle||'',category:r.category,type:r.type,mode:r.mode,startDate:r.startDate,endDate:r.endDate,startTime:r.startTime,endTime:r.endTime,note:r.note,status:r.status,reviewerJobTitle:getReviewerJobTitleFromEmail_(r.reviewedBy),reviewedAt:r.reviewedAt?formatDateTime_(r.reviewedAt):'',comment:r.comment};}
 function dateRangesOverlap_(a1,a2,b1,b2){return a1<=b2&&b1<=a2;}
 function daysBetweenKeys_(a,b){return Math.round((new Date(b+'T00:00:00').getTime()-new Date(a+'T00:00:00').getTime())/86400000);}
 function addDaysKey_(key,n){const d=new Date(key+'T00:00:00');d.setDate(d.getDate()+n);return Utilities.formatDate(d,tz_(),'yyyy-MM-dd');}
@@ -270,9 +275,11 @@ function dateKeysBetween_(a,b){const out=[];let cur=a;while(cur<=b&&out.length<3
 function generateAbsencePresencePdf(token, filters){
   requireManagementUser_(token);filters=filters||{};const data=getAbsenceManagementData(token,filters.fromDate,filters.toDate);let rows=data.requests;
   if(filters.mode)rows=rows.filter(r=>r.mode===filters.mode);if(filters.status)rows=rows.filter(r=>r.status===filters.status);if(filters.category)rows=rows.filter(r=>r.category===filters.category);
+  // Respect the Bil. submission-order toggle in the PDF as well.
+  if(String(filters.sort||'')==='submitted_desc')rows=rows.slice().reverse();
   return generatePdfReport_(`Semakan Tidak Hadir / Keberadaan ${data.fromDate} hingga ${data.toDate}`,
-    ['Nama','Jawatan','Kategori','Mod','Jenis','Tarikh','Masa','Status','Disemak Oleh','Ulasan'],
-    rows.map(r=>[r.name,r.jobTitle||'',r.category,r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir',r.type,r.startDate===r.endDate?r.startDate:`${r.startDate} - ${r.endDate}`,r.mode==='KEBERADAAN'?`${r.startTime} - ${r.endTime}`:'—',r.status,r.reviewedBy||'',r.comment||'']),
+    ['Bil.','Nama','Jawatan','Kategori','Mod','Jenis','Tarikh','Masa','Status','Disemak Oleh','Ulasan'],
+    rows.map((r,index)=>[index+1,r.name,r.jobTitle||'',r.category,r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir',r.type,r.startDate===r.endDate?r.startDate:`${r.startDate} - ${r.endDate}`,r.mode==='KEBERADAAN'?`${r.startTime} - ${r.endTime}`:'—',r.status,r.reviewedBy||'',r.comment||'']),
     `Semakan_Tidak_Hadir_Keberadaan_${data.fromDate}_${data.toDate}.pdf`);
 }
 
@@ -558,7 +565,7 @@ function publicUnexplainedAbsenceOwn_(r) {
 }
 
 function publicUnexplainedAbsenceManagement_(r) {
-  return {id:r.id,submittedAt:r.startDate,email:r.email,name:r.name,jobTitle:r.jobTitle||'',category:r.category,mode:'TIDAK_HADIR',type:'TIADA PENJELASAN',startDate:r.startDate,endDate:r.endDate,note:r.note,status:'TIDAK MOHON',reviewerJobTitle:'',reviewedAt:'',comment:'',synthetic:true};
+  return {id:r.id,submittedAt:r.startDate,submittedMs:Number(r.submittedMs||dateValueMs_(r.startDate)||0),email:r.email,name:r.name,jobTitle:r.jobTitle||'',category:r.category,mode:'TIDAK_HADIR',type:'TIADA PENJELASAN',startDate:r.startDate,endDate:r.endDate,note:r.note,status:'TIDAK MOHON',reviewerJobTitle:'',reviewedAt:'',comment:'',synthetic:true};
 }
 
 /**
