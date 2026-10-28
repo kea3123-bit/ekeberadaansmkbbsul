@@ -187,8 +187,15 @@ jobs:
           assert.match(script,/absenceManage:\{default:'submitted_asc',order:\['submitted_asc','submitted_desc'\]/);
           assert(script.includes('list.map((r,index)'));
           assert(script.includes('class="absence-public-number"'));
-          assert.match(script,/colspan="8" class="empty-cell">Tiada rekod sepadan/);
-          assert.match(script,/sort:getTableSort\('absenceManage'\)/);
+          assert.match(script,/colspan="7" class="empty-cell">Tiada rekod sepadan/);
+          assert.match(script,/getTableSort\('absenceManage'\)/);
+          assert(html.includes('id="absenceManageSummary"'));
+          assert(html.includes('id="absenceManageHead"'));
+          const head=html.split('id="absenceManageHead"')[1].split('</thead>')[0];
+          assert.equal((head.match(/<th\b/g)||[]).length,7,'Management table needs 7 aligned columns');
+          assert(script.includes('ensureAbsenceManageTableLayout()'),'Header must self-heal stale markup');
+          assert(script.includes('Lihat butiran'),'Catatan must remain accessible');
+          assert(script.includes('Tiada Penjelasan'),'Management summary must match the public summary');
           // Public list defaults stay unchanged.
           assert.match(script,/absencePublic:\{default:'submitted_desc'/);
           console.log('ABSENCE_MANAGEMENT_FIFO_OK: Bil, submission timestamps and PDF');
