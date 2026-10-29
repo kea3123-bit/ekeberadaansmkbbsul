@@ -900,6 +900,10 @@
   .absence-manage-details[open]{white-space:normal}
   .absence-manage-details>div{margin-top:5px;overflow-wrap:anywhere}
   .absence-manage-details>div b{color:var(--ink)}
+  .profile-sync-diagnostic{padding:10px 12px;border-radius:12px;font-size:13px;line-height:1.5;color:#22476c;background:#edf4ff;border:1px solid #cddff6;overflow-wrap:anywhere}
+  .profile-sync-diagnostic[data-kind="error"]{background:#fff3f2;border-color:#f3c0bb;color:#942322}
+  .profile-sync-diagnostic[data-kind="success"]{background:#ebf9f1;border-color:#b8e7ce;color:#08643a}
+  .profile-sync-diagnostic[data-kind="busy"]{background:#fffaec;border-color:#edd99c;color:#775a12}
   .public-list-note{margin:12px 2px 0}
   #screen-absencepublic .panel::before{background:linear-gradient(180deg,var(--blue),rgba(7,83,185,.16))}
   @media(max-width:1050px){.absence-public-filter{grid-template-columns:repeat(3,1fr)}}
