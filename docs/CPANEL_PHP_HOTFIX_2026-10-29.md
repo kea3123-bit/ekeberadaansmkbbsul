@@ -29,9 +29,17 @@ Fail hotfix juga boleh diambil terus dari `php/api.php` dalam branch `refactor/p
 
 **JANGAN** overwrite `php/config.local.php`, reset PIN, reimport MySQL, atau upload fail konfigurasi/rekod staf ke GitHub.
 
-## Ralat kedua yang berasingan
+## Ralat kedua: Respons Google Workspace bukan JSON (pembetulan sumber tersedia)
 
-`Respons Google Workspace bukan JSON` di `php/workspace_bridge.php:54` turut berulang dalam `error_log`. Ini tidak diselesaikan oleh pembetulan TypeError. Semak cPanel Workspace URL/secret dan deployment Apps Script `workspaceBridgePost_` yang aktif secara peribadi, tanpa mendedahkan secret. Fail backend PHP sahaja tidak mengubah Google Apps Script yang telah dideploy.
+Ralat ini disebabkan oleh laluan Apps Script **pada branch ini** yang sebelum ini mengendalikan semua `doPost` melalui HTML legacy. Permintaan PHP dengan `workspace=1` dijawab dalam bentuk HTML, bukannya JSON.
+
+Pembetulan sudah dimasukkan pada **branch refactor/performance-v2**:
+- `apps-script/97_WorkspaceBridge.gs` — endpoint JSON yang menyemak tandatangan HMAC dan memproses PDF, Sheet dan Drive.
+- `apps-script/Bridges.gs` — `doPost` kini mengasingkan `workspace=1` daripada HTML legacy.
+- `php/workspace_bridge.php` — diagnostik jika Google masih memulangkan HTML.
+- `apps-script/tests/workspace-bridge-routing.test.js` — ujian signed ping, replay, HMAC dan laluan browser sedia ada.
+
+**WAJIB deploy secara manual:** Buka [apps-script/DEPLOY_MANUAL.md](../apps-script/DEPLOY_MANUAL.md#phpmysql-workspace-bridge--html-instead-of-json-29-october-2026) dan ikuti langkah untuk menyalin kedua-dua fail Apps Script ke projek asal, menyemak secret secara peribadi, dan `Manage deployments → Edit → New version`. Commit GitHub sahaja tidak menerbitkan Apps Script atau PHP di cPanel. Jangan ubah data MySQL atau `php/config.local.php` kecuali semakan nilai URL/secret yang diperlukan.
 
 ## Catatan seni bina
 
