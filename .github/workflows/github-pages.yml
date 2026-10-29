@@ -1,16 +1,9 @@
-name: Publish optimized eKeberadaan web
-
+name: Publish PHP/MySQL eKeberadaan web (no Google Sheets RPC)
 on:
   push:
-    branches: ["refactor/performance-v2"]
+    branches: [refactor/performance-v2]
     paths:
-      - 'Index.html'
-      - 'Scripts.html'
-      - 'Styles.html'
-      - 'Logo.html'
-      - 'package.json'
-      - 'web/**'
-      - 'scripts/build-pages.py'
+      - 'mysql-ui/**'
       - '.github/workflows/github-pages.yml'
   workflow_dispatch:
 
@@ -22,104 +15,229 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  publish:
+  build-and-stage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install pinned frontend dependencies
-        run: npm install --ignore-scripts --no-audit --no-fund
-
-      - name: Build optimized static site
-        run: python3 scripts/build-pages.py
-
-      - name: Validate output
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f _site/index.html
-          test -f _site/sw.js
-          test -f _site/manifest.webmanifest
-          test -f _site/vendor/bootstrap/bootstrap.min.css
-          test -f _site/vendor/bootstrap/bootstrap.bundle.min.js
-          ! grep -q 'data:image' _site/index.html
-          ! grep -q 'cdn.jsdelivr.net' _site/index.html
-          grep -q 'vendor/bootstrap/bootstrap.min.css' _site/index.html
-          grep -q 'vendor/bootstrap/bootstrap.bundle.min.js' _site/index.html
-          grep -R -q 'spinner-border spinner-border-sm' _site/assets
-          html=$(wc -c < _site/index.html)
-          total=$(du -sb _site | awk '{print $1}')
-          echo "HTML=$html bytes TOTAL=$total bytes"
-          test "$html" -lt 100000
-          test "$total" -lt 900000
-
-      - name: Capture expected live asset names
-        id: expected
-        shell: bash
-        run: |
-          set -euo pipefail
-          mobile=$(grep -Eo 'assets/mobile\.[A-Za-z0-9]+\.css' _site/index.html | head -1)
-          shim=$(grep -Eo 'assets/gas-shim\.[A-Za-z0-9]+\.js' _site/index.html | head -1)
-          test -n "$mobile"
-          test -n "$shim"
-          echo "mobile=$mobile" >> "$GITHUB_OUTPUT"
-          echo "shim=$shim" >> "$GITHUB_OUTPUT"
-          echo "Expected mobile=$mobile shim=$shim"
-
-      - name: Publish gh-pages branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/eke-gh-pages
-          cp -a _site /tmp/eke-gh-pages
-          git config user.name 'eKeberadaan Bot'
-          git config user.email 'actions@users.noreply.github.com'
-          git checkout --orphan gh-pages
-          git rm -rf . || true
-          # Remove ignored/untracked build dependencies (especially node_modules)
-          # before copying only the generated static site into the orphan branch.
-          git clean -fdx
-          cp -a /tmp/eke-gh-pages/. .
-          git add -A
-          git commit -m "deploy: optimized static web ${GITHUB_SHA}"
-          git push --force origin HEAD:gh-pages
-
-      - name: Verify exact build reached live GitHub Pages
-        shell: bash
+      - name: Render HTML and verify MySQL endpoint
         env:
-          EXPECTED_MOBILE: ${{ steps.expected.outputs.mobile }}
-          EXPECTED_SHIM: ${{ steps.expected.outputs.shim }}
+          EKE_PUBLIC_API_URL: https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php
         run: |
           set -euo pipefail
-          PAGE='https://kea3123-bit.github.io/ekeberadaansmkbbsul/'
-          ok=0
-          for n in $(seq 1 24); do
-            code=$(curl -L --silent --show-error --max-time 20 \
-              -H 'Cache-Control: no-cache' \
-              -o /tmp/live.html -w '%{http_code}' "${PAGE}?deploy=${GITHUB_SHA}-${n}" || true)
-            if [ "$code" = 200 ] \
-              && grep -q "$EXPECTED_MOBILE" /tmp/live.html \
-              && grep -q "$EXPECTED_SHIM" /tmp/live.html; then
-              ok=1
-              break
-            fi
-            echo "Waiting for Pages deployment (${n}/24)..."
-            sleep 5
-          done
-          test "$ok" = 1
-          curl -LfsS --max-time 20 -H 'Cache-Control: no-cache' "${PAGE}${EXPECTED_MOBILE}" -o /tmp/mobile.css
-          curl -LfsS --max-time 20 -H 'Cache-Control: no-cache' "${PAGE}${EXPECTED_SHIM}" -o /tmp/gas-shim.js
-          grep -q '.modal #modalContent input:not' /tmp/mobile.css
-          grep -q '#ekGlobalLoading' /tmp/mobile.css
-          grep -q 'function beginGlobalLoading' /tmp/gas-shim.js
-          grep -q 'function startRequestButton' /tmp/gas-shim.js
-          echo "LIVE_PAGES_EXACT_BUILD_OK mobile=${EXPECTED_MOBILE} shim=${EXPECTED_SHIM}"
-
-# deployment source: refactor/performance-v2 · Urusan Peperiksaan dropdown 2026-09-11
-# redeploy: session-1-session-2 home cards 2026-09-11T21:04+08:00
-# redeploy: latest Settings UI including public holidays 2026-09-17T09:55+08:00
+          php -l mysql-ui/php/index.php
+          php -l mysql-ui/index.php
+          node --check < mysql-ui/Scripts.html
+          mkdir -p /tmp/eke-mysql-ui
+          php mysql-ui/index.php > /tmp/eke-mysql-ui/index.html
+          python3 - <<'PY'
+          from pathlib import Path
+          html = Path('/tmp/eke-mysql-ui/index.html').read_text('utf-8')
+          assert html.lstrip().lower().startswith('<!doctype html>')
+          assert 'fetch("https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php"' in html, 'MySQL API URL not found'
+          assert 'google.script.run' not in html, 'Google Sheets RPC remains'
+          assert 'gas-shim' not in html, 'Google Sheets client shim remains'
+          assert "credentials:'omit'" in html, 'No cross-domain cookies allowed'
+          assert 'EK_PASSWORD_PEPPER' not in html and 'EK_WORKSPACE_BRIDGE_SECRET' not in html, 'Secret leaked'
+          assert 'php/config.local.php' not in html, 'Backend config leaked'
+          assert '<meta name="viewport"' in html, 'iPhone/Android viewport must be declared'
+          assert 'width=device-width' in html, 'Mobile browser is still using desktop layout viewport'
+          assert '<link rel="manifest" href="./manifest.webmanifest">' in html
+          assert 'apple-mobile-web-app-capable' in html
+          assert '</head>' in html and '</body>' in html
+          html=html.replace('</head>', '<meta name="robots" content="noindex,nofollow"></head>',1)
+          registration = """<script>
+          (() => {
+            if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
+            window.addEventListener('load', () => {
+              navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(() => {
+                // Login and punch still work online when SW is unavailable.
+              });
+            }, {once:true});
+          })();
+          </script>"""
+          html=html.replace('</body>', registration+'</body>',1)
+          Path('/tmp/eke-mysql-ui/index.html').write_text(html, 'utf-8')
+          print('PASS: frontend uses only cPanel PHP/MySQL RPC')
+          PY
+          touch /tmp/eke-mysql-ui/.nojekyll
+      - name: Generate standalone PWA icons and offline notice
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet 'Pillow>=11,<13'
+          python3 mysql-ui/build_pwa_assets.py /tmp/eke-mysql-ui
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          out=Path('/tmp/eke-mysql-ui')
+          manifest=json.loads((out/'manifest.webmanifest').read_text('utf-8'))
+          assert manifest['display']=='standalone'
+          assert manifest['start_url']=='./' and manifest['scope']=='./'
+          for width in (192,512):
+              with Image.open(out/f'icon-{width}.png') as img:
+                  assert img.size==(width,width), img.size
+          with Image.open(out/'apple-touch-icon.png') as img:
+              assert img.size==(180,180), img.size
+          assert 'tidak disimpan secara luar talian' in (out/'offline.html').read_text('utf-8')
+          print('PWA_MANIFEST_ICONS_OK')
+          PY
+          cat > /tmp/eke-mysql-ui/sw.js <<'JS'
+          // eKeberadaan PHP/MySQL PWA: install support, not offline attendance.
+          // Never cache login responses, MySQL API requests or personal data.
+          const PWA_CACHE='eke-pwa-shell-v1';
+          const ASSETS=['./offline.html','./manifest.webmanifest','./icon-192.png',
+            './icon-512.png','./apple-touch-icon.png'];
+          self.addEventListener('install',event=>{
+            event.waitUntil(caches.open(PWA_CACHE)
+              .then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()));
+          });
+          self.addEventListener('activate',event=>{
+            event.waitUntil((async()=>{
+              const keys=await caches.keys();
+              await Promise.all(keys.filter(key=>
+                (key.startsWith('eke-static-')||key.startsWith('eke-pwa-'))&&key!==PWA_CACHE
+              ).map(key=>caches.delete(key)));
+              await self.clients.claim();
+            })());
+          });
+          self.addEventListener('fetch',event=>{
+            const request=event.request;
+            if(request.method!=='GET'||request.mode!=='navigate')return;
+            if(new URL(request.url).origin!==self.location.origin)return;
+            // Fetch the current app shell on every navigation so updates win.
+            // Offline we display a notice rather than pretending punch succeeded.
+            event.respondWith(fetch(request).catch(async()=>{
+              const cache=await caches.open(PWA_CACHE);
+              return await cache.match('./offline.html')||Response.error();
+            }));
+          });
+          JS
+          node --check /tmp/eke-mysql-ui/sw.js
+      - name: Test MySQL absence submission ordering and numbered tables
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm'),assert=require('assert').strict;
+          const js=fs.readFileSync('mysql-ui/Scripts.html','utf8');
+          const html=fs.readFileSync('mysql-ui/Index.html','utf8');
+          const rendered=fs.readFileSync('/tmp/eke-mysql-ui/index.html','utf8');
+          const start=js.indexOf('  function compareText('),end=js.indexOf('  const TABLE_SORT_CONFIG=',start);
+          assert(start>0&&end>start,'Sort function not found');
+          const ctx={};vm.createContext(ctx);vm.runInContext(js.slice(start,end),ctx);
+          const parsed=[
+            {submittedAt:'2026-10-29 06:30:52'},
+            {submittedAt:'29/10/2026 06:30:52'},
+            {submittedAt:'2026-10-29T06:30:52+08:00'},
+            {submitted_at:'2026-10-29 06:30:52'}
+          ].map(ctx.absenceSubmittedMs);
+          assert(parsed.every(x=>x===parsed[0]&&x>0),'MySQL/Malaysia timestamp parsing differs');
+          assert.equal(ctx.absenceSubmittedMs({submittedMs:1793230000}),1793230000000);
+          const records=[
+            {id:'A',name:'A',submittedAt:'2026-10-27 08:00:00',startDate:'2026-10-31'},
+            {id:'B',name:'B',submittedAt:'2026-10-29 07:00:00',startDate:'2026-10-01'},
+            {id:'C',name:'C',submittedAt:'28/10/2026 09:00:00',startDate:'2026-10-28'},
+            {id:'D',name:'D',synthetic:true,status:'TIDAK MOHON',startDate:'2026-10-29'}
+          ];
+          assert.equal(ctx.sortRecords(records,'submitted_desc').map(x=>x.id).join(','),'B,C,A,D');
+          assert.equal(ctx.sortRecords(records,'submitted_asc').map(x=>x.id).join(','),'A,C,B,D');
+          assert.match(js,/absencePublic:\{default:'submitted_desc',order:/);
+          assert.match(js,/absenceManage:\{default:'submitted_desc',order:/);
+          assert(js.includes('ensureAbsenceManageTableLayout()'));
+          assert(js.includes('list.map((r,index)'));
+          assert(html.includes('id="absenceManageSummary"'));
+          assert(html.includes('id="sort-absenceManage-order"'));
+          assert(html.includes('id="sort-absencePublic-order"'));
+          assert(rendered.includes('sort-absenceManage-order'));
+          const mgmt=html.split('id="absenceManageHead"')[1].split('</thead>')[0];
+          assert.equal((mgmt.match(/<th\b/g)||[]).length,7);
+          assert(js.includes('class="absence-public-number"'));
+          assert(js.includes('Lihat butiran'));
+          assert(js.includes('openReviewAbsence('));
+          console.log('MYSQL_SORT_BIL_OK: newest submissions first, reverse toggle, seven admin columns');
+          NODE
+      - name: Verify cPanel PHP/MySQL API and Pages CORS before publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          API='https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php'
+          code=$(curl -sS -L --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 30 \
+            -D /tmp/eke-api-headers -o /tmp/eke-api-health.json -w '%{http_code}' \
+            -H 'Origin: https://kea3123-bit.github.io' \
+            -H 'Content-Type: application/json' \
+            -d '{"fn":"getApiStatus","args":[]}' "$API")
+          if [ "$code" != 200 ]; then
+            echo "::error::cPanel API health HTTP $code. Production deployment blocked."
+            exit 1
+          fi
+          php -r '$j=json_decode(file_get_contents("/tmp/eke-api-health.json"),true); if(!is_array($j)||!($j["ok"]??false)||!($j["result"]["healthy"]??false)||($j["result"]["backend"]??"")!=="PHP")exit(1); echo "PHP_MYSQL_API_HEALTH_OK\\n";'
+          if ! grep -Eiq '^access-control-allow-origin:[[:space:]]*https://kea3123-bit[.]github[.]io[[:space:]]*
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin gh-pages
+          git worktree add --detach /tmp/eke-gh-pages origin/gh-pages
+          cp /tmp/eke-mysql-ui/index.html /tmp/eke-gh-pages/index.html
+          cp /tmp/eke-mysql-ui/sw.js /tmp/eke-gh-pages/sw.js
+          cp /tmp/eke-mysql-ui/manifest.webmanifest /tmp/eke-gh-pages/manifest.webmanifest
+          cp /tmp/eke-mysql-ui/offline.html /tmp/eke-gh-pages/offline.html
+          cp /tmp/eke-mysql-ui/icon-192.png /tmp/eke-gh-pages/icon-192.png
+          cp /tmp/eke-mysql-ui/icon-512.png /tmp/eke-gh-pages/icon-512.png
+          cp /tmp/eke-mysql-ui/apple-touch-icon.png /tmp/eke-gh-pages/apple-touch-icon.png
+          cp /tmp/eke-mysql-ui/.nojekyll /tmp/eke-gh-pages/.nojekyll
+          cd /tmp/eke-gh-pages
+          git add index.html sw.js manifest.webmanifest offline.html icon-192.png icon-512.png apple-touch-icon.png .nojekyll
+          if ! git diff --cached --quiet; then
+            git commit -m 'deploy: use ppdkmy cPanel PHP/MySQL, not Sheets'
+            git push origin HEAD:gh-pages
+          fi
+      - name: Verify staged branch
+        run: |
+          set -euo pipefail
+          git fetch origin gh-pages
+          git show origin/gh-pages:index.html > /tmp/eke-staged.html
+          grep -Fq "https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php" /tmp/eke-staged.html
+          ! grep -Fq 'google.script.run' /tmp/eke-staged.html
+          grep -Fq 'width=device-width' /tmp/eke-staged.html
+          grep -Fq 'manifest.webmanifest' /tmp/eke-staged.html
+          git show origin/gh-pages:sw.js | grep -Fq 'eke-pwa-shell-v1'
+          git show origin/gh-pages:manifest.webmanifest | grep -Fq '"display":"standalone"'
+          echo 'gh-pages serves MySQL app with working iOS/Android PWA metadata.'
+ /tmp/eke-api-headers; then
+            echo '::error::cPanel API has not authorized the production GitHub Pages origin. Production deployment blocked.'
+            exit 1
+          fi
+          echo "CPANEL_PHP_MYSQL_CORS_OK"
+      - name: Stage verified PHP/MySQL app into gh-pages branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin gh-pages
+          git worktree add --detach /tmp/eke-gh-pages origin/gh-pages
+          cp /tmp/eke-mysql-ui/index.html /tmp/eke-gh-pages/index.html
+          cp /tmp/eke-mysql-ui/sw.js /tmp/eke-gh-pages/sw.js
+          cp /tmp/eke-mysql-ui/manifest.webmanifest /tmp/eke-gh-pages/manifest.webmanifest
+          cp /tmp/eke-mysql-ui/offline.html /tmp/eke-gh-pages/offline.html
+          cp /tmp/eke-mysql-ui/icon-192.png /tmp/eke-gh-pages/icon-192.png
+          cp /tmp/eke-mysql-ui/icon-512.png /tmp/eke-gh-pages/icon-512.png
+          cp /tmp/eke-mysql-ui/apple-touch-icon.png /tmp/eke-gh-pages/apple-touch-icon.png
+          cp /tmp/eke-mysql-ui/.nojekyll /tmp/eke-gh-pages/.nojekyll
+          cd /tmp/eke-gh-pages
+          git add index.html sw.js manifest.webmanifest offline.html icon-192.png icon-512.png apple-touch-icon.png .nojekyll
+          if ! git diff --cached --quiet; then
+            git commit -m 'deploy: use ppdkmy cPanel PHP/MySQL, not Sheets'
+            git push origin HEAD:gh-pages
+          fi
+      - name: Verify staged branch
+        run: |
+          set -euo pipefail
+          git fetch origin gh-pages
+          git show origin/gh-pages:index.html > /tmp/eke-staged.html
+          grep -Fq "https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php" /tmp/eke-staged.html
+          ! grep -Fq 'google.script.run' /tmp/eke-staged.html
+          grep -Fq 'width=device-width' /tmp/eke-staged.html
+          grep -Fq 'manifest.webmanifest' /tmp/eke-staged.html
+          git show origin/gh-pages:sw.js | grep -Fq 'eke-pwa-shell-v1'
+          git show origin/gh-pages:manifest.webmanifest | grep -Fq '"display":"standalone"'
+          echo 'gh-pages serves MySQL app with working iOS/Android PWA metadata.'
