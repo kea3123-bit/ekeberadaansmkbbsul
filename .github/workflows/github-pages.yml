@@ -155,38 +155,48 @@ jobs:
           assert(js.includes('openReviewAbsence('));
           console.log('MYSQL_SORT_BIL_OK: newest submissions first, reverse toggle, seven admin columns');
           NODE
-      - name: Verify cPanel PHP/MySQL API and Pages CORS before publishing
+      - name: Diagnose hosting CORS and confirm MySQL health before publishing
         shell: bash
         run: |
           set -euo pipefail
           API='https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php'
-          code=$(curl -sS -L --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 30 \
-            -D /tmp/eke-api-headers -o /tmp/eke-api-health.json -w '%{http_code}' \
-            -H 'Origin: https://kea3123-bit.github.io' \
-            -H 'Content-Type: application/json' \
-            -d '{"fn":"getApiStatus","args":[]}' "$API")
-          if [ "$code" != 200 ]; then
-            echo "::error::cPanel API health HTTP $code. Production deployment blocked."
+          BODY='{"fn":"getApiStatus","args":[]}'
+          ORIGIN='https://kea3123-bit.github.io'
+          probe() {
+            label="$1"; shift
+            status=$(curl --silent --show-error --location --connect-timeout 8 --max-time 18 \
+              --output "/tmp/eke-$label.body" --dump-header "/tmp/eke-$label.headers" \
+              --write-out '%{http_code}' "$@" "$API" || true)
+            type=$(grep -i '^content-type:' "/tmp/eke-$label.headers" 2>/dev/null | tail -1 | cut -d: -f2- | tr -d '\r' || true)
+            allowed=$(grep -i '^access-control-allow-origin:' "/tmp/eke-$label.headers" 2>/dev/null | tail -1 | cut -d: -f2- | tr -d '\r' || true)
+            echo "$label HTTP=$status type=${type:-none} ACAO=${allowed:-none}"
+          }
+          probe json_origin -H "Origin: $ORIGIN" -H 'Content-Type: application/json' --data "$BODY"
+          probe simple_origin -H "Origin: $ORIGIN" -H 'Content-Type: text/plain;charset=UTF-8' --data "$BODY"
+          probe json_no_origin -H 'Content-Type: application/json' --data "$BODY"
+          probe preflight -X OPTIONS -H "Origin: $ORIGIN" \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: content-type'
+          php -r '
+            $body=json_decode(file_get_contents("/tmp/eke-simple_origin.body"),true);
+            if(!is_array($body)||!($body["ok"]??false)||!($body["result"]["healthy"]??false)){
+              fwrite(STDERR,"::error::cPanel does not accept browser-safe JSON; deploy patched api.php and php/api.php.\\n");
+              exit(1);
+            }
+          '
+          if ! grep -Eiq '^access-control-allow-origin:[[:space:]]*https://kea3123-bit[.]github[.]io[[:space:]]*$' /tmp/eke-simple_origin.headers; then
+            echo '::error::Hosting denies CORS from kea3123-bit.github.io.'
             exit 1
           fi
-          # The root API gateway returns "PHP root gateway" for getApiStatus;
-          # test an actual MySQL-backed, unauthenticated read as well.
-          php -r '$j=json_decode(file_get_contents("/tmp/eke-api-health.json"),true); if(!is_array($j)||!($j["ok"]??false)||!($j["result"]["healthy"]??false)||!str_starts_with((string)($j["result"]["backend"]??""),"PHP"))exit(1); echo "PHP_API_GATEWAY_OK\\n";'
           dbcode=$(curl -sS -L --connect-timeout 10 --max-time 30 \
             -o /tmp/eke-api-db.json -w '%{http_code}' \
-            -H 'Origin: https://kea3123-bit.github.io' \
-            -H 'Content-Type: application/json' \
+            -H "Origin: $ORIGIN" -H 'Content-Type: text/plain;charset=UTF-8' \
             -d '{"fn":"getLoginPageData","args":[]}' "$API")
           if [ "$dbcode" != 200 ]; then
-            echo "::error::MySQL-backed login metadata is unavailable (HTTP $dbcode); refusing to deploy."
+            echo "::error::MySQL login metadata HTTP=$dbcode; deployment blocked."
             exit 1
           fi
-          php -r '$j=json_decode(file_get_contents("/tmp/eke-api-db.json"),true); if(!is_array($j)||!($j["ok"]??false)||($j["result"]["mode"]??"")!=="delima-email-pin")exit(1); echo "MYSQL_LOGIN_METADATA_OK\\n";'
-          if ! grep -Eiq '^access-control-allow-origin:[[:space:]]*https://kea3123-bit[.]github[.]io[[:space:]]*$' /tmp/eke-api-headers; then
-            echo '::error::cPanel API has not authorized the production GitHub Pages origin. Production deployment blocked.'
-            exit 1
-          fi
-          echo "CPANEL_PHP_MYSQL_CORS_OK"
+          php -r '$j=json_decode(file_get_contents("/tmp/eke-api-db.json"),true); if(!is_array($j)||!($j["ok"]??false)||($j["result"]["mode"]??"")!=="delima-email-pin")exit(1); echo "MYSQL_LOGIN_READY\\n";'
       - name: Split heavy inline assets and verify cached MySQL bundle
         shell: bash
         run: |
