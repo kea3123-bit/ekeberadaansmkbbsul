@@ -7,7 +7,7 @@
 declare(strict_types=1);
 
 function workspace_rpc(string $action, array $data=[]): array {
-    $allowed=['photo','syncPhotos','exportPdf','exportSheet'];
+    $allowed=['ping','photo','syncPhotos','exportPdf','exportSheet'];
     if (!in_array($action,$allowed,true)) throw new InvalidArgumentException('Workspace action not allowed');
     $config=cfg();
     $secret=(string)($config['workspace_bridge_secret']??'');
@@ -51,7 +51,24 @@ function workspace_rpc(string $action, array $data=[]): array {
     if(strlen($response)>5*1024*1024) throw new RuntimeException('Respons Google Workspace terlalu besar.');
     $result=json_decode($response,true);
     if(!is_array($result)||!array_key_exists('ok',$result)) {
-        throw new RuntimeException('Respons Google Workspace bukan JSON. Pastikan akses Web App ditetapkan kepada Anyone dan versi bridge sudah dideploy.');
+        // Never log signed request data, returned HTML, private file contents,
+        // access tokens or the full Google redirect URL.
+        $isHtml=preg_match('/^\\s*(?:<!doctype\\s+html|<html|<head|<body)/i',(string)$response)===1;
+        error_log('eKeberadaan Workspace invalid JSON: HTTP '.$status.
+            ', host '.(string)$host.', bytes '.strlen((string)$response).
+            ', html='.($isHtml?'yes':'no'));
+        if($isHtml) {
+            throw new RuntimeException(
+                'Google Workspace memulangkan HTML, bukan JSON. '.
+                'Pastikan Apps Script mempunyai 97_WorkspaceBridge.gs, '.
+                'Bridges.gs mengendalikan workspace=1, kemudian Deploy > New version. '.
+                'Akses Web App: Anyone, Execute as: Me.'
+            );
+        }
+        throw new RuntimeException(
+            'Respons Google Workspace tidak sah (bukan JSON). '.
+            'Semak Apps Script Deploy > Manage deployments dan log Executions.'
+        );
     }
     if(!$result['ok'])throw new RuntimeException('Google Workspace: '.substr((string)($result['error']??'Permintaan gagal'),0,250));
     if(!is_array($result['result']??null)) throw new RuntimeException('Data Google Workspace tidak sah.');
