@@ -14,22 +14,43 @@ if ($styles === false || $logo === false || $scripts === false || $pinUi === fal
 $rpcOld = "function runServerRaw(fn, ...args){\n    return new Promise((resolve,reject)=>{\n      google.script.run\n        .withSuccessHandler(resolve)\n        .withFailureHandler(err=>reject(new Error(err && err.message ? err.message : String(err))))[fn](...args);\n    });\n  }";
 $rpcOldLegacy = "function runServer(fn, ...args){\n    return new Promise((resolve,reject)=>{\n      google.script.run\n        .withSuccessHandler(resolve)\n        .withFailureHandler(err=>reject(new Error(err && err.message ? err.message : String(err))))[fn](...args);\n    });\n  }";
 $rpcNew = <<<'JS'
-function runServerRaw(fn, ...args){
-    return fetch('api.php', {
+async function runServerRaw(fn, ...args){
+    const payload=JSON.stringify({fn,args});
+    // CORS-simple text/plain does not need an OPTIONS preflight. Keep the
+    // exact JSON payload and explicit session-token checks in PHP/MySQL.
+    const options={
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'text/plain;charset=UTF-8'},
       credentials:'same-origin',
       cache:'no-store',
-      body:JSON.stringify({fn,args})
-    }).then(async response=>{
-      const obj=await response.json().catch(()=>({
-        ok:false,
-        error:'HTTP '+response.status+': respons server bukan JSON. Semak cPanel PHP error log.'
-      }));
-      if(!response.ok || !obj.ok) throw new Error(obj.error||'Request failed');
-      return obj.result;
-    });
+      body:payload
+    };
+    let response;
+    try {
+      response=await fetch('api.php',options);
+      if(response.status===415){
+        // Graceful compatibility while an older cPanel api.php is upgraded.
+        // The old server rejects before dispatching, so retry is safe.
+        try{
+          response=await fetch('api.php',{
+            ...options,headers:{'Content-Type':'application/json'}
+          });
+        }catch(_legacyError){
+          throw new Error('API cPanel belum dikemas kini untuk sambungan tanpa preflight. Gantikan api.php dan php/api.php daripada branch terkini.');
+        }
+      }
+    }catch(e){
+      if(e instanceof Error && e.message.includes('belum dikemas kini'))throw e;
+      throw new Error('Tidak dapat menghubungi API MySQL di hosting. Semak sambungan internet, HTTPS dan tetapan CORS cPanel.');
+    }
+    const obj=await response.json().catch(()=>({
+      ok:false,
+      error:'HTTP '+response.status+': respons server bukan JSON. Semak cPanel PHP error_log.'
+    }));
+    if(!response.ok||!obj.ok)throw new Error(obj.error||'Permintaan MySQL gagal (HTTP '+response.status+').');
+    return obj.result;
   }
+
 JS;
 // The renderer serves two targets:
 // - cPanel PHP site: same-origin relative API endpoint
