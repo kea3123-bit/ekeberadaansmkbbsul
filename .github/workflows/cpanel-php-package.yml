@@ -49,6 +49,20 @@ jobs:
           unzip -l ekeberadaansmkbbsul-report-hotfix.zip
           unzip -l ekeberadaansmkbbsul-backend.zip
 
+      - name: Package profile photo backend fix (no secrets)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/eke-photo-hotfix/php
+          cp php/_lib.php php/workspace_bridge.php php/workspace_services.php /tmp/eke-photo-hotfix/php/
+          (cd /tmp/eke-photo-hotfix && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-profile-photo-hotfix.zip" php)
+          unzip -l ekeberadaansmkbbsul-profile-photo-hotfix.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ekeberadaansmkbbsul-profile-photo-hotfix
+          path: ekeberadaansmkbbsul-profile-photo-hotfix.zip
+          retention-days: 14
+
       - name: Package Apps Script bridge update (no secrets)
         run: |
           set -euo pipefail
