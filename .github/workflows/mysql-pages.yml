@@ -67,6 +67,48 @@ jobs:
           });
           JS
           touch /tmp/eke-mysql-ui/.nojekyll
+      - name: Test MySQL absence submission ordering and numbered tables
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm'),assert=require('assert').strict;
+          const js=fs.readFileSync('mysql-ui/Scripts.html','utf8');
+          const html=fs.readFileSync('mysql-ui/Index.html','utf8');
+          const rendered=fs.readFileSync('/tmp/eke-mysql-ui/index.html','utf8');
+          const start=js.indexOf('  function compareText('),end=js.indexOf('  const TABLE_SORT_CONFIG=',start);
+          assert(start>0&&end>start,'Sort function not found');
+          const ctx={};vm.createContext(ctx);vm.runInContext(js.slice(start,end),ctx);
+          const parsed=[
+            {submittedAt:'2026-10-29 06:30:52'},
+            {submittedAt:'29/10/2026 06:30:52'},
+            {submittedAt:'2026-10-29T06:30:52+08:00'},
+            {submitted_at:'2026-10-29 06:30:52'}
+          ].map(ctx.absenceSubmittedMs);
+          assert(parsed.every(x=>x===parsed[0]&&x>0),'MySQL/Malaysia timestamp parsing differs');
+          assert.equal(ctx.absenceSubmittedMs({submittedMs:1793230000}),1793230000000);
+          const records=[
+            {id:'A',name:'A',submittedAt:'2026-10-27 08:00:00',startDate:'2026-10-31'},
+            {id:'B',name:'B',submittedAt:'2026-10-29 07:00:00',startDate:'2026-10-01'},
+            {id:'C',name:'C',submittedAt:'28/10/2026 09:00:00',startDate:'2026-10-28'},
+            {id:'D',name:'D',synthetic:true,status:'TIDAK MOHON',startDate:'2026-10-29'}
+          ];
+          assert.equal(ctx.sortRecords(records,'submitted_desc').map(x=>x.id).join(','),'B,C,A,D');
+          assert.equal(ctx.sortRecords(records,'submitted_asc').map(x=>x.id).join(','),'A,C,B,D');
+          assert.match(js,/absencePublic:\{default:'submitted_desc',order:/);
+          assert.match(js,/absenceManage:\{default:'submitted_desc',order:/);
+          assert(js.includes('ensureAbsenceManageTableLayout()'));
+          assert(js.includes('list.map((r,index)'));
+          assert(html.includes('id="absenceManageSummary"'));
+          assert(html.includes('id="sort-absenceManage-order"'));
+          assert(html.includes('id="sort-absencePublic-order"'));
+          assert(rendered.includes('sort-absenceManage-order'));
+          const mgmt=html.split('id="absenceManageHead"')[1].split('</thead>')[0];
+          assert.equal((mgmt.match(/<th\b/g)||[]).length,7);
+          assert(js.includes('class="absence-public-number"'));
+          assert(js.includes('Lihat butiran'));
+          assert(js.includes('openReviewAbsence('));
+          console.log('MYSQL_SORT_BIL_OK: newest submissions first, reverse toggle, seven admin columns');
+          NODE
       - name: Stage app into gh-pages branch
         run: |
           set -euo pipefail
