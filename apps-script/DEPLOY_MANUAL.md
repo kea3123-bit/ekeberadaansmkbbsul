@@ -83,6 +83,8 @@ Go to:
 
 Keep the existing execution/access configuration. Do not create a new deployment unless intentionally changing the backend URL.
 
+For the signed PHP/MySQL Workspace bridge only, the existing Web App must execute **as the deploying owner** and allow access **Anyone** so the cPanel server (without a Google login cookie) can call it. If school Workspace policy blocks Anyone, ask the Workspace administrator to permit the approved integration; don't expose the secret or bypass security restrictions.
+
 ## Post-deploy checks
 
 1. Open the existing `/exec?bridge=1` endpoint and confirm it loads.
@@ -96,3 +98,18 @@ Keep the existing execution/access configuration. Do not create a new deployment
 9. Re-run `diagnosePerformanceBackend()` and retain the timing output if comparing performance later.
 
 If a problem appears before publishing a new version, do not deploy. If a deployed version regresses, Apps Script Manage deployments can be edited back to a previously known-good version.
+
+## PHP/MySQL Workspace bridge — HTML instead of JSON (29 October 2026)
+
+This is a separate, signed server-to-server channel from PHP on cPanel. It **does not** switch the Apps Script PENGGUNA/KEHADIRAN database to Google Sheets for PHP users.
+
+1. In this same original Apps Script editor, add/update script `97_WorkspaceBridge.gs` using the file from **kea3123-bit/ekeberadaansmkbbsul → refactor/performance-v2 → apps-script/97_WorkspaceBridge.gs**.
+2. Replace the editor's `Bridges.gs` with `apps-script/Bridges.gs` from the **same branch**. The first lines of `doPost(e)` must route `e.parameter.workspace === '1'` to `workspaceBridgePost_(e)`. Leave the normal browser bridge logic untouched.
+3. In **Project Settings → Script Properties**, confirm `EK_WORKSPACE_BRIDGE_SECRET` contains the same private 64-to-128 character hex value that is configured in cPanel `public_html/ekeberadaansmkbbsul/php/config.local.php` as `workspace_bridge_secret`. If missing, generate a **new independent** secret and configure it privately on both systems. Never print, paste or commit either secret.
+4. **Save**, then **Deploy → Manage deployments → existing Web App → Edit → New version → Deploy**. Verify `Execute as: Me` and `Who has access: Anyone`. This is essential: saving the editor alone does **not** update `/exec`.
+5. In cPanel, verify `workspace_gas_url` is the existing correct HTTPS `https://script.google.com/macros/s/.../exec` URL. Replace only `public_html/ekeberadaansmkbbsul/php/workspace_bridge.php` with the same branch's latest PHP file if the old generic diagnostic persists. Do **not** overwrite `php/config.local.php`.
+6. As an administrator, retry monthly PDF and Sheet export. The signed `ping` action is available for future health checks and the workflow's local CI test; it cannot be called anonymously without the shared HMAC secret.
+
+**Why the error happened:** this refactor branch had neither `apps-script/97_WorkspaceBridge.gs` nor the `workspace=1` dispatch in `Bridges.gs`. PHP expected ContentService JSON, but the legacy bridge returned HtmlService HTML for that request. The new files fix the code path. If a Google login page still appears, confirm the Web App access and that the correct deployment is being called.
+
+**Security:** Do not change or delete the existing `EK_PASSWORD_PEPPER`, session secret, login tables, or MySQL contents. The workspace bridge signs every export request, checks freshness and nonce replay, and allows only Drive/photo/PDF/Sheet operations.
