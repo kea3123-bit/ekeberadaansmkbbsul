@@ -1229,18 +1229,18 @@ const state = {
     const raw=r.submittedAt??r.submitted_at??r.createdAt??r.created_at??'';
     const value=String(raw).trim();
     if(value){
-      if(/^\\d{10,13}$/.test(value)){
+      if(/^\d{10,13}$/.test(value)){
         const n=Number(value);
         if(Number.isFinite(n))return value.length<=10?n*1000:n;
       }
-      const iso=value.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?(?:\\.\\d+)?(?:\\s*(Z|[+-]\\d{2}:?\\d{2}))?$/i);
-      const my=value.match(/^(\\d{1,2})[\\/.-](\\d{1,2})[\\/.-](\\d{4})(?:[ ,T]+(\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?$/);
+      const iso=value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?(?:\.\d+)?(?:\s*(Z|[+-]\d{2}:?\d{2}))?$/i);
+      const my=value.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
       if(iso||my){
         const x=iso||my;
         const year=iso?Number(x[1]):Number(x[3]),month=Number(x[2]),day=iso?Number(x[3]):Number(x[1]);
         const hour=Number(x[4]||0),minute=Number(x[5]||0),second=Number(x[6]||0);
         if(month>=1&&month<=12&&day>=1&&day<=31&&hour<=23&&minute<=59&&second<=59){
-          const z=iso&&x[7]?x[7].replace(/^([+-]\\d{2})(\\d{2})$/,'$1:$2'):'+08:00';
+          const z=iso&&x[7]?x[7].replace(/^([+-]\d{2})(\d{2})$/,'$1:$2'):'+08:00';
           const stamp=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}:${String(second).padStart(2,'0')}${z}`;
           const parsed=Date.parse(stamp);
           if(Number.isFinite(parsed))return parsed;
