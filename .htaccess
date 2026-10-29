@@ -1,0 +1,18 @@
+DirectoryIndex index.php
+Options -Indexes
+
+# Block source, backups and logs from direct browser access.
+# PHP can still read them via local filesystem includes.
+<FilesMatch "^(?:error_log(?:[._-].*)?|setup\.php|Code\.gs|Index\.html|Logo\.html|Scripts\.html|Styles\.html|appscript\.json|README\.md|.*\.(?:sql|log|env|bak|zip|old|save|swp))$">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^(?:_sync|\.github|hotfixes)(?:/|$) - [F,L,NC]
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
