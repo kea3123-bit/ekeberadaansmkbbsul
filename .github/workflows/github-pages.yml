@@ -169,7 +169,19 @@ jobs:
             echo "::error::cPanel API health HTTP $code. Production deployment blocked."
             exit 1
           fi
-          php -r '$j=json_decode(file_get_contents("/tmp/eke-api-health.json"),true); if(!is_array($j)||!($j["ok"]??false)||!($j["result"]["healthy"]??false)||($j["result"]["backend"]??"")!=="PHP")exit(1); echo "PHP_MYSQL_API_HEALTH_OK\\n";'
+          # The root API gateway returns "PHP root gateway" for getApiStatus;
+          # test an actual MySQL-backed, unauthenticated read as well.
+          php -r '$j=json_decode(file_get_contents("/tmp/eke-api-health.json"),true); if(!is_array($j)||!($j["ok"]??false)||!($j["result"]["healthy"]??false)||!str_starts_with((string)($j["result"]["backend"]??""),"PHP"))exit(1); echo "PHP_API_GATEWAY_OK\\n";'
+          dbcode=$(curl -sS -L --connect-timeout 10 --max-time 30 \
+            -o /tmp/eke-api-db.json -w '%{http_code}' \
+            -H 'Origin: https://kea3123-bit.github.io' \
+            -H 'Content-Type: application/json' \
+            -d '{"fn":"getLoginPageData","args":[]}' "$API")
+          if [ "$dbcode" != 200 ]; then
+            echo "::error::MySQL-backed login metadata is unavailable (HTTP $dbcode); refusing to deploy."
+            exit 1
+          fi
+          php -r '$j=json_decode(file_get_contents("/tmp/eke-api-db.json"),true); if(!is_array($j)||!($j["ok"]??false)||($j["result"]["mode"]??"")!=="delima-email-pin")exit(1); echo "MYSQL_LOGIN_METADATA_OK\\n";'
           if ! grep -Eiq '^access-control-allow-origin:[[:space:]]*https://kea3123-bit[.]github[.]io[[:space:]]*$' /tmp/eke-api-headers; then
             echo '::error::cPanel API has not authorized the production GitHub Pages origin. Production deployment blocked.'
             exit 1
