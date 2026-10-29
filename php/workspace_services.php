@@ -34,12 +34,18 @@ function workspace_user_photo(array $viewer,string $target=''): array {
         if(!preg_match('/^[A-Za-z0-9_-]{12,120}$/',$fileId)) {
             throw new RuntimeException('Google Workspace memberikan ID gambar tidak sah.');
         }
-        // Cache the resolved ID in MySQL so the next visit is a single
-        // Drive fetch. Do not overwrite or modify any other staff fields.
+        // Only persist the ID after Drive actually returns a valid picture.
+        // A matching filename alone does not guarantee permission or format.
+        $photo=workspace_rpc('photo',['fileId'=>$fileId]);
+        if(!is_string($photo['dataUrl']??null) ||
+           strpos($photo['dataUrl'],'data:image/')!==0) {
+            throw new RuntimeException('Google Drive tidak memulangkan gambar yang sah.');
+        }
         execute_sql(
             'UPDATE pengguna SET fotoprofilfileid=?,fotoprofildikemaskinipada=? WHERE LOWER(emel)=?',
             [$fileId,excel_number(now_myt()),$email]
         );
+        return $photo;
     }
     return workspace_rpc('photo',['fileId'=>$fileId]);
 }
