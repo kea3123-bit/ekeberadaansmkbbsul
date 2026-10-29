@@ -175,6 +175,12 @@ function invokePagesBridgeMethod_(method, args) {
  * Authentication remains inside each existing backend function via session/PIN.
  */
 function doPost(e) {
+  // Server-to-server PHP/MySQL exports use a signed, JSON-only channel.
+  // Handle it BEFORE the legacy HTML iframe bridge, otherwise PHP gets
+  // HtmlService HTML instead of ContentService JSON.
+  if (e && e.parameter && String(e.parameter.workspace || '') === '1') {
+    return workspaceBridgePost_(e);
+  }
   var id = '';
   var channel = '';
   var origin = '';
