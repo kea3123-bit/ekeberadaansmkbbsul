@@ -511,7 +511,7 @@ function admin_data(array $admin,string $day): array {
             if (!$isLate && !$isEarly)$sum['hadir']++;
         }
     }
-    return ['date'=>$day,'admin'=>public_user($admin),'users'=>array_map('public_user',$us),
+    return ['date'=>$day,'admin'=>public_user($admin),'users'=>public_users_bulk($us),
       // Drive root folder is shown only inside the authenticated admin panel,
       // never in the public user bootstrap settings.
       'settings'=>array_merge(public_settings($s),[
