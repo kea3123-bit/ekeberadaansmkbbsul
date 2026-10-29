@@ -1,0 +1,50 @@
+name: Validate MySQL frontend (no production deployment)
+
+on:
+  push:
+    branches: [refactor/performance-v2]
+    paths:
+      - 'mysql-ui/**'
+      - '.github/workflows/validate-mysql-frontend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify renderer and MySQL-only transport
+        shell: bash
+        env:
+          EKE_PUBLIC_API_URL: https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php
+        run: |
+          set -euo pipefail
+          php -l mysql-ui/index.php
+          php -l mysql-ui/php/index.php
+          node --check < mysql-ui/Scripts.html
+          mkdir -p /tmp/eke-mysql-preview
+          php mysql-ui/index.php > /tmp/eke-mysql-preview/index.html
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('/tmp/eke-mysql-preview/index.html').read_text('utf-8')
+          assert s.lstrip().lower().startswith('<!doctype html>')
+          assert 'https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php' in s
+          assert 'google.script.run' not in s, 'Old Google Apps Script transport is still active'
+          assert 'gas-shim' not in s, 'Old Google bridge is still active'
+          assert 'script.google.com/macros/' not in s, 'Old Apps Script URL is still embedded'
+          assert 'EK_WORKSPACE_BRIDGE_SECRET' not in s
+          assert 'php/config.local.php' not in s
+          assert '<meta name="viewport"' in s
+          print('PASS: MySQL frontend renders with direct PHP API and no Sheets RPC')
+          PY
+
+      - name: Publish isolated preview artifact for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: ekeberadaansmkbbsul-mysql-frontend-preview
+          path: /tmp/eke-mysql-preview/index.html
+          retention-days: 14
