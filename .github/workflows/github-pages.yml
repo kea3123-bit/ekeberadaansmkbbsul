@@ -170,40 +170,7 @@ jobs:
             exit 1
           fi
           php -r '$j=json_decode(file_get_contents("/tmp/eke-api-health.json"),true); if(!is_array($j)||!($j["ok"]??false)||!($j["result"]["healthy"]??false)||($j["result"]["backend"]??"")!=="PHP")exit(1); echo "PHP_MYSQL_API_HEALTH_OK\\n";'
-          if ! grep -Eiq '^access-control-allow-origin:[[:space:]]*https://kea3123-bit[.]github[.]io[[:space:]]*
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git fetch origin gh-pages
-          git worktree add --detach /tmp/eke-gh-pages origin/gh-pages
-          cp /tmp/eke-mysql-ui/index.html /tmp/eke-gh-pages/index.html
-          cp /tmp/eke-mysql-ui/sw.js /tmp/eke-gh-pages/sw.js
-          cp /tmp/eke-mysql-ui/manifest.webmanifest /tmp/eke-gh-pages/manifest.webmanifest
-          cp /tmp/eke-mysql-ui/offline.html /tmp/eke-gh-pages/offline.html
-          cp /tmp/eke-mysql-ui/icon-192.png /tmp/eke-gh-pages/icon-192.png
-          cp /tmp/eke-mysql-ui/icon-512.png /tmp/eke-gh-pages/icon-512.png
-          cp /tmp/eke-mysql-ui/apple-touch-icon.png /tmp/eke-gh-pages/apple-touch-icon.png
-          cp /tmp/eke-mysql-ui/.nojekyll /tmp/eke-gh-pages/.nojekyll
-          cd /tmp/eke-gh-pages
-          git add index.html sw.js manifest.webmanifest offline.html icon-192.png icon-512.png apple-touch-icon.png .nojekyll
-          if ! git diff --cached --quiet; then
-            git commit -m 'deploy: use ppdkmy cPanel PHP/MySQL, not Sheets'
-            git push origin HEAD:gh-pages
-          fi
-      - name: Verify staged branch
-        run: |
-          set -euo pipefail
-          git fetch origin gh-pages
-          git show origin/gh-pages:index.html > /tmp/eke-staged.html
-          grep -Fq "https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php" /tmp/eke-staged.html
-          ! grep -Fq 'google.script.run' /tmp/eke-staged.html
-          grep -Fq 'width=device-width' /tmp/eke-staged.html
-          grep -Fq 'manifest.webmanifest' /tmp/eke-staged.html
-          git show origin/gh-pages:sw.js | grep -Fq 'eke-pwa-shell-v1'
-          git show origin/gh-pages:manifest.webmanifest | grep -Fq '"display":"standalone"'
-          echo 'gh-pages serves MySQL app with working iOS/Android PWA metadata.'
- /tmp/eke-api-headers; then
+          if ! grep -Eiq '^access-control-allow-origin:[[:space:]]*https://kea3123-bit[.]github[.]io[[:space:]]*$' /tmp/eke-api-headers; then
             echo '::error::cPanel API has not authorized the production GitHub Pages origin. Production deployment blocked.'
             exit 1
           fi
