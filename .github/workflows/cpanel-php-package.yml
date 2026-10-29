@@ -52,6 +52,35 @@ jobs:
           unzip -l ekeberadaansmkbbsul-report-hotfix.zip
           unzip -l ekeberadaansmkbbsul-backend.zip
 
+      - name: Package 403 permission recovery with safe ZIP modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/eke-403-recovery/php
+          install -m 0644 .htaccess api.php /tmp/eke-403-recovery/
+          install -m 0644 php/.htaccess php/api.php php/_lib.php /tmp/eke-403-recovery/php/
+          chmod 0755 /tmp/eke-403-recovery/php
+          (cd /tmp/eke-403-recovery && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-403-recovery.zip" .htaccess api.php php)
+          python3 - <<'PY'
+          import stat, zipfile
+          with zipfile.ZipFile("ekeberadaansmkbbsul-403-recovery.zip") as z:
+              expected={".htaccess","api.php","php/", "php/.htaccess","php/api.php","php/_lib.php"}
+              assert set(z.namelist())==expected, z.namelist()
+              for info in z.infolist():
+                  mode=(info.external_attr >> 16) & 0o777
+                  desired=0o755 if info.is_dir() else 0o644
+                  assert mode==desired,(info.filename,oct(mode),oct(desired))
+                  assert "config.local" not in info.filename
+                  print(info.filename,oct(mode))
+          print("CPANEL_ZIP_PERMISSIONS_SAFE")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ekeberadaansmkbbsul-403-recovery
+          path: ekeberadaansmkbbsul-403-recovery.zip
+          retention-days: 14
+
       - name: Package reviewed performance and security patch (no secrets)
         run: |
           set -euo pipefail
