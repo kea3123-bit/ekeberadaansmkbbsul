@@ -11,7 +11,36 @@ function workspace_user_photo(array $viewer,string $target=''): array {
     $user=user_by_email($email,false);
     if(!$user)throw new RuntimeException('Pengguna tidak dijumpai.');
     $fileId=trim((string)($user['fotoprofilfileid']??''));
-    if(!$fileId)return ['ok'=>true,'dataUrl'=>'','message'=>'ID gambar tiada dalam MySQL. Pentadbir boleh jalankan Sync Gambar Profil dari Google Drive.'];
+    if($fileId==='') {
+        // A user imported from Google Sheets may not have a photo file ID
+        // in MySQL yet. Resolve it using only server-trusted user details.
+        // The signed Workspace bridge does NOT read the old Sheets database.
+        $settings=settings_raw();
+        $rootId=trim((string)($settings['PROFILE_ROOT_FOLDER_ID']??''));
+        if($rootId==='') {
+            return ['ok'=>true,'dataUrl'=>'','message'=>
+                'Folder induk Google Drive belum ditetapkan dalam Tetapan Pentadbir. Simpan folder ID dan cuba lagi.'];
+        }
+        $match=workspace_rpc('findPhoto',[
+            'rootFolderId'=>$rootId,
+            'name'=>(string)($user['nama']??''),
+            'category'=>(string)($user['kategori']??'')
+        ]);
+        $fileId=trim((string)($match['fileId']??''));
+        if($fileId==='') {
+            return ['ok'=>true,'dataUrl'=>'','message'=>
+                (string)($match['message']??'eoperasi.png belum dijumpai dalam folder nama pegawai.')];
+        }
+        if(!preg_match('/^[A-Za-z0-9_-]{12,120}$/',$fileId)) {
+            throw new RuntimeException('Google Workspace memberikan ID gambar tidak sah.');
+        }
+        // Cache the resolved ID in MySQL so the next visit is a single
+        // Drive fetch. Do not overwrite or modify any other staff fields.
+        execute_sql(
+            'UPDATE pengguna SET fotoprofilfileid=?,fotoprofildikemaskinipada=? WHERE LOWER(emel)=?',
+            [$fileId,excel_number(now_myt()),$email]
+        );
+    }
     return workspace_rpc('photo',['fileId'=>$fileId]);
 }
 
