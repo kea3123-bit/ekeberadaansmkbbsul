@@ -54,8 +54,8 @@ const ctx = {
 vm.createContext(ctx);
 vm.runInContext(legacy + '\n' + workspace, ctx, {filename:'workspace-bridge-routing.gs'});
 
-function signedCall(action, nonce, issuedAt=Math.floor(Date.now()/1000)) {
-  const payload=JSON.stringify({v:1,action,issuedAt,nonce,data:{}});
+function signedCall(action, nonce, issuedAt=Math.floor(Date.now()/1000), data={}) {
+  const payload=JSON.stringify({v:1,action,issuedAt,nonce,data});
   const signature=crypto.createHmac('sha256',secret)
     .update(payload,'utf8').digest('base64url');
   return {parameter:{workspace:'1',payload,signature}};
@@ -97,4 +97,48 @@ const legacyEvent={parameter:{
 const legacyOutput=ctx.doPost(legacyEvent);
 assert.equal(legacyOutput.kind,'html','old browser bridge must remain HTML transport');
 
-console.log('PASS Workspace JSON route, signed ping, replay, HMAC, expiry and legacy HTML transport');
+// An imported MySQL user may have no Drive file ID. The signed bridge
+// should resolve their own existing eoperasi.png without touching Sheets.
+function iterator(entries) {
+  let offset=0;
+  return {hasNext:()=>offset<entries.length,next:()=>entries[offset++]};
+}
+const image={
+  getName:()=> 'eoperasi.png',
+  getId:()=> 'validPhotoFileId123456789'
+};
+const staffFolder={
+  getName:()=> 'Pegawai  Ujian',
+  getFiles:()=>iterator([image])
+};
+const categoryFolder={
+  getFolders:()=>iterator([staffFolder])
+};
+ctx.DriveApp={
+  getFolderById:id=>{
+    assert.equal(id,'validRootFolderId123456789');
+    return {
+      getFoldersByName: name=>{
+        assert.equal(name,'03 - Anggota Kumpulan Pelaksana');
+        return iterator([categoryFolder]);
+      }
+    };
+  }
+};
+const details={
+  rootFolderId:'validRootFolderId123456789',
+  name:'  Pegawai Ujian ',
+  category:'AKP'
+};
+const found=jsonResponse(signedCall('findPhoto','abcdefabcdefabcdefabcdefabcdefab',Math.floor(Date.now()/1000),details));
+assert.equal(found.ok,true,'signed findPhoto must succeed');
+assert.equal(found.result.fileId,'validPhotoFileId123456789');
+const missing=jsonResponse(signedCall('findPhoto','abcdefabcdefabcdefabcdefabcdefac',Math.floor(Date.now()/1000),{...details,name:'Tiada Pegawai'}));
+assert.equal(missing.ok,true,'missing photo should return a diagnostic');
+assert.equal(missing.result.fileId,'');
+assert.match(missing.result.message,/Folder bernama/);
+const unauthorized=jsonResponse(signedCall('findPhoto','abcdefabcdefabcdefabcdefabcdefad',Math.floor(Date.now()/1000),{...details,category:'unknown'}));
+assert.equal(unauthorized.ok,true);
+assert.equal(unauthorized.result.fileId,'');
+
+console.log('PASS Workspace JSON route, HMAC, replay, expiry, legacy HTML, signed photo lookup and folder diagnostics');
