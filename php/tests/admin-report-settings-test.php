@@ -41,6 +41,7 @@ function attendance_public($attendance, array $schedule): array {
     return ['status'=>$schedule['email']==='a@example.test'?'LEWAT / BALIK AWAL':'HADIR'];
 }
 function public_user(array $user): array { return ['email'=>$user['emel']]; }
+function public_users_bulk(array $users): array { return array_map('public_user',$users); }
 function public_settings(array $settings): array {
     return ['schoolName'=>$settings['SCHOOL_NAME']??''];
 }
