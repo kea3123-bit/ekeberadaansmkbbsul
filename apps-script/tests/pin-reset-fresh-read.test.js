@@ -52,6 +52,13 @@ const ctx={
 };
 vm.createContext(ctx);
 vm.runInContext(users+'\n'+auth,ctx,{filename:'auth-reset.gs'});
+// Override real auditing/ticket/history routines, which are intentionally not
+// under test and depend on separate Apps Script services.
+vm.runInContext(`
+  hasUserEverLoggedIn_=()=>true;
+  createPasswordChangeTicket_=()=> 'a'.repeat(64);
+  recordLoginEventSafe_=()=>{};
+`,ctx);
 
 // Simulate a stale in-memory user object before Sheet was sorted.
 const obsolete={email:emailA,row:2,sessionVersion:3};
