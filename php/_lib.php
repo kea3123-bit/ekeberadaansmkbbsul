@@ -232,7 +232,15 @@ function attendance_public(?array $r,array $schedule): ?array {
 }
 function bootstrap(array $u): array {
     $s=settings_raw();$p=public_settings($s);
-    return ['today'=>today(),'now'=>now_myt(),'user'=>public_user($u),'settings'=>$p,
+    $viewer=public_user($u);
+    // If the Drive root is configured, try resolving missing photo IDs
+    // on demand. Otherwise the frontend skips getProfilePhoto entirely
+    // when a migrated MySQL staff row has no stored file ID.
+    if(!$viewer['hasProfilePhoto'] && trim((string)($s['PROFILE_ROOT_FOLDER_ID']??''))!=='') {
+        $viewer['hasProfilePhoto']=true;
+        $viewer['profilePhotoLookupPending']=true;
+    }
+    return ['today'=>today(),'now'=>now_myt(),'user'=>$viewer,'settings'=>$p,
         'schedule'=>schedule($u,$s),
         'locationReady'=>(strtoupper((string)($s['SYSTEM_MODE']??'REAL'))==='TEST'||($p['schoolLat']!==''&&$p['schoolLng']!=='')),
         'attendance'=>attendance_public(attendance_row((string)$u['emel'],today()),schedule($u,$s))];
