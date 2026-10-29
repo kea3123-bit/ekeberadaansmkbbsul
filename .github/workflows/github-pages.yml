@@ -187,6 +187,27 @@ jobs:
             exit 1
           fi
           echo "CPANEL_PHP_MYSQL_CORS_OK"
+      - name: Split heavy inline assets and verify cached MySQL bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 mysql-ui/optimize_static.py /tmp/eke-mysql-ui
+          node --check "$(find /tmp/eke-mysql-ui/assets -name 'app.*.js' -type f | head -1)"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          out=Path('/tmp/eke-mysql-ui')
+          html=(out/'index.html').read_text('utf-8')
+          assert len(html.encode('utf-8'))<100000, 'HTML was not slimmed down'
+          for kind in ('css','js'):
+              m=re.search(r'assets/app\.[0-9a-f]{12}\.'+kind,html)
+              assert m and (out/m.group()).exists(), f'Missing external {kind}'
+          match=re.search(r'assets/logo\.[0-9a-f]{12}\.png',html)
+          assert match and (out/match.group()).exists()
+          assert 'google.script.run' not in html and 'gas-shim' not in html
+          assert 'data:image/png;base64,' not in html
+          print('MYSQL_PAGES_CACHED_ASSETS_OK')
+          PY
       - name: Stage verified PHP/MySQL app into gh-pages branch
         run: |
           set -euo pipefail
@@ -202,8 +223,10 @@ jobs:
           cp /tmp/eke-mysql-ui/icon-512.png /tmp/eke-gh-pages/icon-512.png
           cp /tmp/eke-mysql-ui/apple-touch-icon.png /tmp/eke-gh-pages/apple-touch-icon.png
           cp /tmp/eke-mysql-ui/.nojekyll /tmp/eke-gh-pages/.nojekyll
+          mkdir -p /tmp/eke-gh-pages/assets
+          cp /tmp/eke-mysql-ui/assets/* /tmp/eke-gh-pages/assets/
           cd /tmp/eke-gh-pages
-          git add index.html sw.js manifest.webmanifest offline.html icon-192.png icon-512.png apple-touch-icon.png .nojekyll
+          git add index.html assets/ sw.js manifest.webmanifest offline.html icon-192.png icon-512.png apple-touch-icon.png .nojekyll
           if ! git diff --cached --quiet; then
             git commit -m 'deploy: use ppdkmy cPanel PHP/MySQL, not Sheets'
             git push origin HEAD:gh-pages
@@ -213,8 +236,17 @@ jobs:
           set -euo pipefail
           git fetch origin gh-pages
           git show origin/gh-pages:index.html > /tmp/eke-staged.html
-          grep -Fq "https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php" /tmp/eke-staged.html
-          ! grep -Fq 'google.script.run' /tmp/eke-staged.html
+          js_file=$(grep -oE 'assets/app\.[0-9a-f]{12}\.js' /tmp/eke-staged.html | head -1)
+          css_file=$(grep -oE 'assets/app\.[0-9a-f]{12}\.css' /tmp/eke-staged.html | head -1)
+          logo_file=$(grep -oE 'assets/logo\.[0-9a-f]{12}\.png' /tmp/eke-staged.html | head -1)
+          test -n "$js_file" && test -n "$css_file" && test -n "$logo_file"
+          git show "origin/gh-pages:$js_file" > /tmp/eke-published-app.js
+          grep -Fq "https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php" /tmp/eke-published-app.js
+          ! grep -Fq 'google.script.run' /tmp/eke-published-app.js
+          ! grep -Fq 'gas-shim' /tmp/eke-staged.html
+          git cat-file -e "origin/gh-pages:$css_file"
+          git cat-file -e "origin/gh-pages:$logo_file"
+          node --check /tmp/eke-published-app.js
           grep -Fq 'width=device-width' /tmp/eke-staged.html
           grep -Fq 'manifest.webmanifest' /tmp/eke-staged.html
           git show origin/gh-pages:sw.js | grep -Fq 'eke-pwa-shell-v1'
