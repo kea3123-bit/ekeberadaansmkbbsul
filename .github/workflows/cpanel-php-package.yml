@@ -8,6 +8,8 @@ on:
       - 'api.php'
       - '.htaccess'
       - 'php/**'
+      - 'apps-script/10_Auth.gs'
+      - 'apps-script/40_UsersData.gs'
       - 'apps-script/Bridges.gs'
       - 'apps-script/97_WorkspaceBridge.gs'
       - 'apps-script/tests/**'
@@ -37,6 +39,7 @@ jobs:
           node --check < apps-script/Bridges.gs
           node --check < apps-script/97_WorkspaceBridge.gs
           node apps-script/tests/workspace-bridge-routing.test.js
+          node apps-script/tests/pin-reset-fresh-read.test.js
           test ! -e php/config.local.php
 
       - name: Create one-file cPanel fix
