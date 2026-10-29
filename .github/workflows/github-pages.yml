@@ -171,6 +171,21 @@ jobs:
             allowed=$(grep -i '^access-control-allow-origin:' "/tmp/eke-$label.headers" 2>/dev/null | tail -1 | cut -d: -f2- | tr -d '\r' || true)
             echo "$label HTTP=$status type=${type:-none} ACAO=${allowed:-none}"
           }
+          # Identify whether 403 applies only to the public gateway, or
+          # to ALL PHP files/server requests (e.g. WAF/IP restriction).
+          for path in 'index.php' 'api.php?health=1' 'php/api.php'; do
+            status=$(curl --silent --show-error --location --connect-timeout 8 --max-time 15 \
+              --output /tmp/eke-route.body --dump-header /tmp/eke-route.headers \
+              --write-out '%{http_code}' "https://ppdkmy.edu.my/ekeberadaansmkbbsul/$path" || true)
+            kind=$(grep -i '^content-type:' /tmp/eke-route.headers 2>/dev/null | tail -1 | cut -d: -f2- | tr -d '\r' || true)
+            echo "GET $path HTTP=$status type=${kind:-none}"
+          done
+          status=$(curl --silent --show-error --location --connect-timeout 8 --max-time 15 \
+            --output /tmp/eke-direct.body --dump-header /tmp/eke-direct.headers \
+            --write-out '%{http_code}' \
+            -H "Origin: $ORIGIN" -H 'Content-Type: application/json' \
+            -d "$BODY" 'https://ppdkmy.edu.my/ekeberadaansmkbbsul/php/api.php' || true)
+          echo "POST php/api.php HTTP=$status"
           probe json_origin -H "Origin: $ORIGIN" -H 'Content-Type: application/json' --data "$BODY"
           probe simple_origin -H "Origin: $ORIGIN" -H 'Content-Type: text/plain;charset=UTF-8' --data "$BODY"
           probe json_no_origin -H 'Content-Type: application/json' --data "$BODY"
