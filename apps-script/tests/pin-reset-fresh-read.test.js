@@ -58,6 +58,7 @@ vm.runInContext(`
   hasUserEverLoggedIn_=()=>true;
   createPasswordChangeTicket_=()=> 'a'.repeat(64);
   recordLoginEventSafe_=()=>{};
+  requireSessionAdmin_=()=>({email:'admin@example.test'});
 `,ctx);
 
 // Simulate a stale in-memory user object before Sheet was sorted.
