@@ -32,5 +32,33 @@ fetch('https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php', {
 ```
 Expected: HTTP 200 and `healthy:true` (only if the cPanel PHP patch is deployed).
 
+## Google Drive profile pictures (MySQL)
+
+The production frontend is in this repository, but the deployed PHP API is
+maintained in `farshoffs/ekeberadaansmkbbsul/php/`. An update to GitHub Pages
+does **not** deploy PHP to cPanel.
+
+1. Back up the installed `public_html/ekeberadaansmkbbsul/php/api.php`.
+   Deploy the latest `farshoffs/ekeberadaansmkbbsul/php/api.php` (or merge
+   its `profileRootFolderId` mapping if cPanel contains custom modifications).
+   Preserve the existing `php/config.local.php` and MySQL database.
+2. Ensure `php/workspace_bridge.php`, `php/workspace_services.php`,
+   `apps-script/97_WorkspaceBridge.gs`, and the signed `workspaceBridgePost_`
+   doPost hook have all been deployed. Never paste the bridge secret into GitHub.
+3. Pentadbir Sistem → Tetapan → Keselamatan & Profil: enter the **folder ID**
+   from the Drive root folder URL, click **Simpan tetapan**, and confirm the
+   page says the ID was saved. Then click **Sync Sekarang**.
+4. Required hierarchy: root folder → `01 - Pengurusan` / `02 - Guru` /
+   `03 - Anggota Kumpulan Pelaksana` / `04 - Praktikum` / `05 - MySTEP`
+   → exact staff-name folder → `eoperasi.png`.
+   The Google account running Apps Script must have Drive access.
+5. Reload the application after a successful sync. The dashboard requests
+   `getProfilePhoto` from PHP; the PHP bridge retrieves the private photo from
+   Drive. The public website must never include Google Drive credentials.
+
+If the avatar still shows an initial, read the new diagnostic below **Sync
+Sekarang**. It distinguishes missing folder configuration, unmatched names,
+backend bridge failures and image retrieval errors.
+
 ## Google Workspace limits
 The signed bridge currently implements profile photos, Drive-based photo sync, PDF and Sheet export. **Automated Gmail/MailApp notifications and old timed triggers are not migrated**. Do not continue running older GAS notifications that read Google Sheets as though it were the authoritative database; they could send incorrect messages. A separate MySQL-backed notification queue and signed Workspace email handler are required for full email parity.
