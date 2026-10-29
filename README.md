@@ -1,5 +1,17 @@
 # eKeberadaan SMKBBSUL
 
+> **Production (29 Oct 2026): PHP/MySQL.** The public site at
+> https://kea3123-bit.github.io/ekeberadaansmkbbsul/ must be built from
+> `mysql-ui/` by `.github/workflows/github-pages.yml` on
+> `refactor/performance-v2`. Do not publish the legacy root Apps Script UI,
+> `web/gas-shim.js` or `scripts/build-pages.py` to `gh-pages`.
+> The live API is `https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php`;
+> Google Workspace is used only for Drive photos and PDF/Sheet exports via
+> signed PHP-to-Apps-Script calls. GitHub workflow checks API health/CORS
+> before replacing the public site. cPanel PHP and Google Web App deployments
+> are separate and `php/config.local.php` must remain private.
+
+
 Production architecture:
 
 `GitHub Pages -> Google Apps Script -> Google Sheets / Drive`
