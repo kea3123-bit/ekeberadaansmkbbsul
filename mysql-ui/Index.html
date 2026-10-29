@@ -287,7 +287,19 @@
               <label>Kategori<select id="absenceManageCategory" onchange="applyAbsenceManageFilters()"><option value="">Semua</option><option>Pengurusan</option><option>PPP</option><option>AKP</option><option>Praktikum</option><option>MySTEP</option></select></label>
               <div class="filter-count" id="absenceManageCount">0 rekod</div>
             </div>
-            <div class="table-wrap"><table><thead><tr><th class="sortable-th"><button type="button" class="table-sort-btn" onclick="toggleTableSort('absenceManage','name')">Pegawai <span id="sort-absenceManage-name" class="sort-indicator">↕</span></button></th><th>Mod</th><th>Jenis</th><th class="sortable-th"><button type="button" class="table-sort-btn" onclick="toggleTableSort('absenceManage','date')">Tempoh / Masa <span id="sort-absenceManage-date" class="sort-indicator">↕</span></button></th><th>Catatan</th><th class="sortable-th"><button type="button" class="table-sort-btn" onclick="toggleTableSort('absenceManage','status')">Status <span id="sort-absenceManage-status" class="sort-indicator">↕</span></button></th><th>Tindakan / Pelulus</th></tr></thead><tbody id="absenceManageRows"></tbody></table></div>
+            <div id="absenceManageSummary" class="summary-grid absence-public-summary" aria-label="Ringkasan Semakan Tidak Hadir / Keberadaan"></div>
+            <div class="table-wrap absence-manage-table"><table>
+              <thead id="absenceManageHead"><tr>
+                <th class="sortable-th absence-public-number-col"><button type="button" class="table-sort-btn" onclick="toggleTableSort('absenceManage','order')" title="Susun ikut masa permohonan">Bil. <span id="sort-absenceManage-order" class="sort-indicator">↕</span></button></th>
+                <th class="sortable-th"><button type="button" class="table-sort-btn" onclick="toggleTableSort('absenceManage','name')">Pegawai <span id="sort-absenceManage-name" class="sort-indicator">↕</span></button></th>
+                <th>Mod</th>
+                <th>Jenis</th>
+                <th class="sortable-th"><button type="button" class="table-sort-btn" onclick="toggleTableSort('absenceManage','date')">Tempoh / Masa <span id="sort-absenceManage-date" class="sort-indicator">↕</span></button></th>
+                <th class="sortable-th"><button type="button" class="table-sort-btn" onclick="toggleTableSort('absenceManage','status')">Status <span id="sort-absenceManage-status" class="sort-indicator">↕</span></button></th>
+                <th>Tindakan / Pelulus</th>
+              </tr></thead>
+              <tbody id="absenceManageRows"></tbody>
+            </table></div>
           </section>
         </section>
 
