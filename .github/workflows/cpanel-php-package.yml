@@ -32,6 +32,7 @@ jobs:
           php php/tests/admin-report-settings-test.php
           php php/tests/public-users-bulk-test.php
           php php/tests/profile-photo-lookup-test.php
+          node --check < Scripts.html
           node --check < apps-script/Bridges.gs
           node --check < apps-script/97_WorkspaceBridge.gs
           node apps-script/tests/workspace-bridge-routing.test.js
