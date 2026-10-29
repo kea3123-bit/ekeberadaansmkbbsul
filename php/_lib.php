@@ -149,9 +149,11 @@ function legacy_pin_migrate(string $pin,array $user): void {
     }
 }
 
-function public_user(array $u): array {
+function public_user(array $u, ?array $knownAuth=null, bool $authPrefetched=false): array {
     $e=(string)$u['emel'];
-    $auth=one('SELECT email,must_change_pin FROM web_auth WHERE email=?',[$e]);
+    // Normally an individual lookup; admin reports pass a prefetched auth row
+    // (including a known absence) so 70 users do not cause 70 SQL requests.
+    $auth=$authPrefetched?$knownAuth:one('SELECT email,must_change_pin FROM web_auth WHERE email=?',[$e]);
     // Existing Sheets PIN_V1 hashes are usable during first-login migration.
     // No user re-registration or PIN reset is needed when legacy_pin_pepper is configured.
     $legacy = strtoupper(trim((string)($u['authtype']??''))) === 'PIN_V1'
@@ -169,6 +171,26 @@ function public_user(array $u): array {
        'hasProfilePhoto'=>trim((string)($u['fotoprofilfileid']??''))!=='',
        'profilePhotoVersion'=>(string)($u['fotoprofildikemaskinipada']??'0'),
        'authType'=>$auth?'PHP_PIN_V1':($legacy?'PIN_V1':'UNPROVISIONED'),'sessionVersion'=>1];
+}
+/**
+ * Convert users in one database round-trip. PHP export calls admin_data()
+ * repeatedly for a whole month, so memoize the auth table per PHP request.
+ * This does not cache across requests or change PIN/session semantics.
+ */
+function public_users_bulk(array $users): array {
+    if(!$users)return [];
+    static $authByEmail=null;
+    if($authByEmail===null) {
+        $authByEmail=[];
+        foreach(rows('SELECT email,must_change_pin FROM web_auth') as $a) {
+            $key=strtolower(trim((string)($a['email']??'')));
+            if($key!=='')$authByEmail[$key]=$a;
+        }
+    }
+    return array_map(static function(array $u) use (&$authByEmail):array {
+        $key=strtolower(trim((string)($u['emel']??'')));
+        return public_user($u,$authByEmail[$key]??null,true);
+    },$users);
 }
 function settings_raw(): array {
     $defaults=['SCHOOL_NAME'=>'SMK Bandar Baru Sungai Lalang','SYSTEM_MODE'=>'REAL','RADIUS_M'=>'200',
