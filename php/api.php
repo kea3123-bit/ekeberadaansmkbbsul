@@ -36,8 +36,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
     exit;
 }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo json_encode(['ok'=>false,'error'=>'POST sahaja']); exit; }
-if (stripos((string)($_SERVER['CONTENT_TYPE']??''),'application/json')===false) {
-    http_response_code(415); echo json_encode(['ok'=>false,'error'=>'JSON required']); exit;
+// JSON payloads may travel with text/plain to avoid shared-host CORS
+// preflight. Never trust the Content-Type: always JSON-decode and validate.
+$ekContentType=strtolower(trim(explode(';',(string)($_SERVER['CONTENT_TYPE']??''))[0]));
+if (!in_array($ekContentType,['application/json','text/plain'],true)) {
+    http_response_code(415); echo json_encode(['ok'=>false,'error'=>'JSON transport required']); exit;
 }
 try {
     // Load only core MySQL code on login. Workspace may be unavailable,
