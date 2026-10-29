@@ -87,7 +87,7 @@ function workspaceFindPhoto_(data){
   const categoriesFound=root.getFoldersByName(categoryFolder);
   if(!categoriesFound.hasNext())return {ok:true,fileId:'',message:'Folder kategori '+categoryFolder+' tidak dijumpai dalam Google Drive.'};
   const parent=categoriesFound.next();
-  const norm=value=>String(value||'').trim().toLowerCase().replace(/\\s+/g,' ');
+  const norm=value=>String(value||'').trim().toLowerCase().replace(/\s+/g,' ');
   let staffFolder=null;
   const dirs=parent.getFolders();
   while(dirs.hasNext()){
