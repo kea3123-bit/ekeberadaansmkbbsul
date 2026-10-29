@@ -7,6 +7,9 @@ on:
     paths:
       - 'api.php'
       - 'php/**'
+      - 'apps-script/Bridges.gs'
+      - 'apps-script/97_WorkspaceBridge.gs'
+      - 'apps-script/tests/**'
       - '.github/workflows/cpanel-php-package.yml'
   workflow_dispatch:
 
@@ -27,6 +30,9 @@ jobs:
           php -l php/workspace_bridge.php
           php -l php/workspace_services.php
           php php/tests/admin-report-settings-test.php
+          node --check < apps-script/Bridges.gs
+          node --check < apps-script/97_WorkspaceBridge.gs
+          node apps-script/tests/workspace-bridge-routing.test.js
           test ! -e php/config.local.php
 
       - name: Create one-file cPanel fix
@@ -41,6 +47,20 @@ jobs:
           (cd /tmp/eke-backend && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-backend.zip" api.php php)
           unzip -l ekeberadaansmkbbsul-report-hotfix.zip
           unzip -l ekeberadaansmkbbsul-backend.zip
+
+      - name: Package Apps Script bridge update (no secrets)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/eke-apps-script
+          cp apps-script/Bridges.gs apps-script/97_WorkspaceBridge.gs /tmp/eke-apps-script/
+          (cd /tmp/eke-apps-script && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-apps-script-bridge.zip" Bridges.gs 97_WorkspaceBridge.gs)
+          unzip -l ekeberadaansmkbbsul-apps-script-bridge.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ekeberadaansmkbbsul-apps-script-bridge
+          path: ekeberadaansmkbbsul-apps-script-bridge.zip
+          retention-days: 14
 
       - uses: actions/upload-artifact@v4
         with:
