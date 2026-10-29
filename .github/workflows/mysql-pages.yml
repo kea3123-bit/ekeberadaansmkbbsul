@@ -1,0 +1,93 @@
+name: Build MySQL UI for kea3123-bit GitHub Pages
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mysql-ui/**'
+      - '.github/workflows/mysql-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kea3123-bit-mysql-pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-stage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render HTML and verify MySQL endpoint
+        env:
+          EKE_PUBLIC_API_URL: https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php
+        run: |
+          set -euo pipefail
+          php -l mysql-ui/php/index.php
+          php -l mysql-ui/index.php
+          node --check < mysql-ui/Scripts.html
+          mkdir -p /tmp/eke-mysql-ui
+          php mysql-ui/index.php > /tmp/eke-mysql-ui/index.html
+          python3 - <<'PY'
+          from pathlib import Path
+          html = Path('/tmp/eke-mysql-ui/index.html').read_text('utf-8')
+          assert html.lstrip().lower().startswith('<!doctype html>')
+          assert 'fetch("https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php"' in html, 'MySQL API URL not found'
+          assert 'google.script.run' not in html, 'Google Sheets RPC remains'
+          assert 'gas-shim' not in html, 'Google Sheets client shim remains'
+          assert "credentials:'omit'" in html, 'No cross-domain cookies allowed'
+          assert 'EK_PASSWORD_PEPPER' not in html and 'EK_WORKSPACE_BRIDGE_SECRET' not in html, 'Secret leaked'
+          assert 'php/config.local.php' not in html, 'Backend config leaked'
+          cleanup = """<script>(() => {
+            if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations()
+              .then(rs => rs.forEach(r => {
+                if (r.scope.startsWith(location.origin + '/ekeberadaansmkbbsul/')) r.unregister().catch(()=>{});
+              })).catch(()=>{});
+            if ('caches' in window) caches.keys().then(keys =>
+              Promise.all(keys.filter(k => k.startsWith('eke-static-')).map(k => caches.delete(k)))
+            ).catch(()=>{});
+          })();</script>"""
+          assert '</head>' in html
+          html=html.replace('</head>', '<meta name="robots" content="noindex,nofollow">'+cleanup+'</head>',1)
+          Path('/tmp/eke-mysql-ui/index.html').write_text(html, 'utf-8')
+          print('PASS: frontend uses only cPanel PHP/MySQL RPC')
+          PY
+          cat > /tmp/eke-mysql-ui/sw.js <<'JS'
+          // Retire old client that cached the Google Sheets powered application.
+          self.addEventListener('install', () => self.skipWaiting());
+          self.addEventListener('activate', e => {
+            e.waitUntil((async () => {
+              const keys=await caches.keys();
+              await Promise.all(keys.filter(x => x.startsWith('eke-static-')).map(x => caches.delete(x)));
+              await self.registration.unregister();
+              const windows=await self.clients.matchAll({type:'window'});
+              windows.forEach(w => w.navigate(w.url).catch(() => {}));
+            })());
+          });
+          JS
+          touch /tmp/eke-mysql-ui/.nojekyll
+      - name: Stage app into gh-pages branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin gh-pages
+          git worktree add --detach /tmp/eke-gh-pages origin/gh-pages
+          cp /tmp/eke-mysql-ui/index.html /tmp/eke-gh-pages/index.html
+          cp /tmp/eke-mysql-ui/sw.js /tmp/eke-gh-pages/sw.js
+          cp /tmp/eke-mysql-ui/.nojekyll /tmp/eke-gh-pages/.nojekyll
+          cd /tmp/eke-gh-pages
+          git add index.html sw.js .nojekyll
+          if ! git diff --cached --quiet; then
+            git commit -m 'deploy: use ppdkmy cPanel PHP/MySQL, not Sheets'
+            git push origin HEAD:gh-pages
+          fi
+      - name: Verify staged branch
+        run: |
+          set -euo pipefail
+          git fetch origin gh-pages
+          git show origin/gh-pages:index.html > /tmp/eke-staged.html
+          grep -Fq "https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php" /tmp/eke-staged.html
+          ! grep -Fq 'google.script.run' /tmp/eke-staged.html
+          echo 'gh-pages HTML now targets MySQL.'
