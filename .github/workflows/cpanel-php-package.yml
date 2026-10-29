@@ -1,0 +1,55 @@
+name: Validate PHP report fix and package cPanel hotfix
+
+on:
+  push:
+    branches:
+      - refactor/performance-v2
+    paths:
+      - 'api.php'
+      - 'php/**'
+      - '.github/workflows/cpanel-php-package.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PHP and report regression
+        run: |
+          set -euo pipefail
+          php -l api.php
+          php -l php/api.php
+          php -l php/_lib.php
+          php -l php/workspace_bridge.php
+          php -l php/workspace_services.php
+          php php/tests/admin-report-settings-test.php
+          test ! -e php/config.local.php
+
+      - name: Create one-file cPanel fix
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/eke-fix/php /tmp/eke-backend/php
+          cp php/api.php /tmp/eke-fix/php/api.php
+          cp api.php /tmp/eke-backend/api.php
+          cp php/api.php php/_lib.php php/workspace_bridge.php \
+             php/workspace_services.php php/.htaccess /tmp/eke-backend/php/
+          (cd /tmp/eke-fix && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-report-hotfix.zip" php)
+          (cd /tmp/eke-backend && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-backend.zip" api.php php)
+          unzip -l ekeberadaansmkbbsul-report-hotfix.zip
+          unzip -l ekeberadaansmkbbsul-backend.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ekeberadaansmkbbsul-report-hotfix
+          path: ekeberadaansmkbbsul-report-hotfix.zip
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ekeberadaansmkbbsul-backend
+          path: ekeberadaansmkbbsul-backend.zip
+          retention-days: 14
