@@ -12,7 +12,7 @@ const state = {
     homeLocationMap:null, homeSchoolMarker:null, homeRadiusCircle:null, homeCurrentMarker:null, homeAccuracyCircle:null,
     liveLocation:null, locationWatchId:null, locationUpdatedAt:0, locationRefreshPromise:null,
     locationPermissionState:'unknown', locationPermissionProblem:'', locationPermissionStatus:null,
-    photoCache:new Map(), photoErrorNotified:false, clientInfo:null, clientInfoPromise:null, leafletPromise:null
+    photoCache:new Map(), photoErrorNotified:false, photoRetryAfter:0, photoRequest:null, clientInfo:null, clientInfoPromise:null, leafletPromise:null
   };
 
   document.addEventListener('DOMContentLoaded', initApp);
@@ -450,7 +450,7 @@ const state = {
     stopLiveLocationTracking();
     if(state.locationPermissionStatus)state.locationPermissionStatus.onchange=null;
     Object.assign(state,{token:'',deviceToken:'',boot:null,admin:null,myCardLoaded:false,myCardData:null,adminCardData:null,absence:null,absencePublic:null,absenceManagement:null,timeReview:null,cacheTimes:{},liveLocation:null,locationUpdatedAt:0,locationPermissionState:'unknown',locationPermissionProblem:'',locationPermissionStatus:null});
-    state.selectedUserEmails.clear(); state.photoCache.clear(); closeMobileMenu(); await showLogin(); toast('Anda telah keluar dari peranti ini.');
+    state.selectedUserEmails.clear(); state.photoCache.clear(); state.photoRetryAfter=0; state.photoRequest=null; closeMobileMenu(); await showLogin(); toast('Anda telah keluar dari peranti ini.');
   }
 
   function writeCookie(name,value,maxAge,partitioned=false){
@@ -579,40 +579,53 @@ const state = {
     applySystemDateLimits();
   }
 
-  async function refreshBoot(){try{state.boot=await runServer('getBootstrapData',state.token);renderBoot();await loadOwnProfilePhoto(true);}catch(e){handleServerError(e);}}
+  async function refreshBoot(){try{state.boot=await runServer('getBootstrapData',state.token);renderBoot();loadOwnProfilePhoto().catch(e=>console.warn('Foto dimuatkan berasingan:',e?.message||e));}catch(e){handleServerError(e);}}
 
   async function loadOwnProfilePhoto(force=false){
     const u=state.boot?.user;if(!u)return;
     const ids=['sideProfilePhoto','welcomeProfilePhoto'];
     if(!u.hasProfilePhoto){
       ids.forEach(id=>{const img=document.getElementById(id);if(img){img.classList.add('hidden');img.removeAttribute('src');}});
-      if(u.isAdmin&&!state.photoErrorNotified){
-        state.photoErrorNotified=true;
-        console.info('Gambar profil tiada ID di MySQL. Tetapkan folder Drive dalam Pentadbir > Tetapan dan Sync Gambar Profil.');
-      }
       return;
     }
-    const photoKey=`${u.email}|${u.profilePhotoVersion||'0'}`;
+    const email=String(u.email||'');
+    const photoKey=`${email}|${u.profilePhotoVersion||'0'}`;
     let data=state.photoCache.get(photoKey)||'';
-    if(!data||force){
-      try{
-        const result=await runServer('getProfilePhoto',state.token,u.email);
-        data=String(result?.dataUrl||'');
-        if(data&&!/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(data))
-          throw new Error('Data gambar dari Google Drive tidak sah.');
-        if(!data)throw new Error(result?.message||'Google Drive tidak memulangkan data gambar.');
-        state.photoCache.set(photoKey,data);
-        state.photoErrorNotified=false;
-      }catch(e){
-        data='';
-        const message=e?.message||String(e);
-        console.warn('Gambar profil gagal dimuatkan:',message);
-        if(u.isAdmin&&(!state.photoErrorNotified||force)){
-          state.photoErrorNotified=true;
-          toast('Gambar profil: '+message,6500);
+    // Slow/failed Google Drive responses must never block punch or dashboard.
+    // Skip repeated remote requests for 60 seconds after a failure.
+    if(!data && !force && Date.now()<state.photoRetryAfter)return;
+    if(!data || force){
+      if(state.photoRequest && state.photoRequest.key===photoKey){
+        try{data=await state.photoRequest.promise;}catch(_e){return;}
+      }else{
+        const promise=(async()=>{
+          const result=await runServer('getProfilePhoto',state.token,email);
+          const image=String(result?.dataUrl||'');
+          if(image&&!/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(image))
+            throw new Error('Data gambar dari Google Drive tidak sah.');
+          if(!image)throw new Error(result?.message||'Google Drive tidak memulangkan data gambar.');
+          state.photoCache.set(photoKey,image);
+          return image;
+        })();
+        state.photoRequest={key:photoKey,promise};
+        try{
+          data=await promise;
+          state.photoRetryAfter=0;state.photoErrorNotified=false;
+        }catch(e){
+          state.photoRetryAfter=Date.now()+60*1000;
+          data='';
+          console.warn('Gambar profil gagal dimuatkan:',e?.message||e);
+          if(u.isAdmin&&!state.photoErrorNotified){
+            state.photoErrorNotified=true;
+            toast('Gambar profil: '+(e?.message||String(e)),6500);
+          }
+        }finally{
+          if(state.photoRequest?.promise===promise)state.photoRequest=null;
         }
       }
     }
+    // Ignore late results from a previous account or login session.
+    if(String(state.boot?.user?.email||'')!==email)return;
     ids.forEach(id=>{
       const img=document.getElementById(id);if(!img)return;
       if(data){
@@ -623,8 +636,7 @@ const state = {
             toast('Gambar profil: format eoperasi.png tidak boleh dipaparkan.',6000);
           }
         };
-        img.src=data;
-        img.classList.remove('hidden');
+        img.src=data;img.classList.remove('hidden');
       }else{img.classList.add('hidden');img.removeAttribute('src');}
     });
   }
@@ -1653,7 +1665,7 @@ function ensureAbsenceManageTableLayout(){
   function syncMapReadout(lat,lng,radius){text('mapCoordReadout',`${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`);text('mapRadiusReadout',`${Math.round(radius)} m`);}
   async function useCurrentLocationForSetting(){try{const pos=await currentPosition();setSettingCoords(pos.coords.latitude,pos.coords.longitude,true);toast(`Lokasi peranti digunakan (±${Math.round(pos.coords.accuracy)}m).`);}catch(e){toast(e.message,4500);}}
 
-  async function syncProfilePhotos(){if(!confirm('Sync gambar profil berdasarkan struktur folder Google Drive yang ditetapkan?'))return;try{const r=await runServer('adminSyncProfilePhotos',state.token);state.photoCache.clear();toast(`Gambar profil: ${r.matched} dipadankan, ${r.unmatched.length} tidak dijumpai.`,5000);await refreshAdmin();await refreshBoot();if(r.unmatched.length)showModal(`<h3>Hasil Sync Gambar Profil</h3><p><b>${r.matched}</b> berjaya dipadankan.</p><p><b>${r.unmatched.length}</b> tidak dijumpai:</p><div class="sync-unmatched">${r.unmatched.slice(0,50).map(x=>`<div>${esc(x)}</div>`).join('')}</div><p><button class="btn primary" onclick="closeModal()">Selesai</button></p>`);}catch(e){handleServerError(e);}}
+  async function syncProfilePhotos(){if(!confirm('Sync gambar profil berdasarkan struktur folder Google Drive yang ditetapkan?'))return;try{const r=await runServer('adminSyncProfilePhotos',state.token);state.photoCache.clear();state.photoRetryAfter=0;state.photoErrorNotified=false;toast(`Gambar profil: ${r.matched} dipadankan, ${r.unmatched.length} tidak dijumpai.`,5000);await refreshAdmin();await refreshBoot();if(r.unmatched.length)showModal(`<h3>Hasil Sync Gambar Profil</h3><p><b>${r.matched}</b> berjaya dipadankan.</p><p><b>${r.unmatched.length}</b> tidak dijumpai:</p><div class="sync-unmatched">${r.unmatched.slice(0,50).map(x=>`<div>${esc(x)}</div>`).join('')}</div><p><button class="btn primary" onclick="closeModal()">Selesai</button></p>`);}catch(e){handleServerError(e);}}
 
   function localDateKey(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
   function getSystemStartDateClient(){return state.boot?.settings?.systemStartDate||'2026-09-01';}
