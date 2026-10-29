@@ -6,6 +6,7 @@ on:
       - refactor/performance-v2
     paths:
       - 'api.php'
+      - '.htaccess'
       - 'php/**'
       - 'apps-script/Bridges.gs'
       - 'apps-script/97_WorkspaceBridge.gs'
@@ -43,13 +44,29 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/eke-fix/php /tmp/eke-backend/php
           cp php/api.php /tmp/eke-fix/php/api.php
-          cp api.php /tmp/eke-backend/api.php
+          cp api.php .htaccess /tmp/eke-backend/
           cp php/api.php php/_lib.php php/workspace_bridge.php \
              php/workspace_services.php php/.htaccess /tmp/eke-backend/php/
           (cd /tmp/eke-fix && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-report-hotfix.zip" php)
-          (cd /tmp/eke-backend && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-backend.zip" api.php php)
+          (cd /tmp/eke-backend && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-backend.zip" api.php .htaccess php)
           unzip -l ekeberadaansmkbbsul-report-hotfix.zip
           unzip -l ekeberadaansmkbbsul-backend.zip
+
+      - name: Package reviewed performance and security patch (no secrets)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/eke-perf-security/php
+          cp .htaccess /tmp/eke-perf-security/.htaccess
+          cp php/.htaccess php/api.php php/_lib.php /tmp/eke-perf-security/php/
+          (cd /tmp/eke-perf-security && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-performance-security-hotfix.zip" .htaccess php)
+          unzip -l ekeberadaansmkbbsul-performance-security-hotfix.zip
+          ! unzip -Z1 ekeberadaansmkbbsul-performance-security-hotfix.zip | grep -E '(config\.local|error_log|\.sql)' 
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ekeberadaansmkbbsul-performance-security-hotfix
+          path: ekeberadaansmkbbsul-performance-security-hotfix.zip
+          retention-days: 14
 
       - name: Package profile photo backend fix (no secrets)
         run: |
