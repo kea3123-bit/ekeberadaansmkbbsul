@@ -58,8 +58,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'GET' && ($_GET['health'] ?? '') === 
     ]);
     exit;
 }
+// Accept JSON in either application/json or CORS-simple text/plain.
+// The latter avoids blocked OPTIONS preflight on some shared cPanel servers.
+// Both use the identical JSON parser and signed session token checks.
+$ekContentType = strtolower(trim(explode(';',(string)($_SERVER['CONTENT_TYPE'] ?? ''))[0]));
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' &&
-    stripos((string)($_SERVER['CONTENT_TYPE'] ?? ''),'application/json') !== false) {
+    in_array($ekContentType,['application/json','text/plain'],true)) {
     $raw = file_get_contents('php://input');
     if (is_string($raw) && strlen($raw) <= 512) {
         $req = json_decode($raw,true);
