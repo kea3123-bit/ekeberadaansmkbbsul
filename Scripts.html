@@ -12,7 +12,7 @@ const state = {
     homeLocationMap:null, homeSchoolMarker:null, homeRadiusCircle:null, homeCurrentMarker:null, homeAccuracyCircle:null,
     liveLocation:null, locationWatchId:null, locationUpdatedAt:0, locationRefreshPromise:null,
     locationPermissionState:'unknown', locationPermissionProblem:'', locationPermissionStatus:null,
-    photoCache:new Map(), clientInfo:null, clientInfoPromise:null, leafletPromise:null
+    photoCache:new Map(), photoErrorNotified:false, clientInfo:null, clientInfoPromise:null, leafletPromise:null
   };
 
   document.addEventListener('DOMContentLoaded', initApp);
@@ -582,15 +582,51 @@ const state = {
   async function refreshBoot(){try{state.boot=await runServer('getBootstrapData',state.token);renderBoot();await loadOwnProfilePhoto(true);}catch(e){handleServerError(e);}}
 
   async function loadOwnProfilePhoto(force=false){
-    const u=state.boot?.user; if(!u)return;
+    const u=state.boot?.user;if(!u)return;
     const ids=['sideProfilePhoto','welcomeProfilePhoto'];
-    if(!u.hasProfilePhoto){ids.forEach(id=>document.getElementById(id)?.classList.add('hidden'));return;}
-    const photoKey=`${u.email}|${u.profilePhotoVersion||"0"}`;
-    let data=state.photoCache.get(photoKey);
-    if(!data||force){
-      try{const r=await runServer('getProfilePhoto',state.token,u.email);data=r.dataUrl||'';if(data)state.photoCache.set(photoKey,data);}catch(e){data='';}
+    if(!u.hasProfilePhoto){
+      ids.forEach(id=>{const img=document.getElementById(id);if(img){img.classList.add('hidden');img.removeAttribute('src');}});
+      if(u.isAdmin&&!state.photoErrorNotified){
+        state.photoErrorNotified=true;
+        console.info('Gambar profil tiada ID di MySQL. Tetapkan folder Drive dalam Pentadbir > Tetapan dan Sync Gambar Profil.');
+      }
+      return;
     }
-    ids.forEach(id=>{const img=document.getElementById(id);if(!img)return;if(data){img.src=data;img.classList.remove('hidden');}else img.classList.add('hidden');});
+    const photoKey=`${u.email}|${u.profilePhotoVersion||'0'}`;
+    let data=state.photoCache.get(photoKey)||'';
+    if(!data||force){
+      try{
+        const result=await runServer('getProfilePhoto',state.token,u.email);
+        data=String(result?.dataUrl||'');
+        if(data&&!/^data:image\\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(data))
+          throw new Error('Data gambar dari Google Drive tidak sah.');
+        if(!data)throw new Error(result?.message||'Google Drive tidak memulangkan data gambar.');
+        state.photoCache.set(photoKey,data);
+        state.photoErrorNotified=false;
+      }catch(e){
+        data='';
+        const message=e?.message||String(e);
+        console.warn('Gambar profil gagal dimuatkan:',message);
+        if(u.isAdmin&&(!state.photoErrorNotified||force)){
+          state.photoErrorNotified=true;
+          toast('Gambar profil: '+message,6500);
+        }
+      }
+    }
+    ids.forEach(id=>{
+      const img=document.getElementById(id);if(!img)return;
+      if(data){
+        img.onerror=()=>{
+          img.classList.add('hidden');
+          if(u.isAdmin&&!state.photoErrorNotified){
+            state.photoErrorNotified=true;
+            toast('Gambar profil: format eoperasi.png tidak boleh dipaparkan.',6000);
+          }
+        };
+        img.src=data;
+        img.classList.remove('hidden');
+      }else{img.classList.add('hidden');img.removeAttribute('src');}
+    });
   }
 
   function navigate(name,btn){
