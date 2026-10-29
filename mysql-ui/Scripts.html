@@ -1219,10 +1219,53 @@ const state = {
   function presetRange(kind){const today=state.boot?.today||localDateKey(new Date()),systemStart=getSystemStartDateClient(),d=new Date(today+'T12:00:00'),single=key=>{const safe=key<systemStart?systemStart:key;return[safe,safe];};if(kind==='yesterday')return single(addClientDays(today,-1));if(kind==='tomorrow')return single(addClientDays(today,1));if(kind==='today')return single(today);if(kind==='month'){const start=`${today.slice(0,7)}-01`;return[start<systemStart?systemStart:start,today];}const start=addClientDays(today,-d.getDay());return[start<systemStart?systemStart:start,today];}
 
   function compareText(a,b){return String(a??'').localeCompare(String(b??''),'ms',{numeric:true,sensitivity:'base'});}
+  // MySQL may return either submittedMs (epoch seconds/milliseconds) or
+  // submittedAt (YYYY-MM-DD HH:mm:ss or MY dd/MM/yyyy HH:mm:ss). Never
+  // substitute the LEAVE start date when a submitted timestamp exists.
+  function absenceSubmittedMs(r){
+    if(!r)return 0;
+    const direct=Number(r.submittedMs??r.submitted_ms??0);
+    if(Number.isFinite(direct)&&direct>0)return direct<100000000000?direct*1000:direct;
+    const raw=r.submittedAt??r.submitted_at??r.createdAt??r.created_at??'';
+    const value=String(raw).trim();
+    if(value){
+      if(/^\\d{10,13}$/.test(value)){
+        const n=Number(value);
+        if(Number.isFinite(n))return value.length<=10?n*1000:n;
+      }
+      const iso=value.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?(?:\\.\\d+)?(?:\\s*(Z|[+-]\\d{2}:?\\d{2}))?$/i);
+      const my=value.match(/^(\\d{1,2})[\\/.-](\\d{1,2})[\\/.-](\\d{4})(?:[ ,T]+(\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?$/);
+      if(iso||my){
+        const x=iso||my;
+        const year=iso?Number(x[1]):Number(x[3]),month=Number(x[2]),day=iso?Number(x[3]):Number(x[1]);
+        const hour=Number(x[4]||0),minute=Number(x[5]||0),second=Number(x[6]||0);
+        if(month>=1&&month<=12&&day>=1&&day<=31&&hour<=23&&minute<=59&&second<=59){
+          const z=iso&&x[7]?x[7].replace(/^([+-]\\d{2})(\\d{2})$/,'$1:$2'):'+08:00';
+          const stamp=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}:${String(second).padStart(2,'0')}${z}`;
+          const parsed=Date.parse(stamp);
+          if(Number.isFinite(parsed))return parsed;
+        }
+      }
+      const parsed=Date.parse(value);
+      if(Number.isFinite(parsed))return parsed;
+    }
+    const fallback=String(r.startDate||r.date||'').slice(0,10);
+    const fallbackMs=Date.parse(fallback+'T00:00:00+08:00');
+    return Number.isFinite(fallbackMs)?fallbackMs:0;
+  }
+  function compareAbsenceSubmission(a,b,newestFirst){
+    // Auto-detected missing applications do not have a submission time.
+    // Keep them AFTER submitted applications, irrespective of sort direction.
+    const undelivered=r=>Number(!!r.synthetic||String(r.status||'').toUpperCase()==='TIDAK MOHON');
+    const diff=undelivered(a)-undelivered(b);
+    if(diff)return diff;
+    const order=newestFirst?absenceSubmittedMs(b)-absenceSubmittedMs(a):absenceSubmittedMs(a)-absenceSubmittedMs(b);
+    return order||compareText(a.id,b.id)||compareText(a.name,b.name);
+  }
   function sortRecords(list,mode){
-    const rows=(list||[]).slice(),m=String(mode||''),cmp=(a,b)=>compareText(a,b),dateOf=r=>String(r.startDate||r.date||r.submittedAt||''),statusOf=r=>String(r.reviewStatus||r.status||r.category||''),timeOf=r=>String(r.inTime||'99:99'),submittedMsOf=r=>Number(r.submittedMs||0);
-    if(m==='submitted_desc')return rows.sort((a,b)=>(submittedMsOf(b)-submittedMsOf(a))||cmp(dateOf(b),dateOf(a))||cmp(a.name,b.name));
-    if(m==='submitted_asc')return rows.sort((a,b)=>(submittedMsOf(a)-submittedMsOf(b))||cmp(dateOf(a),dateOf(b))||cmp(a.name,b.name));
+    const rows=(list||[]).slice(),m=String(mode||''),cmp=(a,b)=>compareText(a,b),dateOf=r=>String(r.startDate||r.date||r.submittedAt||''),statusOf=r=>String(r.reviewStatus||r.status||r.category||''),timeOf=r=>String(r.inTime||'99:99');
+    if(m==='submitted_desc')return rows.sort((a,b)=>compareAbsenceSubmission(a,b,true));
+    if(m==='submitted_asc')return rows.sort((a,b)=>compareAbsenceSubmission(a,b,false));
     if(m==='date_desc')return rows.sort((a,b)=>cmp(dateOf(b),dateOf(a))||cmp(a.name,b.name));
     if(m==='date_asc')return rows.sort((a,b)=>cmp(dateOf(a),dateOf(b))||cmp(a.name,b.name));
     if(m==='name_desc')return rows.sort((a,b)=>cmp(b.name,a.name));
@@ -1239,7 +1282,7 @@ const state = {
 
   const TABLE_SORT_CONFIG={
     absencePublic:{default:'submitted_desc',order:['submitted_desc','submitted_asc'],name:['name_asc','name_desc'],date:['date_desc','date_asc'],status:['status_asc','status_desc']},
-    absenceManage:{default:'date_desc',name:['name_asc','name_desc'],date:['date_desc','date_asc'],status:['status_asc','status_desc']},
+    absenceManage:{default:'submitted_desc',order:['submitted_desc','submitted_asc'],name:['name_asc','name_desc'],date:['date_desc','date_asc'],status:['status_asc','status_desc']},
     timeReview:{default:'date_desc',name:['name_asc','name_desc'],date:['date_desc','date_asc'],status:['status_asc','status_desc']},
     report:{default:'name_asc',name:['name_asc','name_desc'],status:['status_asc','status_desc'],in:['in_asc','in_desc']},
     users:{default:'name_asc',active:['active_first','inactive_first'],name:['name_asc','name_desc'],category:['category_asc','category_desc']}
@@ -1247,7 +1290,7 @@ const state = {
   function getTableSort(scope){const cfg=TABLE_SORT_CONFIG[scope];return state.tableSorts?.[scope]||cfg?.default||'name_asc';}
   function updateTableSortIndicators(scope){
     const cfg=TABLE_SORT_CONFIG[scope];if(!cfg)return;const current=getTableSort(scope);
-    Object.entries(cfg).forEach(([key,pair])=>{if(key==='default'||!Array.isArray(pair))return;const el=document.getElementById(`sort-${scope}-${key}`);if(!el)return;const active=pair.includes(current);el.textContent=active?(current===pair[0]?'↑':'↓'):'↕';const th=el.closest('th');if(th)th.setAttribute('aria-sort',active?(current===pair[0]?'ascending':'descending'):'none');});
+    Object.entries(cfg).forEach(([key,pair])=>{if(key==='default'||!Array.isArray(pair))return;const el=document.getElementById(`sort-${scope}-${key}`);if(!el)return;const active=pair.includes(current);el.textContent=active?(key==='order'?(current==='submitted_desc'?'↓':'↑'):(current===pair[0]?'↑':'↓')):'↕';const th=el.closest('th');if(th)th.setAttribute('aria-sort',active?(current===pair[0]?'ascending':'descending'):'none');});
   }
   function toggleTableSort(scope,key){
     const cfg=TABLE_SORT_CONFIG[scope],pair=cfg?.[key];if(!Array.isArray(pair))return;
@@ -1304,7 +1347,76 @@ const state = {
     catch(e){handleServerError(e);}
   }
   function setAbsenceManagePreset(kind){if(!state.boot?.user?.isAdmin)return;const [f,t]=presetRange(kind);document.getElementById('absenceManageFrom').value=f;document.getElementById('absenceManageTo').value=t;loadAbsenceManagement(true);}
-  function applyAbsenceManageFilters(){const data=state.absenceManagement?.requests||[],q=norm(document.getElementById('absenceManageSearch')?.value),st=document.getElementById('absenceManageStatus')?.value||'',cat=document.getElementById('absenceManageCategory')?.value||'',mode=document.getElementById('absenceManageMode')?.value||'',sort=getTableSort('absenceManage');const list=sortRecords(data.filter(r=>{const hay=norm([r.id,r.submittedAt,r.name,r.jobTitle,r.email,r.category,r.mode,r.type,r.startDate,r.endDate,r.startTime,r.endTime,r.note,r.status,r.reviewerJobTitle,r.reviewedAt,r.comment].join(' '));return(!q||hay.includes(q))&&(!st||r.status===st)&&(!cat||r.category===cat)&&(!mode||r.mode===mode);}),sort);text('absenceManageCount',`${list.length} / ${data.length} rekod`);const body=document.getElementById('absenceManageRows');if(!body)return;body.innerHTML=list.length?list.map(r=>`<tr><td><b>${esc(r.name)}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.email)} · ${esc(r.category)}</small></td><td><b>${esc(r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir')}</b></td><td><b>${esc(r.type)}</b></td><td>${esc(formatDateRange(r.startDate,r.endDate))}${r.mode==='KEBERADAAN'?`<small class="table-sub">${esc(r.startTime||'—')} – ${esc(r.endTime||'—')}</small>`:''}<small class="table-sub">${r.synthetic?'Dikesan:':'Hantar:'} ${esc(r.submittedAt)}</small></td><td>${esc(r.note||'—')}</td><td><span class="request-status ${absenceStatusClass(r.status)}">${esc(r.status)}</span></td><td>${r.status==='MENUNGGU'?`<div class="row-actions"><button class="action-link approve-link" onclick='openReviewAbsence(${JSON.stringify(r.id)},"DILULUSKAN")'>Lulus</button><button class="action-link warn-link" onclick='openReviewAbsence(${JSON.stringify(r.id)},"DITOLAK")'>Tolak</button></div>`:r.synthetic?'<span class="muted">Tiada permohonan</span>':`<span class="review-role-tag">${esc(r.reviewerJobTitle||'Pengurusan')}</span><small class="table-sub">Catatan: ${esc(r.comment||'—')}</small><small class="table-sub">${esc(r.reviewedAt||'—')}</small>`}</td></tr>`).join(''):'<tr><td colspan="7" class="empty-cell">Tiada rekod sepadan.</td></tr>';
+function ensureAbsenceManageTableLayout(){
+    // Older HTML and Scripts bundles can briefly be mixed by a PWA cache.
+    // Keep the header in lockstep with the seven cells rendered below.
+    const body=document.getElementById('absenceManageRows'),table=body?.closest('table');
+    if(!table)return;
+    const head=table.tHead||table.createTHead();
+    if(head.querySelectorAll('tr:first-child > th').length===7)return;
+    head.innerHTML='<tr>'+
+      '<th class="sortable-th absence-public-number-col"><button type="button" class="table-sort-btn" onclick="toggleTableSort(\'absenceManage\',\'order\')">Bil. <span id="sort-absenceManage-order" class="sort-indicator">↕</span></button></th>'+
+      '<th class="sortable-th"><button type="button" class="table-sort-btn" onclick="toggleTableSort(\'absenceManage\',\'name\')">Pegawai <span id="sort-absenceManage-name" class="sort-indicator">↕</span></button></th>'+
+      '<th>Mod</th><th>Jenis</th>'+
+      '<th class="sortable-th"><button type="button" class="table-sort-btn" onclick="toggleTableSort(\'absenceManage\',\'date\')">Tempoh / Masa <span id="sort-absenceManage-date" class="sort-indicator">↕</span></button></th>'+
+      '<th class="sortable-th"><button type="button" class="table-sort-btn" onclick="toggleTableSort(\'absenceManage\',\'status\')">Status <span id="sort-absenceManage-status" class="sort-indicator">↕</span></button></th>'+
+      '<th>Tindakan / Pelulus</th></tr>';
+  }
+
+  function applyAbsenceManageFilters(){
+    const data=state.absenceManagement?.requests||[];
+    const q=norm(document.getElementById('absenceManageSearch')?.value);
+    const st=document.getElementById('absenceManageStatus')?.value||'';
+    const cat=document.getElementById('absenceManageCategory')?.value||'';
+    const mode=document.getElementById('absenceManageMode')?.value||'';
+    const list=sortRecords(data.filter(r=>{
+      const hay=norm([r.id,r.submittedAt,r.name,r.jobTitle,r.email,r.category,r.mode,r.type,
+        r.startDate,r.endDate,r.startTime,r.endTime,r.note,r.status,r.reviewerJobTitle,r.reviewedAt,r.comment].join(' '));
+      return (!q||hay.includes(q))&&(!st||r.status===st)&&(!cat||r.category===cat)&&(!mode||r.mode===mode);
+    }),getTableSort('absenceManage'));
+    text('absenceManageCount',`${list.length} / ${data.length} rekod`);
+
+    // Same four-card summary used by Senarai Tidak Hadir / Keberadaan.
+    const summary=document.getElementById('absenceManageSummary');
+    if(summary){
+      const counts=[
+        ['Jumlah',list.length],
+        ['Tidak Hadir',list.filter(r=>r.mode==='TIDAK_HADIR').length],
+        ['Keberadaan',list.filter(r=>r.mode==='KEBERADAAN').length],
+        ['Tiada Penjelasan',list.filter(r=>r.status==='TIDAK MOHON').length]
+      ];
+      summary.innerHTML=counts.map(([name,value])=>
+        `<div class="summary-card"><span>${esc(name)}</span><strong>${value}</strong></div>`).join('');
+    }
+
+    const body=document.getElementById('absenceManageRows');
+    if(!body)return;
+    ensureAbsenceManageTableLayout();
+    updateTableSortIndicators('absenceManage');
+    body.innerHTML=list.length?list.map((r,index)=>{
+      const modeLabel=r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir';
+      const timeLabel=r.mode==='KEBERADAAN'
+        ?`<small class="table-sub">${esc(r.startTime||'—')} – ${esc(r.endTime||'—')}</small>`:'';
+      const details=`<details class="absence-manage-details"><summary>Lihat butiran</summary>`+
+        `<div><b>Emel:</b> ${esc(r.email||'—')}</div>`+
+        `<div><b>${r.synthetic?'Dikesan':'Hantar'}:</b> ${esc(r.submittedAt||'—')}</div>`+
+        `<div><b>Catatan:</b> ${esc(r.note||'—')}</div>`+
+        (!r.synthetic&&r.comment?`<div><b>Ulasan:</b> ${esc(r.comment)}</div>`:'')+
+        `</details>`;
+      const reviewer=r.status==='MENUNGGU'
+        ?`<div class="row-actions"><button class="action-link approve-link" onclick='openReviewAbsence(${JSON.stringify(r.id)},"DILULUSKAN")'>Lulus</button><button class="action-link warn-link" onclick='openReviewAbsence(${JSON.stringify(r.id)},"DITOLAK")'>Tolak</button></div>`
+        :r.synthetic?'<span class="muted">Tiada permohonan</span>'
+        :`<span class="review-role-tag">${esc(r.reviewerJobTitle||'Pengurusan')}</span><small class="table-sub">${esc(r.reviewedAt||'—')}</small>`;
+      return `<tr>`+
+        `<td class="absence-public-number">${index+1}</td>`+
+        `<td><b>${esc(r.name||'—')}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.category||'—')}</small></td>`+
+        `<td><b>${esc(modeLabel)}</b></td>`+
+        `<td>${esc(r.type||'—')}</td>`+
+        `<td>${esc(formatDateRange(r.startDate,r.endDate))}${timeLabel}<small class="table-sub">${r.synthetic?'Dikesan':'Hantar'}: ${esc(r.submittedAt||'—')}</small></td>`+
+        `<td><span class="request-status ${absenceStatusClass(r.status)}">${esc(r.status)}</span></td>`+
+        `<td class="absence-manage-action">${reviewer}${details}</td>`+
+        `</tr>`;
+    }).join(''):'<tr><td colspan="7" class="empty-cell">Tiada rekod sepadan untuk tempoh dan tapisan dipilih.</td></tr>';
   }
 
   function openReviewAbsence(id,decision){
