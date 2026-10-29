@@ -19,6 +19,27 @@ function getUserByEmail_(email, activeOnly) {
   return getAllUsers_().find(u => u.email === email && (!activeOnly || u.active)) || null;
 }
 
+/**
+ * Authentication and PIN reset must not trust a cached user's sheet row.
+ * A sort/import can move PENGGUNA rows without invalidating the script cache;
+ * the old reset then changed another user's row but emailed the intended one.
+ * Read one fresh snapshot from the authoritative PENGGUNA sheet instead.
+ */
+function getUserByEmailFresh_(email, activeOnly) {
+  email = normalizeEmail_(email);
+  if (!email) return null;
+  const sh = getSheetOrThrow_(EK.SHEETS.USERS);
+  const last = sh.getLastRow();
+  if (last < 2) return null;
+  const values = sh.getRange(2, 1, last - 1, EK.USER_HEADERS.length).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (normalizeEmail_(values[i][2]) !== email) continue;
+    const user = userFromRow_(values[i], i + 2);
+    if (!activeOnly || user.active) return user;
+  }
+  return null;
+}
+
 function userFromRow_(v, row) {
   const sessionVersionRaw = Number(v[12]);
   const rawCategory = String(v[3] || '').trim() || 'PPP';
