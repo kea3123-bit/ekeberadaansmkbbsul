@@ -598,7 +598,7 @@ const state = {
       try{
         const result=await runServer('getProfilePhoto',state.token,u.email);
         data=String(result?.dataUrl||'');
-        if(data&&!/^data:image\\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(data))
+        if(data&&!/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(data))
           throw new Error('Data gambar dari Google Drive tidak sah.');
         if(!data)throw new Error(result?.message||'Google Drive tidak memulangkan data gambar.');
         state.photoCache.set(photoKey,data);
