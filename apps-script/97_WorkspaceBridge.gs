@@ -42,6 +42,7 @@ function workspaceBridgePost_(e) {
     let result;
     switch(String(req.action||'')){
       case 'photo': result=workspacePhoto_(data);break;
+      case 'findPhoto':result=workspaceFindPhoto_(data);break;
       case 'syncPhotos':result=workspaceSyncPhotos_(data);break;
       case 'exportPdf':result=workspaceExportPdf_(data);break;
       case 'exportSheet':result=workspaceExportSheet_(data);break;
@@ -61,9 +62,47 @@ function workspacePhoto_(data) {
   const file=DriveApp.getFileById(id);
   const mime=String(file.getMimeType()||'');
   if(!/^image\/(?:png|jpeg|webp|gif)$/.test(mime))throw new Error('Drive photo type unsupported.');
-  if(file.getSize()>1200000)throw new Error('Drive photo exceeds 1.2 MB.');
+  if(file.getSize()>2500000)throw new Error('Gambar Google Drive melebihi 2.5 MB. Sila kecilkan saiz eoperasi.png.');
   const encoded=Utilities.base64Encode(file.getBlob().getBytes());
   return {ok:true,dataUrl:'data:'+mime+';base64,'+encoded};
+}
+
+/**
+ * Find only the current authenticated user's eoperasi.png by the trusted
+ * name/category and root folder supplied by PHP/MySQL over signed HMAC RPC.
+ * Does not search arbitrary user-submitted Drive IDs or read Sheets data.
+ */
+function workspaceFindPhoto_(data){
+  const rootId=String(data.rootFolderId||'').trim();
+  const name=String(data.name||'').trim();
+  const category=String(data.category||'').trim();
+  if(!/^[A-Za-z0-9_-]{12,120}$/.test(rootId))throw new Error('ID folder induk Google Drive tidak sah.');
+  if(!name||name.length>200)throw new Error('Nama pegawai tidak sah.');
+  const categories={Pengurusan:'01 - Pengurusan',Pentadbir:'01 - Pengurusan',
+    PPP:'02 - Guru',AKP:'03 - Anggota Kumpulan Pelaksana',
+    Praktikum:'04 - Praktikum',MySTEP:'05 - MySTEP'};
+  const categoryFolder=categories[category];
+  if(!categoryFolder)return {ok:true,fileId:'',message:'Kategori pengguna tidak mempunyai folder gambar profil: '+category};
+  const root=DriveApp.getFolderById(rootId);
+  const categoriesFound=root.getFoldersByName(categoryFolder);
+  if(!categoriesFound.hasNext())return {ok:true,fileId:'',message:'Folder kategori '+categoryFolder+' tidak dijumpai dalam Google Drive.'};
+  const parent=categoriesFound.next();
+  const norm=value=>String(value||'').trim().toLowerCase().replace(/\\s+/g,' ');
+  let staffFolder=null;
+  const dirs=parent.getFolders();
+  while(dirs.hasNext()){
+    const entry=dirs.next();
+    if(norm(entry.getName())===norm(name)){staffFolder=entry;break;}
+  }
+  if(!staffFolder)return {ok:true,fileId:'',message:'Folder bernama '+name+' tidak dijumpai dalam '+categoryFolder+'.'};
+  const files=staffFolder.getFiles();
+  while(files.hasNext()){
+    const entry=files.next();
+    if(String(entry.getName()||'').trim().toLowerCase()==='eoperasi.png'){
+      return {ok:true,fileId:entry.getId()};
+    }
+  }
+  return {ok:true,fileId:'',message:'eoperasi.png tidak dijumpai dalam folder '+name+'.'};
 }
 
 function workspaceSyncPhotos_(data){
