@@ -48,7 +48,8 @@ function checkDelimaAccount(email, clientInfo) {
   email = normalizeEmail_(email);
   if (!email || !isValidEmail_(email)) throw new Error('Masukkan alamat emel DELIMa yang sah.');
 
-  let user = getUserByEmail_(email, true);
+  // Always read current PIN state from Sheets, not a potentially stale cache.
+  let user = getUserByEmailFresh_(email, true);
   if (!user) throw new Error('Akaun DELIMa ini tidak didaftarkan atau tidak aktif dalam e-Keberadaan.');
 
   const isPinAccount = String(user.authType || '').toUpperCase() === EK.PASSWORD.AUTH_TYPE;
@@ -112,20 +113,38 @@ function checkDelimaAccount(email, clientInfo) {
 
 function preparePasswordSetupState_(user) {
   if (!user) throw new Error('Pengguna tidak dijumpai.');
+  // Cached row numbers can point at another person after sheet sort/import.
+  // Re-resolve the target row and validate its email BEFORE writing.
+  const fresh = getUserByEmailFresh_(user.email, false);
+  if (!fresh) throw new Error('Pengguna tidak dijumpai dalam PENGGUNA.');
   const sh = getSheetOrThrow_(EK.SHEETS.USERS);
-  const nextVersion = Math.max(1, Number(user.sessionVersion || 1)) + 1;
+  if (normalizeEmail_(sh.getRange(fresh.row, 3).getValue()) !== fresh.email) {
+    throw new Error('Susunan PENGGUNA berubah semasa reset. Cuba sekali lagi.');
+  }
+  const nextVersion = Math.max(1, Number(fresh.sessionVersion || 1)) + 1;
 
-  sh.getRange(user.row, 10, 1, 7).setValues([[
+  sh.getRange(fresh.row, 10, 1, 7).setValues([[
     '', '', true, nextVersion, 0, '', new Date()
   ]]);
-  sh.getRange(user.row, 12).insertCheckboxes().setValue(true);
-  sh.getRange(user.row, 15, 1, 2).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+  sh.getRange(fresh.row, 12).insertCheckboxes().setValue(true);
+  sh.getRange(fresh.row, 15, 1, 2).setNumberFormat('dd/MM/yyyy HH:mm:ss');
   // AuthType kosong bermaksud PIN perlu diwujudkan semula.
-  sh.getRange(user.row, 19).setValue('');
-  invalidateUsersCache_();
-  revokeAllTrustedDevicesForUser_(user.email, 'RESET_PIN_ATAU_SETUP_SEMULA');
+  sh.getRange(fresh.row, 19).setValue('');
+  SpreadsheetApp.flush();
 
-  return Object.assign({}, user, {
+  // Do not send a success email unless the actual target row was reset.
+  const check = sh.getRange(fresh.row, 10, 1, 10).getValues()[0];
+  if (normalizeEmail_(sh.getRange(fresh.row, 3).getValue()) !== fresh.email ||
+      String(check[0] || '') !== '' || String(check[1] || '') !== '' ||
+      !toBool_(check[2]) || Number(check[3]) !== nextVersion ||
+      String(check[9] || '').trim() !== '') {
+    invalidateUsersCache_();
+    throw new Error('Reset PIN tidak dapat disahkan dalam Google Sheets. Emel arahan tidak dihantar.');
+  }
+  invalidateUsersCache_();
+  revokeAllTrustedDevicesForUser_(fresh.email, 'RESET_PIN_ATAU_SETUP_SEMULA');
+
+  return Object.assign({}, fresh, {
     passwordSalt:'', passwordHash:'', mustChangePassword:true,
     sessionVersion:nextVersion, failedLoginCount:0, lockedUntil:'',
     passwordUpdatedAt:new Date(), authType:''
@@ -148,7 +167,7 @@ function loginWithPin(email, pin, clientInfo, deviceCredential) {
   email = normalizeEmail_(email);
   pin = normalizePin_(pin);
   const ci = normalizeClientInfo_(clientInfo);
-  const user = getUserByEmail_(email, true);
+  const user = getUserByEmailFresh_(email, true);
 
   if (!user) {
     recordLoginEventSafe_({email,name:'',category:''}, ci, 'GAGAL_AKAUN', 'Akaun tidak ditemui / tidak aktif');
@@ -189,7 +208,7 @@ function setFirstPin(changeTicket, newPin, confirmPin, clientInfo, deviceCredent
   validateNewPin_(newPin);
 
   const data = readPasswordChangeTicket_(changeTicket);
-  const user = getUserByEmail_(data.e, true);
+  const user = getUserByEmailFresh_(data.e, true);
   if (!user) throw new Error('Akaun tidak lagi aktif. Hubungi pentadbir.');
   if (!user.mustChangePassword) throw new Error('Tetapan PIN ini telah digunakan atau tidak lagi sah. Mulakan semula dari halaman login.');
   if (Number(user.sessionVersion || 1) !== Number(data.v || 1)) throw new Error('Tetapan akaun telah berubah. Mulakan semula dari halaman login.');
@@ -336,7 +355,7 @@ function resetSelectedUserFreshFromMenu() {
   );
   if (answer !== ui.Button.YES) return;
 
-  const user = getUserByEmail_(email, false);
+  const user = getUserByEmailFresh_(email, false);
   if (!user) {
     ui.alert('Reset pengguna', 'Pengguna tidak dijumpai dalam PENGGUNA.', ui.ButtonSet.OK);
     return;
@@ -369,7 +388,7 @@ function resetSelectedUserFreshFromMenu() {
 function adminResetPassword(token, email) {
   const admin = requireSessionAdmin_(token);
   email = normalizeEmail_(email);
-  const user = getUserByEmail_(email, false);
+  const user = getUserByEmailFresh_(email, false);
   if (!user) throw new Error('Pengguna tidak dijumpai.');
 
   const resetUser = preparePasswordSetupState_(user);
@@ -404,7 +423,7 @@ function adminBulkResetPasswords(token, emails) {
 
   const results = [];
   const usersByEmail = {};
-  getAllUsers_().forEach(u => usersByEmail[u.email] = u);
+  getAllUsersFresh_().forEach(u => usersByEmail[u.email] = u);
 
   unique.forEach(email => {
     const user = usersByEmail[email];
@@ -453,7 +472,7 @@ function setMyAdminPasswordFromMenu() {
     ui.alert('Emel akaun Google semasa tidak dapat dibaca. Buka Google Sheet menggunakan akaun pemilik/pentadbir dan cuba lagi.');
     return;
   }
-  const user = getUserByEmail_(actor, false);
+  const user = getUserByEmailFresh_(actor, false);
   if (!user || !user.isAdmin) {
     ui.alert('Akaun ' + actor + ' belum ditanda sebagai Pentadbir ✓ dalam PENGGUNA.');
     return;
