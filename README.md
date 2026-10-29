@@ -1,66 +1,38 @@
 # eKeberadaan SMKBBSUL
 
-> **Production (29 Oct 2026): PHP/MySQL.** The public site at
-> https://kea3123-bit.github.io/ekeberadaansmkbbsul/ must be built from
-> `mysql-ui/` by `.github/workflows/github-pages.yml` on
-> `refactor/performance-v2`. Do not publish the legacy root Apps Script UI,
-> `web/gas-shim.js` or `scripts/build-pages.py` to `gh-pages`.
-> The live API is `https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php`;
-> Google Workspace is used only for Drive photos and PDF/Sheet exports via
-> signed PHP-to-Apps-Script calls. GitHub workflow checks API health/CORS
-> before replacing the public site. cPanel PHP and Google Web App deployments
-> are separate and `php/config.local.php` must remain private.
+## Production architecture (29 Oktober 2026)
 
+**Frontend:** https://kea3123-bit.github.io/ekeberadaansmkbbsul/ — static GitHub Pages, generated from `mysql-ui/` on branch `refactor/performance-v2`.
 
-Production architecture:
+**Backend:** PHP API at `https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php` — MySQL is the only authoritative store for accounts, authentication, sessions, punch records, absences, reviews and administration.
 
-`GitHub Pages -> Google Apps Script -> Google Sheets / Drive`
+**Google Workspace:** Used only through a signed PHP → Apps Script bridge for Google Drive profile photos and PDF/Google Sheet exports. Do **not** use the former Sheets-based login, attendance or RPC path in production.
 
-Live web: https://farshoffs.github.io/ekeberadaansmkbbsul/
+### Canonical source
 
-## Source of truth
+- `mysql-ui/Index.html`, `mysql-ui/Scripts.html`, `mysql-ui/Styles.html`, `mysql-ui/Logo.html` — frontend source.
+- `mysql-ui/php/index.php` — static HTML renderer that replaces `google.script.run` with direct PHP API requests during the GitHub Actions build.
+- `php/api.php`, `php/_lib.php`, `php/workspace_services.php`, `php/workspace_bridge.php` — cPanel PHP backend source. Deployment to cPanel is **separate** from Pages.
+- `apps-script/Bridges.gs`, `apps-script/97_WorkspaceBridge.gs` — optional, signed Workspace operations. Google Web App deployment is **separate**.
+- `docs/PERFORMANCE_AUDIT_MYSQL_2026-10-29.md` — performance bottlenecks and deployment verification.
 
-- `Index.html`, `Styles.html`, `Scripts.html`, `Logo.html` — editable UI source used by the static build.
-- `web/` — GitHub Pages bridge/config source.
-- `scripts/build-pages.py` — generates the optimized static site with hashed assets, cacheable JS/CSS/logo and service worker.
-- `apps-script/` — canonical modular Apps Script backend. The old monolithic `Code.gs` is no longer part of this architecture.
-- `docs/` — architecture, performance and security notes.
+### Deployment safeguards
 
-## Backend modules
+The only Pages publisher in this branch, `.github/workflows/github-pages.yml`, builds from `mysql-ui/`, validates that the generated HTML contains the direct PHP API and no Google Sheets RPC, then checks cPanel PHP API health and CORS from `https://kea3123-bit.github.io` before updating `gh-pages`.
 
-The Apps Script backend is split by responsibility instead of one large `Code.gs`:
+The older root `Index.html`, `Scripts.html`, `Styles.html`, `Logo.html`, `web/gas-shim.js` and `scripts/build-pages.py` are **legacy Apps Script frontend source, not production**. Never run the old GAS static publisher against `gh-pages` or point GitHub Pages at those files.
 
-- `00_Core.gs` — constants, Spreadsheet/runtime/cache primitives and `doGet`.
-- `10_Auth.gs` — PIN/login/session token authentication.
-- `11_Sessions.gs` — 30-day trusted devices.
-- `20_UserApi.gs` / `21_AdminApi.gs` — user/admin API operations.
-- `30_Reporting.gs` — reports/PDF/Sheets reporting.
-- `40_UsersData.gs` — cached user data.
-- `41_AttendanceData.gs` — indexed attendance access.
-- `42_Settings.gs` — cached settings.
-- `50_Notifications.gs` — email/reminder/trigger workflows.
-- `60_TimeReview.gs` — late/early review.
-- `61_Absence.gs` — Tidak Hadir / Keberadaan.
-- `70_Profile.gs` — profile photo/Drive access.
-- `80_Utilities.gs` — shared helpers.
-- `90_Setup.gs` — schema/setup helpers.
-- `95_Diagnostics.gs` — read-only editor diagnostic.
-- `Bridges.gs` + `Bridge.html` — GitHub Pages RPC bridge.
+GitHub Pages hosts static files only: it cannot serve PHP or access MySQL directly. PHP must already be configured on cPanel. Keep `php/config.local.php`, MySQL credentials, PIN peppers, session secrets and Workspace HMAC secrets out of GitHub.
 
-## Performance design
+### Verification
 
-- Initial HTML is about 39 KB instead of the previous ~600 KB inline page.
-- CSS, JS and logo are separate content-hashed assets and can be cached by the browser/service worker.
-- No redundant Apps Script ping is performed before the first real RPC.
-- `PENGGUNA` and `TETAPAN` use short server caches plus per-execution memoization.
-- `KEHADIRAN` uses a compact row/date/month index, so common daily/monthly queries do not scan the entire attendance table.
-- login-history lookups are built once as a cached Set instead of repeatedly scanning `LOG_LOGIN`/`AUDIT` per user.
-- `TIDAK_HADIR` and `SEMAKAN_WAKTU` are memoized within an Apps Script execution while approval updates are kept immediately consistent.
+In Chrome → DevTools → Network, after reloading the production URL:
 
-## Deployment
+- Login, session, attendance and admin operations should POST JSON to `ppdkmy.edu.my/ekeberadaansmkbbsul/api.php`.
+- They **must not** call `script.google.com/macros/s/.../exec?bridge=1` or `userCodeAppPanel`.
+- Photo retrieval may use the Google Workspace bridge **server-to-server** from cPanel; it should not block initial dashboard render.
+- The service worker must be the `eke-pwa-shell-v1` PHP/MySQL version, not `eke-static-...` from the old GAS build.
 
-Frontend deployment is automatic through GitHub Actions to `gh-pages`.
-
-Apps Script deployment is intentionally manual. Follow `apps-script/DEPLOY_MANUAL.md`. No `clasp`, service-account credential or GitHub Actions OAuth secret is required.
+If the deployment workflow fails, leave the existing public site in place. Inspect the workflow logs rather than bypassing health/CORS checks. Do not reset PINs or re-import MySQL to repair a frontend deployment.
 
 Timezone: `Asia/Kuala_Lumpur`.
