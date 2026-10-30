@@ -1,0 +1,1991 @@
+
+  window.__EK_SCRIPTS_LOADED__ = false;
+  const state = {
+    token:'', deviceToken:'', boot:null, admin:null, currentScreen:'home',
+    myCardLoaded:false, myCardHalf:1, myCardData:null,
+    adminCardEmail:'', adminCardData:null, adminCardHalf:1,
+    selectedAccount:null, changeTicket:'', setupPurpose:'',
+    selectedUserEmails:new Set(), filteredUsers:[], filteredReport:[], tableSorts:{},
+    absence:null, absencePublic:null, absenceManagement:null, timeReview:null,
+    cacheTimes:{},
+    lastSessionCheck:0, sessionCheckBusy:false, sessionRecoveryPromise:null,
+    locationMap:null, locationMarker:null, locationCircle:null,
+    settingsCurrentMarker:null, settingsAccuracyCircle:null,
+    homeLocationMap:null, homeSchoolMarker:null, homeRadiusCircle:null, homeCurrentMarker:null, homeAccuracyCircle:null,
+    liveLocation:null, locationWatchId:null, locationUpdatedAt:0, locationRefreshPromise:null,
+    locationPermissionState:'unknown', locationPermissionProblem:'', locationPermissionStatus:null,
+    photoCache:new Map(), clientInfo:null, clientInfoPromise:null, leafletPromise:null
+  };
+
+  document.addEventListener('DOMContentLoaded', initApp);
+
+  async function runServerRaw(fn, ...args){
+    const payload=JSON.stringify({fn,args});
+    // CORS-simple text/plain does not need an OPTIONS preflight. Keep the
+    // exact JSON payload and explicit session-token checks in PHP/MySQL.
+    const options={
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=UTF-8'},
+      credentials:'omit',
+      cache:'no-store',
+      body:payload
+    };
+    let response;
+    try {
+      response=await fetch("https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php",options);
+      if(response.status===415){
+        // Graceful compatibility while an older cPanel api.php is upgraded.
+        // The old server rejects before dispatching, so retry is safe.
+        try{
+          response=await fetch("https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php",{
+            ...options,headers:{'Content-Type':'application/json'}
+          });
+        }catch(_legacyError){
+          throw new Error('API cPanel belum dikemas kini untuk sambungan tanpa preflight. Gantikan api.php dan php/api.php daripada branch terkini.');
+        }
+      }
+    }catch(e){
+      if(e instanceof Error && e.message.includes('belum dikemas kini'))throw e;
+      throw new Error('Tidak dapat menghubungi API MySQL di hosting. Semak sambungan internet, HTTPS dan tetapan CORS cPanel.');
+    }
+    const obj=await response.json().catch(()=>({
+      ok:false,
+      error:'HTTP '+response.status+': respons server bukan JSON. Semak cPanel PHP error_log.'
+    }));
+    if(!response.ok||!obj.ok)throw new Error(obj.error||'Permintaan MySQL gagal (HTTP '+response.status+').');
+    return obj.result;
+  }
+
+
+  async function recoverAccessSession(){
+    if(state.sessionRecoveryPromise)return state.sessionRecoveryPromise;
+    const device=loadStoredDevice();
+    if(!device)throw new Error('Sesi telah tamat. Sila log masuk semula.');
+    state.sessionRecoveryPromise=(async()=>{
+      const res=await runServerRaw('resumeTrustedDevice',device,getClientInfoFast());
+      applySessionResult(res);
+      return res;
+    })();
+    try{return await state.sessionRecoveryPromise;}
+    finally{state.sessionRecoveryPromise=null;}
+  }
+
+  async function runServer(fn, ...args){
+    try{return await runServerRaw(fn,...args);}
+    catch(err){
+      const authCall=['resumeSession','resumeTrustedDevice','loginWithPin','setFirstPin','checkDelimaAccount'].includes(fn);
+      const tokenCall=!authCall&&state.token&&args.length&&args[0]===state.token;
+      if(!tokenCall||!isAuthSessionError(err))throw err;
+      try{
+        const oldToken=args[0];
+        await recoverAccessSession();
+        if(!state.token||state.token===oldToken)throw err;
+        args[0]=state.token;
+        return await runServerRaw(fn,...args);
+      }catch(recoveryErr){
+        clearStoredSessionToken();state.token='';
+        if(isAuthSessionError(recoveryErr)){clearTrustedDevice();state.deviceToken='';}
+        throw recoveryErr;
+      }
+    }
+  }
+
+  const CLIENT_CACHE_TTL=Object.freeze({
+    myCard:60*1000,
+    adminCard:60*1000,
+    absence:45*1000,
+    absencePublic:30*1000,
+    absenceManagement:30*1000,
+    timeReview:30*1000
+  });
+  function markClientCache(scope){state.cacheTimes[scope]=Date.now();}
+  function clientCacheFresh(scope,ttl=CLIENT_CACHE_TTL[scope]||30000){
+    const at=Number(state.cacheTimes?.[scope]||0);
+    return !!at&&Date.now()-at<ttl;
+  }
+  function invalidateClientCache(...scopes){
+    const list=scopes.flat().filter(Boolean);
+    if(!list.length||list.includes('all')){
+      state.cacheTimes={};
+      state.myCardLoaded=false;state.myCardData=null;state.adminCardData=null;
+      state.absence=null;state.absencePublic=null;state.absenceManagement=null;state.timeReview=null;
+      return;
+    }
+    list.forEach(scope=>{
+      delete state.cacheTimes[scope];
+      if(scope==='myCard'){state.myCardLoaded=false;state.myCardData=null;}
+      else if(scope==='adminCard')state.adminCardData=null;
+      else if(scope==='absence')state.absence=null;
+      else if(scope==='absencePublic')state.absencePublic=null;
+      else if(scope==='absenceManagement')state.absenceManagement=null;
+      else if(scope==='timeReview')state.timeReview=null;
+    });
+  }
+
+  // ---------- Client device telemetry ----------
+  function getClientInstanceId(){
+    const key='ek_client_instance_id';
+    let id=safeLocalGet(key);
+    if(id)return id;
+    try{id=crypto.randomUUID();}catch(e){id='ci-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,12);}
+    safeLocalSet(key,id);
+    return id;
+  }
+
+  function inferClientDeviceType(){
+    const ua=navigator.userAgent||'',touch=Number(navigator.maxTouchPoints||0);
+    if(/iPad|Tablet/i.test(ua)||(navigator.platform==='MacIntel'&&touch>1))return 'Tablet';
+    if(/iPhone|Android.+Mobile|Mobile/i.test(ua))return 'Telefon';
+    if(/Android/i.test(ua))return 'Tablet/Android';
+    return 'Komputer';
+  }
+
+  function clientDisplayMode(){
+    try{
+      if(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)return 'PWA/Standalone';
+      if(navigator.standalone===true)return 'PWA/Standalone';
+    }catch(e){}
+    return 'Browser';
+  }
+
+  function clientNetworkFields(){
+    const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection||{};
+    return {
+      networkType:String(c.effectiveType||c.type||''),
+      networkDownlinkMbps:Number.isFinite(Number(c.downlink))?Number(c.downlink):'',
+      networkRttMs:Number.isFinite(Number(c.rtt))?Number(c.rtt):'',
+      saveData:!!c.saveData
+    };
+  }
+
+  function baseClientInfo(extra={}){
+    const sw=screen?.width||0,sh=screen?.height||0,
+          vw=window.innerWidth||0,vh=window.innerHeight||0,
+          net=clientNetworkFields();
+    return {
+      clientInstanceId:getClientInstanceId(),
+      userAgent:navigator.userAgent||'',
+      platform:(navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||'',
+      vendor:navigator.vendor||'',
+      timezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||''),
+      browserTimezone:(Intl.DateTimeFormat().resolvedOptions().timeZone||''),
+      language:navigator.language||'',
+      deviceType:inferClientDeviceType(),
+      deviceModel:String(extra.model||''),
+      architecture:String(extra.architecture||''),
+      platformVersion:String(extra.platformVersion||''),
+      browserBrands:String(extra.browserBrands||''),
+      screen:sw&&sh?`${sw}x${sh}`:'',
+      viewport:vw&&vh?`${vw}x${vh}`:'',
+      pixelRatio:Number(window.devicePixelRatio||1),
+      touchPoints:Number(navigator.maxTouchPoints||0),
+      hardwareConcurrency:Number(navigator.hardwareConcurrency||0)||'',
+      deviceMemoryGb:Number(navigator.deviceMemory||0)||'',
+      colorDepth:Number(screen?.colorDepth||0)||'',
+      displayMode:clientDisplayMode(),
+      networkType:net.networkType,
+      networkDownlinkMbps:net.networkDownlinkMbps,
+      networkRttMs:net.networkRttMs,
+      saveData:net.saveData,
+      _at:Date.now()
+    };
+  }
+
+  async function getClientHintsExtra(){
+    try{
+      const uad=navigator.userAgentData;
+      if(!uad?.getHighEntropyValues)return {};
+      const v=await uad.getHighEntropyValues(['model','architecture','platformVersion','fullVersionList']);
+      const brands=(v.fullVersionList||uad.brands||[]).map(x=>`${x.brand} ${x.version}`).join(', ');
+      return {model:v.model||'',architecture:v.architecture||'',platformVersion:v.platformVersion||'',browserBrands:brands};
+    }catch(e){return {};}
+  }
+
+  function getClientInfoFast(){
+    const cached=state.clientInfo;
+    if(cached&&Date.now()-(cached._at||0)<15*60*1000)return cached;
+    getClientDeviceInfo(false,15*60*1000).catch(()=>{});
+    return baseClientInfo();
+  }
+
+  async function getClientDeviceInfo(force=false,maxAgeMs=15*60*1000){
+    const cached=state.clientInfo;
+    const maxAge=Math.max(0,Number(maxAgeMs)||0);
+    if(!force&&cached&&Date.now()-(cached._at||0)<maxAge)return cached;
+    if(!force&&state.clientInfoPromise)return state.clientInfoPromise;
+    const task=(async()=>{
+      const hints=await getClientHintsExtra().catch(()=>({}));
+      const info=baseClientInfo(hints||{});
+      state.clientInfo=info;
+      return info;
+    })();
+    if(!force)state.clientInfoPromise=task;
+    try{return await task;}
+    finally{if(state.clientInfoPromise===task)state.clientInfoPromise=null;}
+  }
+
+  async function getClientInfoForAuth(){
+    try{return await getClientDeviceInfo(false,5*60*1000);}catch(e){return getClientInfoFast();}
+  }
+
+  async function syncClientTelemetry(){
+    if(!state.token)return false;
+    try{
+      const info=await getClientDeviceInfo(false,5*60*1000);
+      await runServer('syncClientTelemetry',state.token,loadStoredDevice(),info);
+      return true;
+    }catch(e){return false;}
+  }
+
+  // ---------- Login (v12: DELIMa email + 6-digit PIN + 7-day trusted device) ----------
+  async function initApp(){
+    try{
+      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')renewSessionIfNeeded(false).catch(()=>{});});
+      window.addEventListener('pageshow',()=>renewSessionIfNeeded(false).catch(()=>{}));
+      window.addEventListener('focus',()=>renewSessionIfNeeded(false).catch(()=>{}));
+      window.addEventListener('online',()=>{state.clientInfo=null;getClientDeviceInfo(true).catch(()=>{});});
+      try{navigator.connection?.addEventListener?.('change',()=>{state.clientInfo=null;getClientDeviceInfo(true).catch(()=>{});});}catch(e){}
+      if(await tryResumeStoredSession()) return;
+      await showLogin();
+    }catch(e){
+      try{await showLogin();}catch(_e){}
+      showLoginError(e.message);
+    }
+  }
+
+  function applySessionResult(res){
+    if(!res?.token||!res?.boot)throw new Error('Sesi tidak lengkap. Sila log masuk semula.');
+    state.token=res.token; state.deviceToken=res.deviceToken||loadStoredDevice()||''; state.boot=res.boot;
+    saveSession(state.token,state.deviceToken); state.lastSessionCheck=Date.now();
+    rememberLastAccount(res.boot?.user);
+  }
+
+  async function tryResumeStoredSession(){
+    const saved=loadStoredSession(),device=loadStoredDevice();
+    if(saved){
+      try{
+        const res=await runServer('resumeSession',saved,device,getClientInfoFast());
+        applySessionResult(res); enterApp(); return true;
+      }catch(e){
+        if(isAuthSessionError(e)){clearStoredSessionToken();state.token='';}
+      }
+    }
+    // Secondary recovery path: if the short-lived iframe/session storage was
+    // recycled but the separate trusted-device credential survived, the server
+    // issues a fresh signed session without asking for the PIN again.
+    if(device){
+      try{
+        const res=await runServer('resumeTrustedDevice',device,getClientInfoFast());
+        applySessionResult(res); enterApp(); return true;
+      }catch(e){
+        if(isAuthSessionError(e)){clearTrustedDevice();state.deviceToken='';}
+      }
+    }
+    return false;
+  }
+
+  async function renewSessionIfNeeded(force=false){
+    if(!state.token||state.sessionCheckBusy)return false;
+    const age=Date.now()-(state.lastSessionCheck||0);
+    if(!force&&age<15*60*1000)return false;
+    state.sessionCheckBusy=true;
+    try{
+      const res=await runServer('resumeSession',state.token,loadStoredDevice(),getClientInfoFast());
+      applySessionResult(res);
+      return true;
+    }catch(e){
+      // If only the short-lived access token expired, silently mint a fresh
+      // one from the trusted-device credential. Network failures leave the
+      // current local state untouched.
+      if(isAuthSessionError(e)){
+        clearStoredSessionToken();state.token='';
+        try{
+          await recoverAccessSession();
+          return true;
+        }catch(recoveryErr){
+          if(isAuthSessionError(recoveryErr)){clearTrustedDevice();state.deviceToken='';}
+        }
+      }
+      return false;
+    }finally{state.sessionCheckBusy=false;}
+  }
+
+  function safeLocalGet(key){try{return localStorage.getItem(key)||'';}catch(e){return '';}}
+  function safeLocalSet(key,value){try{localStorage.setItem(key,String(value??''));return true;}catch(e){return false;}}
+  function safeLocalRemove(key){try{localStorage.removeItem(key);}catch(e){}}
+
+  function isAuthSessionError(err){
+    const msg=String(err?.message||err||'');
+    return /Sesi tidak sah|Sesi rosak|Sesi telah tamat|Sesi peranti|Trusted device|log masuk semula|tidak lagi aktif|dibatalkan kerana|PIN akaun perlu/i.test(msg);
+  }
+
+  function readLastAccount(){
+    try{
+      const obj=JSON.parse(safeLocalGet('ek_last_account')||'null');
+      if(obj&&obj.email) return obj;
+    }catch(e){}
+    const email=safeLocalGet('ek_last_email');
+    return email?{email,name:email,category:''}:null;
+  }
+
+  function rememberLastAccount(user){
+    if(!user||!user.email)return;
+    const data={
+      email:String(user.email||'').toLowerCase(),
+      name:String(user.name||user.email||''),
+      category:String(user.category||''),
+      at:Date.now()
+    };
+    safeLocalSet('ek_last_account',JSON.stringify(data));
+    safeLocalSet('ek_last_email',data.email);
+  }
+
+  function accountCardHtml(user,subtext){
+    return `<div class="account-avatar delima-avatar">${esc((user?.name||'D').charAt(0).toUpperCase())}</div>`+
+      `<div><b>${esc(user?.name||'Pengguna')}</b><small>${esc(user?.email||'')}</small><span>${esc(user?.category||'')}${user?.category?' · ':''}${esc(subtext||'Akaun DELIMa berdaftar')}</span></div>`;
+  }
+
+  async function showLogin(){
+    document.getElementById('appShell').classList.add('hidden');
+    document.getElementById('loginPage').classList.remove('hidden');
+    hideLoginError(); resetLoginFlow(true);
+    getClientDeviceInfo(false).catch(()=>{});
+    const cachedSchool=safeLocalGet('ek_school_name');
+    if(cachedSchool)text('loginSchoolName',cachedSchool);
+    runServer('getLoginPageData').then(d=>{
+      const school=d?.schoolName||'e-Keberadaan';
+      text('loginSchoolName',school);
+      safeLocalSet('ek_school_name',school);
+    }).catch(()=>{});
+    const last=readLastAccount();
+    if(last){
+      document.getElementById('returnAccountCard').innerHTML=accountCardHtml(last,'Peranti pernah digunakan');
+      showLoginStep('return');
+    }else{
+      showLoginStep('email');
+      setTimeout(()=>document.getElementById('delimaEmail')?.focus(),80);
+    }
+  }
+
+  function showLoginStep(step){
+    const map={return:'loginStepReturn',email:'loginStepEmail',pin:'loginStepPin',setpin:'loginStepSetPin'};
+    Object.values(map).forEach(id=>document.getElementById(id)?.classList.add('hidden'));
+    document.getElementById(map[step]||map.email)?.classList.remove('hidden');
+  }
+
+  function resetLoginFlow(keepEmail){
+    state.selectedAccount=null; state.changeTicket=''; state.setupPurpose='';
+    ['loginPin','newPin','confirmPin'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+    if(!keepEmail){const e=document.getElementById('delimaEmail');if(e)e.value='';}
+  }
+
+  function sanitizePinInput(el){
+    if(!el)return;
+    el.value=String(el.value||'').replace(/\D/g,'').slice(0,6);
+  }
+
+  async function continueLastAccount(){
+    const last=readLastAccount();
+    if(!last?.email){useDifferentAccount();return;}
+    const btn=document.getElementById('continueLastAccountBtn');
+    hideLoginError(); setButtonBusy(btn,true,'Menyemak akaun…');
+    try{
+      await resolveDelimaAccount(last.email);
+    }catch(e){
+      showLoginError(e.message);
+      if(String(e.message||'').toLowerCase().includes('tidak aktif')||String(e.message||'').toLowerCase().includes('tidak didaftarkan')){
+        safeLocalRemove('ek_last_account');
+      }
+    }finally{setButtonBusy(btn,false,'');}
+  }
+
+  async function checkDelimaAccount(){
+    const email=(document.getElementById('delimaEmail')?.value||'').trim().toLowerCase();
+    hideLoginError();
+    const btn=document.getElementById('checkDelimaBtn'); setButtonBusy(btn,true,'Menyemak…');
+    try{await resolveDelimaAccount(email);}catch(e){showLoginError(e.message);}finally{setButtonBusy(btn,false,'');}
+  }
+
+  async function resolveDelimaAccount(email){
+    const clientInfo=getClientInfoFast();
+    const res=await runServer('checkDelimaAccount',email,clientInfo);
+    state.selectedAccount=res.user; state.setupPurpose=res.setupPurpose||'';
+    rememberLastAccount(res.user);
+    const html=accountCardHtml(res.user,'Akaun DELIMa berdaftar');
+
+    if(res.directPinSetup){
+      state.changeTicket=res.changeTicket||'';
+      document.getElementById('setupAccountSummary').innerHTML=html;
+      text('pinSetupBadge',res.setupPurpose==='ADMIN_RESET'?'RESET PIN':'KALI PERTAMA');
+      text('pinSetupTitle',res.setupPurpose==='ADMIN_RESET'?'Cipta PIN baharu':'Cipta PIN anda');
+      text('pinSetupCopy',res.setupPurpose==='ADMIN_RESET'
+        ? 'Pentadbir telah mereset akses anda. Cipta PIN 6 digit baharu untuk meneruskan.'
+        : 'Cipta PIN 6 digit. Selepas berjaya, peranti ini akan kekal log masuk sehingga 7 hari.');
+      showLoginStep('setpin');
+      setTimeout(()=>document.getElementById('newPin')?.focus(),80);
+      return;
+    }
+
+    // MySQL cannot safely let an unverified email choose a new PIN.
+    // When the imported account has no PIN hash, guide the user to the
+    // administrator's authenticated temporary-PIN reset instead.
+    if(res.pinReady===false){
+      const input=document.getElementById('delimaEmail');
+      if(input)input.value=email;
+      state.selectedAccount=null;
+      showLoginStep('email');
+      throw new Error(res.message||'PIN MySQL belum tersedia. Hubungi Pentadbir Sistem untuk reset PIN.');
+    }
+    document.getElementById('delimaAccountCard').innerHTML=html;
+    showLoginStep('pin');
+    setTimeout(()=>document.getElementById('loginPin')?.focus(),80);
+  }
+
+  function useDifferentAccount(){
+    hideLoginError(); resetLoginFlow(false); showLoginStep('email');
+    setTimeout(()=>document.getElementById('delimaEmail')?.focus(),50);
+  }
+
+  async function submitPinLogin(){
+    if(!state.selectedAccount) return showLoginError('Pilih akaun DELIMa dahulu.');
+    const pin=String(document.getElementById('loginPin')?.value||'').replace(/\D/g,'');
+    if(pin.length!==6) return showLoginError('Masukkan PIN 6 digit.');
+    hideLoginError();
+    const btn=document.getElementById('pinLoginBtn'); setButtonBusy(btn,true,'Menyemak PIN…');
+    try{
+      const clientInfo=await getClientInfoForAuth();
+      const res=await runServer('loginWithPin',state.selectedAccount.email,pin,clientInfo,loadStoredDevice());
+      applySessionResult(res); rememberLastAccount(res.boot?.user||state.selectedAccount);
+      enterApp();
+    }catch(e){
+      showLoginError(e.message);
+      const p=document.getElementById('loginPin'); if(p){p.value='';p.focus();}
+    }finally{setButtonBusy(btn,false,'');}
+  }
+
+
+  async function submitFirstPin(){
+    if(!state.changeTicket) return showLoginError('Sesi menetapkan PIN telah tamat. Mulakan semula dari halaman login.');
+    const p1=String(document.getElementById('newPin')?.value||'').replace(/\D/g,''),
+          p2=String(document.getElementById('confirmPin')?.value||'').replace(/\D/g,'');
+    if(p1.length!==6||p2.length!==6) return showLoginError('PIN mesti tepat 6 digit.');
+    if(p1!==p2) return showLoginError('Pengesahan PIN tidak sepadan.');
+    hideLoginError();
+    const btn=document.getElementById('setPinBtn'); setButtonBusy(btn,true,'Menyimpan PIN…');
+    try{
+      const clientInfo=await getClientInfoForAuth();
+      const res=await runServer('setFirstPin',state.changeTicket,p1,p2,clientInfo,loadStoredDevice());
+      state.changeTicket=''; state.setupPurpose=''; applySessionResult(res);
+      rememberLastAccount(res.boot?.user||state.selectedAccount);
+      toast('PIN berjaya ditetapkan. Peranti ini diingati selama 7 hari.',4200);
+      enterApp();
+    }catch(e){showLoginError(e.message);}
+    finally{setButtonBusy(btn,false,'');}
+  }
+
+  function togglePassword(inputId,button){const input=document.getElementById(inputId);if(!input)return;const show=input.type==='password';input.type=show?'text':'password';if(button)button.textContent=show?'🙈':'👁';input.focus();}
+  function setButtonBusy(btn,busy,label){if(!btn)return;if(busy){if(!btn.dataset.originalHtml)btn.dataset.originalHtml=btn.innerHTML;btn.disabled=true;if(label)btn.innerHTML=esc(label);}else{btn.disabled=false;if(btn.dataset.originalHtml){btn.innerHTML=btn.dataset.originalHtml;delete btn.dataset.originalHtml;}}}
+
+  async function logout(){
+    try{if(state.token)await runServer('logoutApp',state.token);}catch(e){}
+    clearStoredSession();
+    stopLiveLocationTracking();
+    if(state.locationPermissionStatus)state.locationPermissionStatus.onchange=null;
+    Object.assign(state,{token:'',deviceToken:'',boot:null,admin:null,myCardLoaded:false,myCardData:null,adminCardData:null,absence:null,absencePublic:null,absenceManagement:null,timeReview:null,cacheTimes:{},liveLocation:null,locationUpdatedAt:0,locationPermissionState:'unknown',locationPermissionProblem:'',locationPermissionStatus:null});
+    state.selectedUserEmails.clear(); state.photoCache.clear(); closeMobileMenu(); await showLogin(); toast('Anda telah keluar dari peranti ini.');
+  }
+
+  function writeCookie(name,value,maxAge,partitioned=false){
+    try{
+      const extra=partitioned?'; Partitioned':'';
+      document.cookie=`${name}=${encodeURIComponent(value||'')}; Max-Age=${Math.max(0,Number(maxAge)||0)}; Path=/; Secure; SameSite=None${extra}`;
+    }catch(e){}
+  }
+  function deleteCookie(name){writeCookie(name,'',0,false);writeCookie(name,'',0,true);}
+  function clearLegacySessionPersistence(){
+    safeLocalRemove('ek_session');
+    deleteCookie('ek_session');deleteCookie('ek_session_p');
+  }
+  function saveSession(token,deviceToken){
+    if(token){
+      try{sessionStorage.setItem('ek_session',token);}catch(e){}
+      // Access sessions are intentionally session-scoped. The separate trusted
+      // device credential is the only persistent login mechanism.
+      clearLegacySessionPersistence();
+    }
+    if(deviceToken)saveTrustedDevice(deviceToken);
+  }
+  function saveTrustedDevice(deviceToken){
+    if(!deviceToken)return;
+    state.deviceToken=deviceToken;
+    safeLocalSet('ek_device',deviceToken);
+    writeCookie('ek_device',deviceToken,7*24*60*60,false);
+    writeCookie('ek_device_p',deviceToken,7*24*60*60,true);
+  }
+  function loadStoredSession(){
+    let current='';
+    try{current=sessionStorage.getItem('ek_session')||'';}catch(e){}
+    if(current)return current;
+    // One-time migration for older builds that persisted the access token.
+    const legacy=safeLocalGet('ek_session')||readCookie('ek_session')||readCookie('ek_session_p')||'';
+    if(legacy){
+      try{sessionStorage.setItem('ek_session',legacy);}catch(e){}
+      clearLegacySessionPersistence();
+    }
+    return legacy;
+  }
+  function loadStoredDevice(){
+    return safeLocalGet('ek_device')||readCookie('ek_device')||readCookie('ek_device_p')||'';
+  }
+  function currentTrustedDeviceId(){return String(loadStoredDevice()||'').split('.')[0]||'';}
+  function clearStoredSessionToken(){
+    try{sessionStorage.removeItem('ek_session');}catch(e){}
+    clearLegacySessionPersistence();
+  }
+  function clearTrustedDevice(){
+    safeLocalRemove('ek_device');
+    deleteCookie('ek_device');deleteCookie('ek_device_p');
+  }
+  function clearStoredSession(){clearStoredSessionToken();clearTrustedDevice();}
+  function readCookie(name){const prefix=name+'=';const item=document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith(prefix));return item?decodeURIComponent(item.slice(prefix.length)):'';}
+
+  // ---------- App shell / profile ----------
+  function enterApp(){
+    rememberLastAccount(state.boot?.user);
+    document.getElementById('loginPage').classList.add('hidden'); document.getElementById('appShell').classList.remove('hidden');
+    renderBoot(); navigate('home');
+    // Start GPS immediately after authentication so punch actions can reuse a
+    // fresh, already-resolved position instead of waiting for a new GPS fix.
+    setTimeout(()=>startLiveLocationTracking(false).catch(()=>{}),0);
+    // Permissions API is optional on Safari/iOS; the native GPS callback
+    // remains authoritative. Permission never gets overridden by the app.
+    observeLocationPermission().catch(()=>{});
+    // Keep first paint responsive; Drive photo loading and device telemetry refresh happen
+    // after the dashboard is already usable.
+    setTimeout(()=>loadOwnProfilePhoto(),180);
+    setTimeout(()=>syncClientTelemetry().catch(()=>{}),0);
+    if (state.boot?.user?.mustChangePassword) setTimeout(()=>openChangePin(true),250);
+  }
+
+  function renderBoot(){
+    const b=state.boot, a=b.attendance||{}, test=String(b.settings.systemMode||'REAL')==='TEST', step=a.nextRecord||{type:'IN',session:1,complete:false};
+    if(b?.settings?.schoolName)safeLocalSet('ek_school_name',b.settings.schoolName);
+    text('sideSchoolName',b.settings.schoolName||'e-Keberadaan'); text('sideUserName',b.user.name);
+    text('sideUserRole',[b.user.jobTitle,b.user.category,b.user.isAdmin?'Pentadbir Sistem':''].filter(Boolean).join(' · '));
+    const initial=(b.user.name||'U').charAt(0).toUpperCase(); text('userInitial',initial); text('welcomeInitial',initial);
+    text('topRole',b.user.category); text('topDate',b.today); text('welcomeName',b.user.name); text('welcomeSub',[b.user.email,b.user.jobTitle,b.user.category].filter(Boolean).join(' · '));
+    // Paparan sesi adalah automatik dan tiada toggle manual.
+    // Sesi 2 hanya dianggap wujud jika masa Sesi 2 dikonfigurasi atau rekod
+    // Sesi 2 memang sudah tercatat; ALLOW_OPTIONAL_SECOND_SESSION sahaja tidak
+    // memaksa kad Sesi 2 muncul untuk pengguna satu sesi.
+    const hasSecondSession=!!(b.schedule.s2In||b.schedule.s2Out||a.inTime2||a.outTime2);
+    text('s1InRef',b.schedule.s1In||'—'); text('s1OutRef',b.schedule.s1Out||'—');
+    text('s2InRef',b.schedule.s2In||'—'); text('s2OutRef',b.schedule.s2Out||'—');
+    text('s1InTime',a.inTime||'—'); text('s1OutTime',a.outTime||'—');
+    text('s2InTime',a.inTime2||'—'); text('s2OutTime',a.outTime2||'—');
+    text('radiusM',test?'DIABAIKAN':`${b.settings.radiusM} m`);
+    document.getElementById('homeSession2Schedule')?.classList.toggle('hidden',!hasSecondSession);
+    document.getElementById('homeSession2Times')?.classList.toggle('hidden',!hasSecondSession);
+    document.getElementById('homeScheduleGrid')?.classList.toggle('single-session',!hasSecondSession);
+    document.getElementById('homePunchTimes')?.classList.toggle('single-session',!hasSecondSession);
+    setBadge('statusBadge',a.status||'BELUM REKOD'); setBadge('homeStatusBadge',a.status||'BELUM REKOD');
+    const btnIn=document.getElementById('btnIn'),btnOut=document.getElementById('btnOut');
+    const sessionLabel=`Sesi ${Number(step.session)||1}`;
+    if(btnIn){btnIn.disabled=step.complete||step.type!=='IN';btnIn.textContent=step.complete?'Rekod Waktu Lengkap':`Rakam Waktu Masuk · ${sessionLabel}${Number(step.session)===2?' ':''}`;}
+    if(btnOut){btnOut.disabled=step.complete||step.type!=='OUT';btnOut.textContent=step.complete?'Rekod Waktu Lengkap':`Rakam Waktu Balik · ${sessionLabel}`;}
+    document.getElementById('adminMenu').classList.toggle('hidden',!b.user.isAdmin); document.getElementById('adminQuick').classList.toggle('hidden',!b.user.isAdmin);
+    document.getElementById('timeReviewMenu')?.classList.toggle('hidden',!b.user.isAdmin);
+    document.getElementById('absenceManageMenu')?.classList.toggle('hidden',!b.user.isAdmin);
+    // Clear protected review data on role changes or a newly restricted session.
+    if(!b.user.isAdmin){
+      invalidateClientCache('absenceManagement');
+      // Also erase rendered review rows on a role change; hiding the menu
+      // alone would leave previously loaded private records in the DOM.
+      const reviewRows=document.getElementById('absenceManageRows');
+      if(reviewRows)reviewRows.replaceChildren();
+      text('absenceManageCount','0 rekod');
+      if(state.currentScreen==='absencemanage'){
+        closeModal();
+        navigate('home');
+      }
+    }
+    document.getElementById('testModeBanner').classList.toggle('hidden',!test);
+    text('punchInstruction',test?'Mod TEST aktif — rekod waktu boleh dibuat tanpa semakan lokasi/status waktu.':'');
+    text('punchRuleNote',test?'MOD TEST: masa sebenar direkodkan tetapi status waktu dan radius tidak digunakan.':'Lokasi masih perlu berada dalam radius; Lewat/Balik Awal akan dimaklumkan kepada Pentadbir Sistem.');
+    text('locationTitle',test?'Lokasi':'Lokasi semasa');
+    if(test) gps('ok','MOD TEST — GPS tidak diperlukan.');
+    else if(!b.locationReady) gps('','Koordinat sekolah belum lengkap. Pentadbir Sistem perlu mengisi TETAPAN sebelum rekod waktu boleh digunakan.');
+    else if(state.liveLocation) renderLiveLocationStatus(state.liveLocation);
+    else gps('busy','Mengesan lokasi secara langsung…');
+    updateHomeLocationMap(state.liveLocation).catch(()=>{});
+    updateLocationPermissionUi();
+    applySystemDateLimits();
+  }
+
+  async function refreshBoot(){try{state.boot=await runServer('getBootstrapData',state.token);renderBoot();await loadOwnProfilePhoto(true);}catch(e){handleServerError(e);}}
+
+  async function loadOwnProfilePhoto(force=false){
+    const u=state.boot?.user;if(!u)return;
+    const ids=['sideProfilePhoto','welcomeProfilePhoto'];
+    if(!u.hasProfilePhoto){
+      ids.forEach(id=>{const img=document.getElementById(id);if(img){img.classList.add('hidden');img.removeAttribute('src');}});
+      if(u.isAdmin)renderPhotoSyncStatus();
+      return;
+    }
+    const photoKey=`${u.email}|${u.profilePhotoVersion||'0'}`;
+    let data=state.photoCache.get(photoKey)||'';
+    if(!data||force){
+      try{
+        const r=await runServer('getProfilePhoto',state.token,u.email);
+        data=String(r?.dataUrl||'');
+        if(data&&!/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(data)){
+          throw new Error('API memberikan data gambar tidak sah.');
+        }
+        if(!data)throw new Error(r?.message||'Google Drive tidak memulangkan data gambar.');
+        state.photoCache.set(photoKey,data);
+      }catch(e){
+        data='';
+        console.warn('Gambar profil tidak dapat dimuatkan:',e?.message||e);
+        if(u.isAdmin)renderPhotoSyncStatus('Gambar profil dipaut tetapi gagal dimuatkan: '+(e?.message||String(e)),'error');
+      }
+    }
+    ids.forEach(id=>{
+      const img=document.getElementById(id);if(!img)return;
+      if(data){
+        img.onerror=()=>{
+          img.classList.add('hidden');
+          if(u.isAdmin)renderPhotoSyncStatus('Gambar profil diterima tetapi gagal dipaparkan. Semak format eoperasi.png.','error');
+        };
+        img.src=data;img.classList.remove('hidden');
+      }else{img.classList.add('hidden');img.removeAttribute('src');}
+    });
+  }
+
+  function navigate(name,btn){
+    if(['admin','admincard','timereview'].includes(name)&&!state.boot?.user?.isAdmin)return toast('Akses Pentadbir Sistem diperlukan.');
+    if(name==='absencemanage'&&!state.boot?.user?.isAdmin)return toast('Akses Pentadbir Sistem diperlukan.');
+    const screen=document.getElementById('screen-'+name); if(!screen)return;
+    document.querySelectorAll('.screen').forEach(x=>x.classList.add('hidden')); screen.classList.remove('hidden');
+    const activeMenu=name==='admincard'?'admin':name;
+    document.querySelectorAll('.menu-item').forEach(x=>x.classList.toggle('active',x.dataset.screen===activeMenu));
+    state.currentScreen=name;
+    const titles={home:'Utama',mycard:'Kad Perakam Waktu Saya',absence:'Tidak Hadir / Keberadaan',absencepublic:'Senarai Tidak Hadir / Keberadaan',absencemanage:'Semakan Tidak Hadir / Keberadaan',timereview:'Semakan Lewat / Balik Awal',admin:'Pentadbir Sistem',admincard:'Kad Perakam Waktu Pegawai'};
+    text('pageTitle',titles[name]||'e-Keberadaan'); closeMobileMenu();
+    if(name==='mycard')loadMyCard();
+    if(name==='absence')loadAbsenceData();
+    if(name==='absencepublic')loadAbsencePublic();
+    if(name==='absencemanage')loadAbsenceManagement();
+    if(name==='timereview')loadTimeReview();
+    if(name==='admin'){document.getElementById('reportDate').value=document.getElementById('reportDate').value||state.boot.today;initAttendanceReportBuilder();refreshAdmin();}
+  }
+
+  // ---------- Punch on Home ----------
+  function punchGpsPolicy(){
+    const s=state.boot?.settings||{};
+    const radiusM=Math.max(1,Number(s.radiusM)||200);
+    const thresholdsM=[80,100,120,140];
+    return {
+      radiusM,
+      configuredMaxAccuracyM:Math.max(140,Number(s.maxGpsAccuracyM)||140),
+      thresholdsM,
+      stageMs:2000,
+      timeoutMs:8000
+    };
+  }
+
+  function clientHaversineMeters(lat1,lon1,lat2,lon2){
+    const rad=x=>x*Math.PI/180,R=6371000,dLat=rad(lat2-lat1),dLon=rad(lon2-lon1);
+    const a=Math.sin(dLat/2)**2+Math.cos(rad(lat1))*Math.cos(rad(lat2))*Math.sin(dLon/2)**2;
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  }
+
+  function punchGpsDistance(pos){
+    const s=state.boot?.settings||{},lat=Number(s.schoolLat),lng=Number(s.schoolLng);
+    if(!pos?.coords||!Number.isFinite(lat)||!Number.isFinite(lng))return NaN;
+    return clientHaversineMeters(Number(pos.coords.latitude),Number(pos.coords.longitude),lat,lng);
+  }
+
+  function liveLocationAgeMs(){return state.locationUpdatedAt?Date.now()-state.locationUpdatedAt:Infinity;}
+  function isUsablePunchPosition(pos,maxAgeMs=45000){
+    const accuracy=Number(pos?.coords?.accuracy);
+    const maxAccuracy=Math.min(140,punchGpsPolicy().configuredMaxAccuracyM);
+    return !!pos?.coords&&liveLocationAgeMs()<=maxAgeMs&&Number.isFinite(accuracy)&&accuracy>=0&&accuracy<=maxAccuracy;
+  }
+  function locationIsIphone(){
+    return /iPhone|iPad|iPod/i.test(navigator.userAgent||'')||
+      (navigator.platform==='MacIntel'&&Number(navigator.maxTouchPoints||0)>1);
+  }
+  function locationIsAndroid(){return /Android/i.test(navigator.userAgent||'');}
+  function updateLocationPermissionUi(){
+    const test=String(state.boot?.settings?.systemMode||'REAL')==='TEST';
+    const enabled=!!state.boot&&!test&&state.boot.locationReady!==false;
+    const active=!!state.liveLocation&&liveLocationAgeMs()<90000&&!state.locationPermissionProblem;
+    const problem=state.locationPermissionProblem;
+    document.getElementById('enableLocationBtn')?.classList.toggle('hidden',!enabled||active);
+    const needsHelp=['denied','unavailable','timeout','unsupported'].includes(problem);
+    document.getElementById('locationPermissionHelp')?.classList.toggle('hidden',!enabled||!needsHelp);
+    const iphone=locationIsIphone(),android=!iphone&&locationIsAndroid();
+    document.getElementById('locationPermissionIphone')?.classList.toggle('hidden',!iphone);
+    document.getElementById('locationPermissionAndroid')?.classList.toggle('hidden',!android);
+    document.getElementById('locationPermissionOther')?.classList.toggle('hidden',iphone||android);
+    if(needsHelp){
+      text('locationPermissionHelpTitle',problem==='denied'?'Akses lokasi disekat':
+        problem==='unsupported'?'GPS tidak disokong':'Lokasi belum dapat dikesan');
+      text('locationPermissionHelpText',problem==='denied'
+        ?'Semak kebenaran lokasi dalam tetapan telefon/pelayar. Butang tidak boleh mengubah tetapan peranti secara automatik.'
+        :problem==='unsupported'
+          ?'Pelayar ini tidak menyediakan lokasi. Cuba Safari pada iPhone atau Chrome pada Android.'
+          :'Pastikan Location Services/GPS dan lokasi tepat dihidupkan. Selepas itu cuba semula.');
+    }
+  }
+  function reportLocationPermissionError(err){
+    const code=Number(err?.code)||0;
+    if(code===1){
+      state.locationPermissionState='denied';
+      state.locationPermissionProblem='denied';
+      state.liveLocation=null;state.locationUpdatedAt=0;
+      // Clear stale user pin if location access is revoked.
+      for(const [map,marker] of [[state.homeLocationMap,'homeCurrentMarker'],[state.homeLocationMap,'homeAccuracyCircle'],[state.locationMap,'settingsCurrentMarker'],[state.locationMap,'settingsAccuracyCircle']]){
+        if(map&&state[marker]){try{map.removeLayer(state[marker]);}catch(e){}state[marker]=null;}
+      }
+    }else if(!navigator.geolocation){
+      state.locationPermissionProblem='unsupported';
+    }else if(code===2){
+      // Location Services turned off may report POSITION_UNAVAILABLE even
+      // when a previously cached fix exists. Keep that failure visible.
+      state.locationPermissionProblem='unavailable';
+    }else if(!state.liveLocation||liveLocationAgeMs()>45000){
+      state.locationPermissionProblem=code===3?'timeout':'unavailable';
+    }
+    updateLocationPermissionUi();
+  }
+  async function observeLocationPermission(){
+    if(!navigator.permissions?.query)return;
+    try{
+      const status=await navigator.permissions.query({name:'geolocation'});
+      if(!state.boot)return;
+      if(state.locationPermissionStatus&&state.locationPermissionStatus!==status){
+        state.locationPermissionStatus.onchange=null;
+      }
+      state.locationPermissionStatus=status;
+      const update=()=>{
+        if(state.locationPermissionStatus!==status)return;
+        state.locationPermissionState=status.state;
+        if(status.state==='denied'){
+          reportLocationPermissionError({code:1});
+          stopLiveLocationTracking();
+          gps('','Akses lokasi disekat. Tekan Benarkan lokasi untuk bantuan.');
+        }else{
+          if(state.locationPermissionProblem==='denied')state.locationPermissionProblem='';
+          updateLocationPermissionUi();
+          if(status.state==='granted'&&state.locationWatchId===null){
+            startLiveLocationTracking(false).catch(()=>{});
+          }
+        }
+      };
+      status.onchange=update;
+      update();
+    }catch(e){
+      // Permissions API might not expose geolocation in some iOS versions.
+    }
+  }
+  function requestLocationPermission(){
+    // Direct button gesture enables the native browser permission prompt
+    // where allowed. Denied/system-disabled permissions require Settings.
+    if(!state.boot||String(state.boot.settings?.systemMode||'REAL')==='TEST')return;
+    refreshLiveLocation().catch(()=>{});
+  }
+  function renderLiveLocationStatus(pos){
+    if(!pos?.coords)return;
+    const accuracy=Math.round(Number(pos.coords.accuracy)||0),distance=Math.round(punchGpsDistance(pos));
+    const ageSec=Math.max(0,Math.round(liveLocationAgeMs()/1000));
+    gps('ok',`Lokasi live tersedia · GPS ±${accuracy}m${Number.isFinite(distance)?` · jarak ${distance}m / ${Math.round(punchGpsPolicy().radiusM)}m`:''}${ageSec>8?` · ${ageSec}s lalu`:''}`);
+  }
+  function liveLocationIcon(){
+    return L.divIcon({className:'ek-live-location-icon',html:'<span></span>',iconSize:[22,22],iconAnchor:[11,11]});
+  }
+  function syncCurrentLocationMarker(map,markerKey,accuracyKey,pos){
+    if(!map||typeof L==='undefined'||!pos?.coords)return;
+    const lat=Number(pos.coords.latitude),lng=Number(pos.coords.longitude),accuracy=Math.max(1,Number(pos.coords.accuracy)||1);
+    if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
+    const ll=[lat,lng];
+    if(!state[markerKey])state[markerKey]=L.marker(ll,{icon:liveLocationIcon(),interactive:false,zIndexOffset:1000}).addTo(map);
+    else state[markerKey].setLatLng(ll);
+    if(!state[accuracyKey])state[accuracyKey]=L.circle(ll,{radius:accuracy,interactive:false,weight:1,opacity:.55,fillOpacity:.08}).addTo(map);
+    else state[accuracyKey].setLatLng(ll).setRadius(accuracy);
+  }
+  async function updateHomeLocationMap(pos){
+    const el=document.getElementById('homeLocationMap');
+    if(!el||String(state.boot?.settings?.systemMode||'REAL')==='TEST')return;
+    try{await ensureLeaflet();}catch(e){return;}
+    const s=state.boot?.settings||{},lat=Number(s.schoolLat),lng=Number(s.schoolLng);
+    if(!Number.isFinite(lat)||!Number.isFinite(lng)||typeof L==='undefined')return;
+    if(!state.homeLocationMap){
+      state.homeLocationMap=L.map(el,{zoomControl:true,attributionControl:true}).setView([lat,lng],17);
+      L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'}).addTo(state.homeLocationMap);
+      state.homeSchoolMarker=L.marker([lat,lng],{title:'Lokasi sekolah'}).addTo(state.homeLocationMap);
+      state.homeRadiusCircle=L.circle([lat,lng],{radius:Math.max(1,Number(s.radiusM)||200),weight:2,fillOpacity:.07}).addTo(state.homeLocationMap);
+    }else{
+      state.homeSchoolMarker?.setLatLng([lat,lng]);
+      state.homeRadiusCircle?.setLatLng([lat,lng]).setRadius(Math.max(1,Number(s.radiusM)||200));
+    }
+    if(pos?.coords){
+      syncCurrentLocationMarker(state.homeLocationMap,'homeCurrentMarker','homeAccuracyCircle',pos);
+      const p=[Number(pos.coords.latitude),Number(pos.coords.longitude)];
+      if(Number.isFinite(p[0])&&Number.isFinite(p[1]))state.homeLocationMap.panTo(p,{animate:false});
+    }
+    setTimeout(()=>state.homeLocationMap?.invalidateSize(),50);
+  }
+  function acceptLiveLocation(pos){
+    if(!pos?.coords)return;
+    state.liveLocation=pos;state.locationUpdatedAt=Date.now();
+    state.locationPermissionProblem='';state.locationPermissionState='granted';
+    updateLocationPermissionUi();
+    renderLiveLocationStatus(pos);
+    updateHomeLocationMap(pos).catch(()=>{});
+    syncCurrentLocationMarker(state.locationMap,'settingsCurrentMarker','settingsAccuracyCircle',pos);
+  }
+  function stopLiveLocationTracking(){
+    if(state.locationWatchId!==null&&navigator.geolocation){
+      try{navigator.geolocation.clearWatch(state.locationWatchId);}catch(e){}
+    }
+    state.locationWatchId=null;
+  }
+  async function startLiveLocationTracking(force=false){
+    if(String(state.boot?.settings?.systemMode||'REAL')==='TEST')return null;
+    if(!navigator.geolocation){reportLocationPermissionError({code:0});throw new Error('Pelayar ini tidak menyokong geolocation.');}
+    if(force)stopLiveLocationTracking();
+    if(state.locationWatchId!==null){
+      if(state.liveLocation)renderLiveLocationStatus(state.liveLocation);
+      return state.liveLocation;
+    }
+    gps('busy','Mengesan lokasi secara langsung…');
+    state.locationWatchId=navigator.geolocation.watchPosition(pos=>{
+      acceptLiveLocation(pos);
+    },err=>{
+      reportLocationPermissionError(err);
+      if(err?.code===1){
+        stopLiveLocationTracking();
+        gps('','Akses lokasi disekat. Tekan Benarkan lokasi untuk bantuan.');
+      }else if(!state.liveLocation){
+        gps('','GPS belum dapat dikesan. Pastikan Location Services dihidupkan.');
+      }
+    },{enableHighAccuracy:true,timeout:15000,maximumAge:5000});
+    return state.liveLocation;
+  }
+  async function refreshLiveLocation(){
+    if(state.locationRefreshPromise)return state.locationRefreshPromise;
+    const btn=document.getElementById('refreshLocationBtn');
+    if(btn){btn.disabled=true;btn.dataset.label=btn.textContent;btn.textContent='Menyegar…';}
+    state.locationRefreshPromise=(async()=>{
+      try{
+        gps('busy','Menyegar lokasi…');
+        stopLiveLocationTracking();
+        const pos=await currentPosition();
+        acceptLiveLocation(pos);
+        await startLiveLocationTracking(false);
+        toast(`Lokasi dikemas kini · GPS ±${Math.round(Number(pos.coords.accuracy)||0)}m`);
+        return pos;
+      }catch(e){
+        gps('',e.message);toast(e.message,4500);throw e;
+      }finally{
+        state.locationRefreshPromise=null;
+        if(btn){btn.disabled=false;btn.textContent=btn.dataset.label||'Segar semula';delete btn.dataset.label;}
+      }
+    })();
+    return state.locationRefreshPromise;
+  }
+
+  function bestPunchPosition(){
+    const policy=punchGpsPolicy();
+    return new Promise((resolve,reject)=>{
+      if(!navigator.geolocation)return reject(new Error('Pelayar ini tidak menyokong geolocation.'));
+      let best=null,watchId=null,settled=false,stageIndex=0;
+      const timers=[];
+      const threshold=()=>policy.thresholdsM[stageIndex];
+      const clearAll=()=>{
+        timers.forEach(t=>clearTimeout(t));
+        if(watchId!==null)try{navigator.geolocation.clearWatch(watchId);}catch(e){}
+      };
+      const finish=(err,pos)=>{
+        if(settled)return;
+        settled=true; clearAll();
+        err?reject(err):resolve(pos);
+      };
+      const describe=(prefix,pos)=>{
+        const acc=pos?.coords?Math.round(Number(pos.coords.accuracy)||0):0;
+        const distance=pos?.coords?Math.round(punchGpsDistance(pos)):NaN;
+        return `${prefix} · sasaran ±${threshold()}m${acc?` · bacaan ±${acc}m`:''}${Number.isFinite(distance)?` · anggaran ${distance}m / ${Math.round(policy.radiusM)}m`:''}`;
+      };
+      const tryAccept=pos=>{
+        if(!pos?.coords)return false;
+        const accuracy=Number(pos.coords.accuracy);
+        if(!Number.isFinite(accuracy)||accuracy<0)return false;
+        if(accuracy<=threshold()){
+          gps('busy',describe('Lokasi diterima',pos));
+          finish(null,pos);
+          return true;
+        }
+        return false;
+      };
+      const advanceStage=()=>{
+        if(settled)return;
+        if(stageIndex>=policy.thresholdsM.length-1)return;
+        const previous=threshold();
+        stageIndex++;
+        gps('busy',describe(`Belum capai ±${previous}m. Melonggarkan ketepatan`,best));
+        if(best)tryAccept(best);
+      };
+
+      gps('busy','Mengesan lokasi… sasaran GPS ±80m');
+      for(let i=1;i<policy.thresholdsM.length;i++){
+        timers.push(setTimeout(advanceStage,policy.stageMs*i));
+      }
+      timers.push(setTimeout(()=>{
+        if(settled)return;
+        if(best&&tryAccept(best))return;
+        if(!best)return finish(new Error('Lokasi GPS belum dapat dikesan selepas 8 saat. Aktifkan Location/GPS dan cuba semula.'));
+        const accuracy=Math.round(Number(best.coords.accuracy)||0),distance=Math.round(punchGpsDistance(best));
+        finish(new Error(`Ketepatan GPS masih ±${accuracy}m selepas cuba bertahap 80m → 100m → 120m → 140m. Had akhir ialah ±140m.${Number.isFinite(distance)?` Anggaran lokasi semasa ${distance}m dari pusat.`:''}`));
+      },policy.timeoutMs));
+
+      watchId=navigator.geolocation.watchPosition(pos=>{
+        const accuracy=Number(pos?.coords?.accuracy);
+        if(!Number.isFinite(accuracy)||accuracy<0)return;
+        if(!best||accuracy<Number(best.coords.accuracy))best=pos;
+        if(tryAccept(pos))return;
+        const chosen=best||pos;
+        gps('busy',describe('Mengesan lokasi',chosen));
+      },err=>{
+        if(err?.code===1){reportLocationPermissionError(err);return finish(new Error('Akses lokasi disekat. Tekan Benarkan lokasi untuk bantuan.'));}
+        if(!best&&err?.code===2){reportLocationPermissionError(err);gps('busy',`GPS belum mendapat lokasi · sasaran ±${threshold()}m · mencuba lagi…`);}
+      },{enableHighAccuracy:true,timeout:policy.timeoutMs+1000,maximumAge:0});
+    });
+  }
+
+  async function startPunch(type){
+    const test=String(state.boot?.settings?.systemMode||'REAL')==='TEST';
+    const gpsPolicy=punchGpsPolicy();
+    setPunchBusy(true); gps('busy',test?'MOD TEST — merakam waktu…':'Mengesan lokasi… sasaran GPS ±80m');
+    try{
+      const clientInfoPromise=getClientDeviceInfo(false,2*60*1000); let loc=null;
+      if(!test){
+        let pos=state.liveLocation;
+        if(!isUsablePunchPosition(pos)){
+          gps('busy','Lokasi live belum cukup tepat/fresh · mendapatkan bacaan terbaik…');
+          pos=await bestPunchPosition();
+          acceptLiveLocation(pos);
+        }else{
+          gps('busy','Menggunakan lokasi live yang telah tersedia…');
+        }
+        loc={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy};
+        const estimated=Math.round(punchGpsDistance(pos));
+        gps('ok',`GPS ±${Math.round(loc.accuracy)}m${Number.isFinite(estimated)?` · anggaran ${estimated}m / ${Math.round(gpsPolicy.radiusM)}m`:''} · menyemak server…`);
+      }
+      const clientInfo=await clientInfoPromise, res=await runServer('punch',state.token,type,loc,clientInfo);
+      if(res&&res.attendance){state.boot.attendance=res.attendance;renderBoot();}else await refreshBoot();
+      gps('ok',test?'Rekod MOD TEST diterima.':`Rekod waktu diterima · GPS ±${Number(res.accuracyM)||Math.round(loc?.accuracy||0)}m · jarak ${res.distanceM}m / ${Number(res.radiusM)||Math.round(gpsPolicy.radiusM)}m.`);
+      toast(res.message,4500);
+      invalidateClientCache('myCard','adminCard');
+      if(res.timeException)invalidateClientCache('timeReview');
+    }catch(e){gps('',e.message);handleServerError(e,false);}finally{setPunchBusy(false);}
+  }
+
+  function currentPosition(){
+    return new Promise((resolve,reject)=>{
+      if(!navigator.geolocation){
+        reportLocationPermissionError({code:0});
+        return reject(new Error('Pelayar ini tidak menyokong geolocation.'));
+      }
+      navigator.geolocation.getCurrentPosition(resolve,err=>{
+        reportLocationPermissionError(err);
+        const msg={1:'Akses lokasi disekat. Tekan Benarkan lokasi untuk bantuan.',2:'Lokasi tidak dapat dikesan. Semak Location Services/GPS.',3:'Masa mendapatkan lokasi tamat. Cuba semula.'}[err.code]||err.message;
+        reject(new Error(msg));
+      },{enableHighAccuracy:true,timeout:18000,maximumAge:0});
+    });
+  }
+  function gps(cls,msg){const d=document.getElementById('gpsDot');if(d)d.className='gps-dot '+cls;text('locationText',msg);}
+  function setPunchBusy(b){const step=state.boot?.attendance?.nextRecord||{type:'IN',session:1,complete:false},i=document.getElementById('btnIn'),o=document.getElementById('btnOut');if(i)i.disabled=b||step.complete||step.type!=='IN';if(o)o.disabled=b||step.complete||step.type!=='OUT';}
+
+  // ---------- Own Kad Perakam Waktu ----------
+  async function loadMyCard(force=false){
+    const monthInput=document.getElementById('myCardMonth');if(!monthInput.value)monthInput.value=(state.boot?.today||'').slice(0,7);const monthKey=monthInput.value;
+    if(!force&&state.myCardLoaded&&state.myCardData?.month===monthKey){
+      renderMyPunchCard();
+      if(clientCacheFresh('myCard'))return;
+    }
+    const loading=document.getElementById('pcLoading');loading.classList.remove('hidden');
+    try{state.myCardData=await runServer('getMyPunchCardMonth',state.token,monthKey);state.myCardLoaded=true;markClientCache('myCard');renderMyPunchCard();}
+    catch(e){document.getElementById('myCardRows').innerHTML=`<tr><td colspan="7" class="pc-error">${esc(e.message)}</td></tr>`;handleServerError(e,false);}
+    finally{loading.classList.add('hidden');}
+  }
+
+  function renderMyPunchCard(){const d=state.myCardData;if(!d)return;text('pcCardNumber',d.cardNumber||'1');text('pcName',d.user?.name||'—');text('pcDepartment',d.department||d.schoolName||'—');text('pcMonthLabel',formatMonthMalay(d.month));document.getElementById('myCardRows').innerHTML=cardRowsHtml(d,state.myCardHalf);document.getElementById('cardHalf1Btn').classList.toggle('active',state.myCardHalf===1);document.getElementById('cardHalf2Btn').classList.toggle('active',state.myCardHalf===2);}
+  function setMyCardHalf(half){state.myCardHalf=half===2?2:1;renderMyPunchCard();}
+  function clearPunchCardPrintPages(){document.getElementById('punchCardPrintPages')?.remove();}
+  function buildPunchCardPrintSpread(data,sourceId,rowsId,loadingId){
+    const source=document.getElementById(sourceId);
+    if(!data||!source)return null;
+    clearPunchCardPrintPages();
+
+    const host=document.createElement('div');
+    host.id='punchCardPrintPages';
+    host.className='punch-card-print-pages';
+
+    const page=document.createElement('section');
+    page.className='punch-card-print-page punch-card-print-spread';
+
+    [1,2].forEach(half=>{
+      const slot=document.createElement('div');
+      slot.className='punch-card-print-slot';
+      slot.dataset.half=String(half);
+
+      const card=source.cloneNode(true);
+      card.classList.add('physical-card-print','physical-card-print-compact');
+      card.classList.add(half===1?'print-half-left':'print-half-right');
+      card.removeAttribute('id');
+
+      const rows=card.querySelector('#'+rowsId);
+      if(rows){
+        rows.innerHTML=cardRowsHtml(data,half,true);
+        rows.removeAttribute('id');
+      }
+
+      const loading=loadingId?card.querySelector('#'+loadingId):null;
+      if(loading)loading.remove();
+
+      card.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
+      slot.appendChild(card);
+      page.appendChild(slot);
+    });
+
+    host.appendChild(page);
+    document.body.appendChild(host);
+    return host;
+  }
+  function printPunchCardSpread(data,sourceId,rowsId,loadingId){
+    if(!data)return toast('Kad Perakam Waktu belum dimuatkan.');
+    if(!buildPunchCardPrintSpread(data,sourceId,rowsId,loadingId))return toast('Kad Perakam Waktu tidak dapat disediakan untuk cetakan.');
+    window.addEventListener('afterprint',clearPunchCardPrintPages,{once:true});
+    requestAnimationFrame(()=>requestAnimationFrame(()=>window.print()));
+  }
+  function printMyPunchCard(){
+    return printPunchCardSpread(state.myCardData,'physicalPunchCard','myCardRows','pcLoading');
+  }
+  function printAdminPunchCard(){
+    return printPunchCardSpread(state.adminCardData,'adminPhysicalPunchCard','adminCardRows','apcLoading');
+  }
+
+  function cardRowsHtml(d,half,compact=false){
+    const start=half===1?1:16,
+          end=half===1?Math.min(15,d.daysInMonth):(compact?31:d.daysInMonth),
+          byDay=new Map((d.records||[]).map(r=>[Number(r.day),r]));let html='';
+    if(start>end)return '<tr><td colspan="7" class="pc-empty">Tiada tarikh untuk bahagian ini.</td></tr>';
+    for(let day=start;day<=end;day++){
+      const r=byDay.get(day)||{},status=String(r.status||'').trim().toUpperCase();
+      const cls=status==='PUBLIC_HOLIDAY'?'pc-row-holiday':status==='TIDAK HADIR'?'pc-row-absent':status==='WEEKEND'?'pc-row-weekend':(status.includes('LEWAT')||status.includes('BALIK AWAL'))?'pc-row-lewat':status==='HADIR'?'pc-row-hadir':'';
+      if(status==='PUBLIC_HOLIDAY'){const label=String(r.reason||'CUTI UMUM').trim();html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-holiday-full"><span class="pc-holiday-label">CUTI UMUM</span><span class="pc-holiday-reason">${esc(label)}</span></td></tr>`;continue;}if(status==='WEEKEND'){const label=String(r.reason||'').trim().toUpperCase()||'CUTI';html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-weekend-full"><span>${esc(label)}</span></td></tr>`;continue;}
+      if(status==='TIDAK HADIR'){const reason=String(r.reason||'').trim(),detail=reason&&reason.toUpperCase()!=='TIDAK HADIR'?reason:'TIADA PENJELASAN';html+=`<tr class="${cls}"><td class="pc-day">${day}</td><td colspan="6" class="pc-absence-full"><span class="pc-absence-label">TIDAK HADIR</span><span class="pc-absence-reason">${esc(detail)}</span></td></tr>`;continue;}
+      const reviews=r.reviewItems||[], flagged=(type,session)=>reviews.some(x=>String(x.type||'').toUpperCase()===type&&Number(x.session||1)===session);
+      const adminEdited=new Set((Array.isArray(r.adminEditedFields)?r.adminEditedFields:[]).map(x=>String(x||'').toUpperCase()));
+      if(!adminEdited.size&&!r.adminEditMetadataKnown&&String(r.source||'').toUpperCase()==='ADMIN'){
+        if(r.inTime)adminEdited.add('IN');if(r.outTime)adminEdited.add('OUT');if(r.inTime2)adminEdited.add('IN2');if(r.outTime2)adminEdited.add('OUT2');
+      }
+      const tc=(v,bad,field)=>{
+        const classes=[bad?'pc-time-alert':'',adminEdited.has(field)?'pc-time-admin-edit':''].filter(Boolean).join(' ');
+        return `<td class="${classes}">${esc(shortTime(v))}</td>`;
+      };
+      html+=`<tr class="${cls}"><td class="pc-day">${day}</td>${tc(r.inTime,flagged('LEWAT',1),'IN')}${tc(r.outTime,flagged('BALIK AWAL',1),'OUT')}${tc(r.inTime2,flagged('LEWAT',2),'IN2')}${tc(r.outTime2,flagged('BALIK AWAL',2),'OUT2')}<td class="pc-statement">${esc(cardStatement(r,compact))}</td><td class="pc-sign"></td></tr>`;
+    }return html;
+  }
+  function shortTime(v){return v?String(v).slice(0,5):'';}
+  function compactCardReason(reason){
+    let text=String(reason||'').trim()
+      .replace(/BELUM DIAMBIL MAKLUM/gi,'BELUM SEMAK')
+      .replace(/DIAMBIL MAKLUM/gi,'DIMAKLUMI')
+      .replace(/MAKLUMAN\s+KEBERADAAN/gi,'KEBERADAAN')
+      .replace(/KEBENARAN\s+KELUAR/gi,'KELUAR RASMI')
+      .replace(/\s*[—–]\s*/g,' · ')
+      .replace(/\s+/g,' ')
+      .trim();
+    if(text.length>42)text=text.slice(0,41).trimEnd()+'…';
+    return text;
+  }
+  function cardStatement(r,compact=false){
+    if(!r)return '';
+    const status=String(r.status||''), parts=[];
+    if(status.includes('LEWAT'))parts.push('LEWAT');
+    if(status.includes('BALIK AWAL'))parts.push('BALIK AWAL');
+    if(parts.length){
+      const review=String(r.reviewState||'BELUM DIAMBIL MAKLUM');
+      parts.push(compact?compactCardReason(review):review);
+      // Print compact hanya perlu konteks "KEBERADAAN", bukan catatan panjang
+      // yang boleh mengubah tinggi row fizikal.
+      if(r.reason&&String(r.reason).toUpperCase().includes('KEBERADAAN')){
+        parts.push(compact?'KEBERADAAN':r.reason);
+      }
+    } else if(r.reason){
+      parts.push(compact?compactCardReason(r.reason):r.reason);
+    }
+    return parts.join(' · ');
+  }
+  function formatMonthMalay(monthKey){if(!/^\d{4}-\d{2}$/.test(monthKey||''))return monthKey||'—';const[y,m]=monthKey.split('-').map(Number);const months=['JANUARI','FEBRUARI','MAC','APRIL','MEI','JUN','JULAI','OGOS','SEPTEMBER','OKTOBER','NOVEMBER','DISEMBER'];return `${months[m-1]} ${y}`;}
+
+  // ---------- Tidak Hadir / Keberadaan ----------
+  async function loadAbsenceData(force=false){
+    if(state.absence&&!force){
+      renderAbsence();
+      if(clientCacheFresh('absence'))return;
+    }
+    try{state.absence=await runServer('getAbsenceData',state.token);markClientCache('absence');renderAbsence();}
+    catch(e){handleServerError(e);}
+  }
+
+  // Cross-platform HH:MM entry for Android/WebView compatibility.
+  function formatClockInput(el){
+    if(!el)return;
+    const digits=String(el.value||'').replace(/\D/g,'').slice(0,4);
+    if(digits.length<=2){el.value=digits;return;}
+    if(digits.length===3&&Number(digits.slice(0,2))>23){
+      el.value=`0${digits.charAt(0)}:${digits.slice(1)}`;
+      return;
+    }
+    el.value=`${digits.slice(0,2)}:${digits.slice(2)}`;
+  }
+
+  function normalizeClockInput(el){
+    if(!el)return;
+    const digits=String(el.value||'').replace(/\D/g,'').slice(0,4);
+    if(!digits){el.value='';return;}
+    let d=digits;
+    if(d.length===3&&Number(d.slice(0,2))>23)d='0'+d;
+    if(d.length!==4)return;
+    const hour=Number(d.slice(0,2)),minute=Number(d.slice(2));
+    if(hour>=0&&hour<=23&&minute>=0&&minute<=59)el.value=`${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`;
+  }
+
+  function updateAbsenceModeUi(){
+    const mode=document.getElementById('absenceMode')?.value||'TIDAK_HADIR',d=state.absence||{};
+    const typeSel=document.getElementById('absenceType');
+    const requiredExternalOfficialTypes=[
+      'BENGKEL/KURSUS/SEMINAR (PPD)',
+      'BENGKEL/KURSUS/SEMINAR (JPN)',
+      'BENGKEL/KURSUS/SEMINAR (KPM)',
+      'MESYUARAT/TAKLIMAT (PPD)',
+      'MESYUARAT/TAKLIMAT (JPN)',
+      'MESYUARAT/TAKLIMAT (KPM)'
+    ];
+    const requiredAbsenceTypes=[
+      'CUTI REHAT KHAS','CUTI REHAT','CUTI SAKIT (AWAM)','CUTI SAKIT (SWASTA)',
+      'CUTI TANPA REKOD KELOMPOK','CUTI KUARANTIN',
+      'CUTI BERSALIN','CUTI BARAH','CUTI HAJI','CUTI MENJAGA ANAK',
+      'CUTI TANPA GAJI','CUTI BELAJAR (BERGAJI PENUH)','CUTI BELAJAR (SEPARUH GAJI)',
+      ...requiredExternalOfficialTypes,
+      'AKTIVITI KOKURIKULUM','AKTIVITI SUKAN/PERMAINAN','URUSAN PEPERIKSAAN','LAIN-LAIN'
+    ];
+    const requiredPresenceTypes=[
+      'PROGRAM DALAMAN SEKOLAH','URUSAN PERIBADI (MASUK LEWAT)','URUSAN PERIBADI (BALIK AWAL)',
+      ...requiredExternalOfficialTypes,
+      'AKTIVITI KOKURIKULUM','AKTIVITI SUKAN/PERMAINAN',
+      'URUSAN PEPERIKSAAN','LAIN-LAIN - KEBERADAAN'
+    ];
+    const serverTypes=mode==='KEBERADAAN'?(d.presenceTypes||[]):(d.types||[]);
+    const fallbackTypes=mode==='KEBERADAAN'?requiredPresenceTypes:requiredAbsenceTypes;
+    const sourceTypes=Array.isArray(serverTypes)&&serverTypes.length?serverTypes:fallbackTypes;
+    const seen=new Set(),types=[];
+    // Backend ialah source of truth. Fallback hardcoded hanya digunakan semasa
+    // bootstrap lama / backend gagal menghantar senarai, bukan digabungkan.
+    sourceTypes.forEach(value=>{const x=String(value||'').trim().toUpperCase();if(x&&!seen.has(x)){seen.add(x);types.push(x);}});
+    if(typeSel)typeSel.innerHTML='<option value="">Pilih jenis</option>'+types.map(x=>`<option value="${attr(x)}">${esc(x)}</option>`).join('');
+    ['absenceStartTimeWrap','absenceEndTimeWrap'].forEach(id=>document.getElementById(id)?.classList.toggle('hidden',mode!=='KEBERADAAN'));
+    const st=document.getElementById('absenceStartTime'),et=document.getElementById('absenceEndTime');if(st)st.required=mode==='KEBERADAAN';if(et)et.required=mode==='KEBERADAAN';
+    updateAbsenceDateLimit();
+  }
+
+  function formatAbsenceShortcutDate(key){
+    const m=String(key||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m?m[3]+'/'+m[2]+'/'+m[1]:'—';
+  }
+
+  function getAbsenceTodayKey(){
+    return state.absence?.today||state.boot?.today||localDateKey(new Date());
+  }
+
+  function setAbsenceQuickDate(kind){
+    const today=getAbsenceTodayKey();
+    const key=kind==='tomorrow'?addClientDays(today,1):today;
+    const start=document.getElementById('absenceStartDate');
+    const end=document.getElementById('absenceEndDate');
+    if(start)start.value=key;
+    if(end)end.value=key;
+    updateAbsenceDateLimit();
+  }
+
+  function syncAbsenceDatesFromStart(){
+    const start=document.getElementById('absenceStartDate');
+    const end=document.getElementById('absenceEndDate');
+    if(start?.value&&end)end.value=start.value;
+    updateAbsenceDateLimit();
+  }
+
+  function updateAbsenceDateLimit(){
+    const mode=document.getElementById('absenceMode')?.value||'TIDAK_HADIR';
+    const type=document.getElementById('absenceType')?.value||'';
+    const start=document.getElementById('absenceStartDate')?.value||'';
+    const end=document.getElementById('absenceEndDate');
+    const hint=document.getElementById('absenceDurationHint');
+    const maternity=mode==='TIDAK_HADIR'&&type==='CUTI BERSALIN';
+    if(end){
+      end.min=start||getSystemStartDateClient();
+      // 90 calendar days inclusive: start date is counted as day one.
+      end.max=maternity&&start?addClientDays(start,89):'';
+    }
+    if(hint)hint.textContent=maternity
+      ? 'Cuti Bersalin: maksimum 90 hari kalendar termasuk tarikh mula dan akhir.'
+      : '';
+  }
+
+  function renderAbsence(){
+    const d=state.absence;if(!d)return;
+    const today=d.today||getAbsenceTodayKey(),tomorrow=addClientDays(today,1);
+    text('absenceTodayShortcutDate',formatAbsenceShortcutDate(today));
+    text('absenceTomorrowShortcutDate',formatAbsenceShortcutDate(tomorrow));
+    const s=document.getElementById('absenceStartDate'),e=document.getElementById('absenceEndDate'),systemStart=d.systemStartDate||getSystemStartDateClient();if(s){s.min=systemStart;if(!s.value||s.value<systemStart)s.value=today<systemStart?systemStart:today;}if(e){e.min=systemStart;if(!e.value||e.value<systemStart)e.value=s?.value||((today<systemStart)?systemStart:today);}
+    updateAbsenceModeUi();
+    const own=d.own||[];
+    document.getElementById('absenceOwnRows').innerHTML=own.length?own.map(r=>`<tr><td>${esc(r.submittedAt||'—')}</td><td><b>${esc(r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir')}</b></td><td>${esc(r.type)}</td><td>${esc(formatDateRange(r.startDate,r.endDate))}</td><td>${r.mode==='KEBERADAAN'?esc(`${r.startTime||'—'} – ${r.endTime||'—'}`):'—'}</td><td><span class="request-status ${absenceStatusClass(r.status)}">${esc(r.status)}</span></td><td>${esc(r.comment||'—')}</td><td>${r.status==='MENUNGGU'?`<button class="action-link warn-link" onclick='cancelAbsence(${JSON.stringify(r.id)})'>Batalkan</button>`:'—'}</td></tr>`).join(''):'<tr><td colspan="8" class="empty-cell">Belum ada permohonan.</td></tr>';
+  }
+
+  async function submitAbsence(ev){
+    ev.preventDefault();
+    const p=Object.fromEntries(new FormData(ev.target).entries());
+    const mode=String(p.mode||'TIDAK_HADIR').toUpperCase()==='KEBERADAAN'?'KEBERADAAN':'TIDAK_HADIR';
+    const allowed=mode==='KEBERADAAN'?(state.absence?.presenceTypes||[]):(state.absence?.types||[]);
+    const selectedType=String(p.type||'').trim().toUpperCase();
+    if(Array.isArray(allowed)&&allowed.length){
+      const normalizedAllowed=allowed.map(x=>String(x||'').trim().toUpperCase());
+      if(!normalizedAllowed.includes(selectedType)){
+        updateAbsenceModeUi();
+        toast('Senarai jenis telah dikemas kini. Sila pilih jenis semula.',5000);
+        return;
+      }
+    }
+    p.type=selectedType;
+    if(mode==='TIDAK_HADIR'&&selectedType==='CUTI BERSALIN'&&p.startDate&&p.endDate&&p.endDate>addClientDays(p.startDate,89)){
+      toast('Cuti Bersalin maksimum 90 hari termasuk tarikh mula dan akhir.',5000);
+      return;
+    }
+    try{const r=await runServer('submitAbsenceRequest',state.token,p);toast(r.message,5000);ev.target.reset();invalidateClientCache('absence','absencePublic','absenceManagement');document.getElementById('absenceMode').value='TIDAK_HADIR';await loadAbsenceData(true);}
+    catch(e){handleServerError(e);}
+  }
+  async function cancelAbsence(id){if(!confirm('Batalkan permohonan ini?'))return;try{await runServer('cancelMyAbsenceRequest',state.token,id);toast('Permohonan dibatalkan.');invalidateClientCache('absence','absencePublic','absenceManagement');await loadAbsenceData(true);}catch(e){handleServerError(e);}}
+  function formatDateRange(a,b){return a===b?a:`${a} → ${b}`;}
+  function absenceStatusClass(s){return s==='DILULUSKAN'?'approved':s==='DITOLAK'?'rejected':s==='DIBATALKAN'?'cancelled':s==='TIDAK MOHON'?'unexplained':'pending';}
+
+  function addClientDays(key,n){const d=new Date(key+'T12:00:00');d.setDate(d.getDate()+n);return localDateKey(d);}
+  function localDateKey(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
+  function presetRange(kind){const today=state.boot?.today||localDateKey(new Date()),systemStart=getSystemStartDateClient(),d=new Date(today+'T12:00:00'),single=key=>{const safe=key<systemStart?systemStart:key;return[safe,safe];};if(kind==='yesterday')return single(addClientDays(today,-1));if(kind==='tomorrow')return single(addClientDays(today,1));if(kind==='today')return single(today);if(kind==='month'){const start=`${today.slice(0,7)}-01`;return[start<systemStart?systemStart:start,today];}const start=addClientDays(today,-d.getDay());return[start<systemStart?systemStart:start,today];}
+
+  function compareText(a,b){return String(a??'').localeCompare(String(b??''),'ms',{numeric:true,sensitivity:'base'});}
+  // MySQL may return either submittedMs (epoch seconds/milliseconds) or
+  // submittedAt (YYYY-MM-DD HH:mm:ss or MY dd/MM/yyyy HH:mm:ss). Never
+  // substitute the LEAVE start date when a submitted timestamp exists.
+  function absenceSubmittedMs(r){
+    if(!r)return 0;
+    const direct=Number(r.submittedMs??r.submitted_ms??0);
+    if(Number.isFinite(direct)&&direct>0)return direct<100000000000?direct*1000:direct;
+    const raw=r.submittedAt??r.submitted_at??r.createdAt??r.created_at??'';
+    const value=String(raw).trim();
+    if(value){
+      if(/^\d{10,13}$/.test(value)){
+        const n=Number(value);
+        if(Number.isFinite(n))return value.length<=10?n*1000:n;
+      }
+      const iso=value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?(?:\.\d+)?(?:\s*(Z|[+-]\d{2}:?\d{2}))?$/i);
+      const my=value.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+      if(iso||my){
+        const x=iso||my;
+        const year=iso?Number(x[1]):Number(x[3]),month=Number(x[2]),day=iso?Number(x[3]):Number(x[1]);
+        const hour=Number(x[4]||0),minute=Number(x[5]||0),second=Number(x[6]||0);
+        if(month>=1&&month<=12&&day>=1&&day<=31&&hour<=23&&minute<=59&&second<=59){
+          const z=iso&&x[7]?x[7].replace(/^([+-]\d{2})(\d{2})$/,'$1:$2'):'+08:00';
+          const stamp=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}:${String(second).padStart(2,'0')}${z}`;
+          const parsed=Date.parse(stamp);
+          if(Number.isFinite(parsed))return parsed;
+        }
+      }
+      const parsed=Date.parse(value);
+      if(Number.isFinite(parsed))return parsed;
+    }
+    const fallback=String(r.startDate||r.date||'').slice(0,10);
+    const fallbackMs=Date.parse(fallback+'T00:00:00+08:00');
+    return Number.isFinite(fallbackMs)?fallbackMs:0;
+  }
+  function compareAbsenceSubmission(a,b,newestFirst){
+    // Auto-detected missing applications do not have a submission time.
+    // Keep them AFTER submitted applications, irrespective of sort direction.
+    const undelivered=r=>Number(!!r.synthetic||String(r.status||'').toUpperCase()==='TIDAK MOHON');
+    const diff=undelivered(a)-undelivered(b);
+    if(diff)return diff;
+    const order=newestFirst?absenceSubmittedMs(b)-absenceSubmittedMs(a):absenceSubmittedMs(a)-absenceSubmittedMs(b);
+    return order||compareText(a.id,b.id)||compareText(a.name,b.name);
+  }
+  function sortRecords(list,mode){
+    const rows=(list||[]).slice(),m=String(mode||''),cmp=(a,b)=>compareText(a,b),dateOf=r=>String(r.startDate||r.date||r.submittedAt||''),statusOf=r=>String(r.reviewStatus||r.status||r.category||''),timeOf=r=>String(r.inTime||'99:99');
+    if(m==='submitted_desc')return rows.sort((a,b)=>compareAbsenceSubmission(a,b,true));
+    if(m==='submitted_asc')return rows.sort((a,b)=>compareAbsenceSubmission(a,b,false));
+    if(m==='date_desc')return rows.sort((a,b)=>cmp(dateOf(b),dateOf(a))||cmp(a.name,b.name));
+    if(m==='date_asc')return rows.sort((a,b)=>cmp(dateOf(a),dateOf(b))||cmp(a.name,b.name));
+    if(m==='name_desc')return rows.sort((a,b)=>cmp(b.name,a.name));
+    if(m==='status_asc')return rows.sort((a,b)=>cmp(statusOf(a),statusOf(b))||cmp(a.name,b.name));
+    if(m==='status_desc')return rows.sort((a,b)=>cmp(statusOf(b),statusOf(a))||cmp(a.name,b.name));
+    if(m==='category_asc')return rows.sort((a,b)=>cmp(a.category,b.category)||cmp(a.name,b.name));
+    if(m==='category_desc')return rows.sort((a,b)=>cmp(b.category,a.category)||cmp(a.name,b.name));
+    if(m==='active_first')return rows.sort((a,b)=>(Number(!!b.active)-Number(!!a.active))||cmp(a.name,b.name));
+    if(m==='inactive_first')return rows.sort((a,b)=>(Number(!!a.active)-Number(!!b.active))||cmp(a.name,b.name));
+    if(m==='in_asc')return rows.sort((a,b)=>cmp(timeOf(a),timeOf(b))||cmp(a.name,b.name));
+    if(m==='in_desc')return rows.sort((a,b)=>cmp(timeOf(b),timeOf(a))||cmp(a.name,b.name));
+    return rows.sort((a,b)=>cmp(a.name,b.name));
+  }
+
+  const TABLE_SORT_CONFIG={
+    absencePublic:{default:'submitted_desc',order:['submitted_desc','submitted_asc'],name:['name_asc','name_desc'],date:['date_desc','date_asc'],status:['status_asc','status_desc']},
+    absenceManage:{default:'submitted_desc',order:['submitted_desc','submitted_asc'],name:['name_asc','name_desc'],date:['date_desc','date_asc'],status:['status_asc','status_desc']},
+    timeReview:{default:'date_desc',name:['name_asc','name_desc'],date:['date_desc','date_asc'],status:['status_asc','status_desc']},
+    report:{default:'name_asc',name:['name_asc','name_desc'],status:['status_asc','status_desc'],in:['in_asc','in_desc']},
+    users:{default:'name_asc',active:['active_first','inactive_first'],name:['name_asc','name_desc'],category:['category_asc','category_desc']}
+  };
+  function getTableSort(scope){const cfg=TABLE_SORT_CONFIG[scope];return state.tableSorts?.[scope]||cfg?.default||'name_asc';}
+  function updateTableSortIndicators(scope){
+    const cfg=TABLE_SORT_CONFIG[scope];if(!cfg)return;const current=getTableSort(scope);
+    Object.entries(cfg).forEach(([key,pair])=>{if(key==='default'||!Array.isArray(pair))return;const el=document.getElementById(`sort-${scope}-${key}`);if(!el)return;const active=pair.includes(current);el.textContent=active?(key==='order'?(current==='submitted_desc'?'↓':'↑'):(current===pair[0]?'↑':'↓')):'↕';const th=el.closest('th');if(th)th.setAttribute('aria-sort',active?(current===pair[0]?'ascending':'descending'):'none');});
+  }
+  function toggleTableSort(scope,key){
+    const cfg=TABLE_SORT_CONFIG[scope],pair=cfg?.[key];if(!Array.isArray(pair))return;
+    const current=getTableSort(scope);state.tableSorts=state.tableSorts||{};state.tableSorts[scope]=current===pair[0]?pair[1]:pair[0];
+    updateTableSortIndicators(scope);
+    const apply={absencePublic:applyAbsencePublicFilters,absenceManage:applyAbsenceManageFilters,timeReview:applyTimeReviewFilters,report:applyReportFilters,users:applyUserFilters}[scope];if(typeof apply==='function')apply();
+  }
+
+  // ---------- Senarai Tidak Hadir / Keberadaan (semua pengguna) ----------
+  function ensureAbsencePublicDates(){
+    const f=document.getElementById('absencePublicFrom'),t=document.getElementById('absencePublicTo'),systemStart=getSystemStartDateClient();
+    if(f){f.min=systemStart;if(!f.value||f.value<systemStart)f.value=presetRange('today')[0];}
+    if(t){t.min=systemStart;if(!t.value||t.value<systemStart)t.value=state.boot?.today||localDateKey(new Date());}
+  }
+  async function loadAbsencePublic(force=false){
+    ensureAbsencePublicDates();
+    const from=document.getElementById('absencePublicFrom')?.value,to=document.getElementById('absencePublicTo')?.value,key=`${from}|${to}`;
+    if(state.absencePublic&&!force&&state.absencePublic._key===key){
+      applyAbsencePublicFilters();
+      if(clientCacheFresh('absencePublic'))return;
+    }
+    try{state.absencePublic=await runServer('getPublicAbsencePresenceData',state.token,from,to);state.absencePublic._key=key;markClientCache('absencePublic');applyAbsencePublicFilters();}
+    catch(e){handleServerError(e);}
+  }
+  function setAbsencePublicPreset(kind){const [f,t]=presetRange(kind);document.getElementById('absencePublicFrom').value=f;document.getElementById('absencePublicTo').value=t;loadAbsencePublic(true);}
+  function currentAbsencePublicFilters(){return {fromDate:document.getElementById('absencePublicFrom')?.value||'',toDate:document.getElementById('absencePublicTo')?.value||'',search:String(document.getElementById('absencePublicSearch')?.value||'').trim(),mode:document.getElementById('absencePublicMode')?.value||'',status:document.getElementById('absencePublicStatus')?.value||'',category:document.getElementById('absencePublicCategory')?.value||'',sort:getTableSort('absencePublic')};}
+  function filteredAbsencePublicRows(){
+    const data=state.absencePublic?.rows||[],f=currentAbsencePublicFilters(),q=norm(f.search);
+    return sortRecords(data.filter(r=>{const hay=norm([r.name,r.jobTitle,r.category,r.mode,r.type,r.startDate,r.endDate,r.startTime,r.endTime,r.status].join(' '));return(!q||hay.includes(q))&&(!f.mode||r.mode===f.mode)&&(!f.status||r.status===f.status)&&(!f.category||r.category===f.category);}),f.sort);
+  }
+  function applyAbsencePublicFilters(){
+    const data=state.absencePublic?.rows||[],list=filteredAbsencePublicRows();
+    text('absencePublicCount',`${list.length} / ${data.length} rekod`);updateTableSortIndicators('absencePublic');
+    const summary=document.getElementById('absencePublicSummary');
+    if(summary){const th=list.filter(r=>r.mode==='TIDAK_HADIR').length,kb=list.filter(r=>r.mode==='KEBERADAAN').length,nm=list.filter(r=>r.status==='TIDAK MOHON').length;summary.innerHTML=[['Jumlah',list.length],['Tidak Hadir',th],['Keberadaan',kb],['Tiada Penjelasan',nm]].map(x=>`<div class="summary-card"><span>${esc(x[0])}</span><strong>${x[1]}</strong></div>`).join('');}
+    const body=document.getElementById('absencePublicRows');if(!body)return;
+    body.innerHTML=list.length?list.map((r,index)=>`<tr><td class="absence-public-number">${index+1}</td><td><b>${esc(r.name||'—')}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.category||'—')}</small></td><td><b>${esc(r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir')}</b></td><td>${esc(r.type||'—')}</td><td>${esc(formatDateRange(r.startDate,r.endDate))}${r.mode==='KEBERADAAN'?`<small class="table-sub">${esc(r.startTime||'—')} – ${esc(r.endTime||'—')}</small>`:''}</td><td><span class="request-status ${absenceStatusClass(r.status)}">${esc(r.status)}</span></td></tr>`).join(''):'<tr><td colspan="6" class="empty-cell">Tiada rekod sepadan untuk tempoh dan tapisan dipilih.</td></tr>';
+  }
+  async function generatePublicAbsencePresencePdfClient(){
+    try{const filters=currentAbsencePublicFilters();const r=await runServer('generatePublicAbsencePresencePdf',state.token,filters);downloadPdfResult(r);toast('Laporan PDF Senarai Tidak Hadir / Keberadaan dijana.');}
+    catch(e){handleServerError(e);}
+  }
+
+  function ensureAbsenceManageDates(){const f=document.getElementById('absenceManageFrom'),t=document.getElementById('absenceManageTo'),today=presetRange('today')[0];if(f&&!f.value)f.value=today;if(t&&!t.value)t.value=today;}
+  async function loadAbsenceManagement(force=false){
+    if(!state.boot?.user?.isAdmin)return;
+    ensureAbsenceManageDates();const from=document.getElementById('absenceManageFrom')?.value,to=document.getElementById('absenceManageTo')?.value;
+    const key=`${from}|${to}`;
+    if(state.absenceManagement&&!force&&state.absenceManagement._key===key){
+      applyAbsenceManageFilters();
+      if(clientCacheFresh('absenceManagement'))return;
+    }
+    try{state.absenceManagement=await runServer('getAbsenceManagementData',state.token,from,to);state.absenceManagement._key=key;markClientCache('absenceManagement');applyAbsenceManageFilters();}
+    catch(e){handleServerError(e);}
+  }
+  function setAbsenceManagePreset(kind){if(!state.boot?.user?.isAdmin)return;const [f,t]=presetRange(kind);document.getElementById('absenceManageFrom').value=f;document.getElementById('absenceManageTo').value=t;loadAbsenceManagement(true);}
+function ensureAbsenceManageTableLayout(){
+    // Older HTML and Scripts bundles can briefly be mixed by a PWA cache.
+    // Keep the header in lockstep with the seven cells rendered below.
+    const body=document.getElementById('absenceManageRows'),table=body?.closest('table');
+    if(!table)return;
+    const head=table.tHead||table.createTHead();
+    if(head.querySelectorAll('tr:first-child > th').length===7)return;
+    head.innerHTML='<tr>'+
+      '<th class="sortable-th absence-public-number-col"><button type="button" class="table-sort-btn" onclick="toggleTableSort(\'absenceManage\',\'order\')">Bil. <span id="sort-absenceManage-order" class="sort-indicator">↕</span></button></th>'+
+      '<th class="sortable-th"><button type="button" class="table-sort-btn" onclick="toggleTableSort(\'absenceManage\',\'name\')">Pegawai <span id="sort-absenceManage-name" class="sort-indicator">↕</span></button></th>'+
+      '<th>Mod</th><th>Jenis</th>'+
+      '<th class="sortable-th"><button type="button" class="table-sort-btn" onclick="toggleTableSort(\'absenceManage\',\'date\')">Tempoh / Masa <span id="sort-absenceManage-date" class="sort-indicator">↕</span></button></th>'+
+      '<th class="sortable-th"><button type="button" class="table-sort-btn" onclick="toggleTableSort(\'absenceManage\',\'status\')">Status <span id="sort-absenceManage-status" class="sort-indicator">↕</span></button></th>'+
+      '<th>Tindakan / Pelulus</th></tr>';
+  }
+
+  function applyAbsenceManageFilters(){
+    const data=state.absenceManagement?.requests||[];
+    const q=norm(document.getElementById('absenceManageSearch')?.value);
+    const st=document.getElementById('absenceManageStatus')?.value||'';
+    const cat=document.getElementById('absenceManageCategory')?.value||'';
+    const mode=document.getElementById('absenceManageMode')?.value||'';
+    const list=sortRecords(data.filter(r=>{
+      const hay=norm([r.id,r.submittedAt,r.name,r.jobTitle,r.email,r.category,r.mode,r.type,
+        r.startDate,r.endDate,r.startTime,r.endTime,r.note,r.status,r.reviewerJobTitle,r.reviewedAt,r.comment].join(' '));
+      return (!q||hay.includes(q))&&(!st||r.status===st)&&(!cat||r.category===cat)&&(!mode||r.mode===mode);
+    }),getTableSort('absenceManage'));
+    text('absenceManageCount',`${list.length} / ${data.length} rekod`);
+
+    // Same four-card summary used by Senarai Tidak Hadir / Keberadaan.
+    const summary=document.getElementById('absenceManageSummary');
+    if(summary){
+      const counts=[
+        ['Jumlah',list.length],
+        ['Tidak Hadir',list.filter(r=>r.mode==='TIDAK_HADIR').length],
+        ['Keberadaan',list.filter(r=>r.mode==='KEBERADAAN').length],
+        ['Tiada Penjelasan',list.filter(r=>r.status==='TIDAK MOHON').length]
+      ];
+      summary.innerHTML=counts.map(([name,value])=>
+        `<div class="summary-card"><span>${esc(name)}</span><strong>${value}</strong></div>`).join('');
+    }
+
+    const body=document.getElementById('absenceManageRows');
+    if(!body)return;
+    ensureAbsenceManageTableLayout();
+    updateTableSortIndicators('absenceManage');
+    body.innerHTML=list.length?list.map((r,index)=>{
+      const modeLabel=r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir';
+      const timeLabel=r.mode==='KEBERADAAN'
+        ?`<small class="table-sub">${esc(r.startTime||'—')} – ${esc(r.endTime||'—')}</small>`:'';
+      const details=`<details class="absence-manage-details"><summary>Lihat butiran</summary>`+
+        `<div><b>Emel:</b> ${esc(r.email||'—')}</div>`+
+        `<div><b>${r.synthetic?'Dikesan':'Hantar'}:</b> ${esc(r.submittedAt||'—')}</div>`+
+        `<div><b>Catatan:</b> ${esc(r.note||'—')}</div>`+
+        (!r.synthetic&&r.comment?`<div><b>Ulasan:</b> ${esc(r.comment)}</div>`:'')+
+        `</details>`;
+      const reviewer=r.status==='MENUNGGU'
+        ?`<div class="row-actions"><button class="action-link approve-link" onclick='openReviewAbsence(${JSON.stringify(r.id)},"DILULUSKAN")'>Lulus</button><button class="action-link warn-link" onclick='openReviewAbsence(${JSON.stringify(r.id)},"DITOLAK")'>Tolak</button></div>`
+        :r.synthetic?'<span class="muted">Tiada permohonan</span>'
+        :`<span class="review-role-tag">${esc(r.reviewerJobTitle||'Pengurusan')}</span><small class="table-sub">${esc(r.reviewedAt||'—')}</small>`;
+      return `<tr>`+
+        `<td class="absence-public-number">${index+1}</td>`+
+        `<td><b>${esc(r.name||'—')}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.category||'—')}</small></td>`+
+        `<td><b>${esc(modeLabel)}</b></td>`+
+        `<td>${esc(r.type||'—')}</td>`+
+        `<td>${esc(formatDateRange(r.startDate,r.endDate))}${timeLabel}<small class="table-sub">${r.synthetic?'Dikesan':'Hantar'}: ${esc(r.submittedAt||'—')}</small></td>`+
+        `<td><span class="request-status ${absenceStatusClass(r.status)}">${esc(r.status)}</span></td>`+
+        `<td class="absence-manage-action">${reviewer}${details}</td>`+
+        `</tr>`;
+    }).join(''):'<tr><td colspan="7" class="empty-cell">Tiada rekod sepadan untuk tempoh dan tapisan dipilih.</td></tr>';
+  }
+
+  function openReviewAbsence(id,decision){
+    if(!state.boot?.user?.isAdmin)return toast('Akses Pentadbir Sistem diperlukan.');
+    const r=state.absenceManagement?.requests?.find(x=>x.id===id);if(!r)return;const approve=decision==='DILULUSKAN';
+    showModal(`<div class="review-request"><div class="first-login-badge">PERMOHONAN KEPADA PENGETUA</div><h3>${approve?'Luluskan':'Tolak'} Permohonan</h3><p><b>${esc(r.name)}</b><br><span class="muted">${esc(r.jobTitle||'')} · ${esc(r.email)} · ${esc(r.category)}</span></p><div class="review-summary"><div><span>Mod</span><b>${esc(r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir')}</b></div><div><span>Jenis</span><b>${esc(r.type)}</b></div><div><span>Tempoh</span><b>${esc(formatDateRange(r.startDate,r.endDate))}</b></div><div><span>Masa</span><b>${r.mode==='KEBERADAAN'?esc(`${r.startTime} – ${r.endTime}`):'—'}</b></div><div class="span-2"><span>Catatan</span><b>${esc(r.note||'—')}</b></div></div><form onsubmit='reviewAbsence(event,${JSON.stringify(id)},${JSON.stringify(decision)})'><label>Ulasan Pengetua / Pengurusan<textarea name="comment" rows="3" placeholder="Ulasan keputusan (opsyenal)"></textarea></label><p><button class="btn ${approve?'primary':'dark'}" type="submit">${approve?'Luluskan Permohonan':'Tolak Permohonan'}</button></p></form></div>`);
+  }
+  async function reviewAbsence(ev,id,decision){ev.preventDefault();if(!state.boot?.user?.isAdmin)return toast('Akses Pentadbir Sistem diperlukan.');const comment=new FormData(ev.target).get('comment')||'';try{const r=await runServer('reviewAbsenceRequest',state.token,id,decision,comment);closeModal();toast(r.conflicts?.length?`Keputusan disimpan. ${r.conflicts.length} tarikh mempunyai rekod waktu sedia ada dan tidak ditindih.`:'Keputusan permohonan disimpan.',5000);invalidateClientCache('absenceManagement','absence','absencePublic','myCard','adminCard');await loadAbsenceManagement(true);}catch(e){handleServerError(e);}}
+  async function generateAbsencePresencePdfClient(){if(!state.boot?.user?.isAdmin)return toast('Akses Pentadbir Sistem diperlukan.');try{const filters={fromDate:document.getElementById('absenceManageFrom').value,toDate:document.getElementById('absenceManageTo').value,mode:document.getElementById('absenceManageMode').value,status:document.getElementById('absenceManageStatus').value,category:document.getElementById('absenceManageCategory').value};const r=await runServer('generateAbsencePresencePdf',state.token,filters);downloadPdfResult(r);toast('Laporan PDF dijana.');}catch(e){handleServerError(e);}}
+
+  // ---------- Semakan Lewat / Balik Awal ----------
+  function ensureTimeReviewDates(){const f=document.getElementById('timeReviewFrom'),t=document.getElementById('timeReviewTo'),today=presetRange('today')[0];if(f&&!f.value)f.value=today;if(t&&!t.value)t.value=today;}
+  async function loadTimeReview(force=false){
+    if(!state.boot?.user?.isAdmin)return;ensureTimeReviewDates();const from=document.getElementById('timeReviewFrom').value,to=document.getElementById('timeReviewTo').value,key=`${from}|${to}`;
+    if(state.timeReview&&!force&&state.timeReview._key===key){
+      applyTimeReviewFilters();
+      if(clientCacheFresh('timeReview'))return;
+    }
+    try{state.timeReview=await runServer('getTimeReviewData',state.token,from,to);state.timeReview._key=key;markClientCache('timeReview');applyTimeReviewFilters();}catch(e){handleServerError(e);}
+  }
+  function setTimeReviewPreset(kind){const [f,t]=presetRange(kind);document.getElementById('timeReviewFrom').value=f;document.getElementById('timeReviewTo').value=t;loadTimeReview(true);}
+  function applyTimeReviewFilters(){const data=state.timeReview?.rows||[],q=norm(document.getElementById('timeReviewSearch')?.value),type=document.getElementById('timeReviewType')?.value||'',st=document.getElementById('timeReviewStatus')?.value||'',sort=getTableSort('timeReview');const list=sortRecords(data.filter(r=>{const hay=norm([r.name,r.jobTitle,r.email,r.category,r.date,r.type,r.session,r.recordTime,r.referenceTime,r.reviewStatus,r.reviewerJobTitle,r.comment].join(' '));return(!q||hay.includes(q))&&(!type||r.type===type)&&(!st||r.reviewStatus===st);}),sort);text('timeReviewCount',`${list.length} / ${data.length} rekod`);const body=document.getElementById('timeReviewRows');if(!body)return;body.innerHTML=list.length?list.map(r=>`<tr><td><b>${esc(r.name)}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.email)}</small></td><td>${esc(r.date)}</td><td><span class="badge ${r.type==='LEWAT'?'lewat':'awal'}">${esc(r.type)}</span></td><td>${esc(r.session)}</td><td><b>${esc(r.recordTime)}</b></td><td>${esc(r.referenceTime||'—')}</td><td><span class="request-status ${r.reviewStatus==='DIAMBIL MAKLUM'?'approved':r.reviewStatus==='DITOLAK'?'rejected':'pending'}">${esc(r.reviewStatus)}</span></td><td>${r.reviewStatus==='BELUM DIAMBIL MAKLUM'?`<div class="row-actions"><button class="action-link approve-link" onclick='openTimeReview(${JSON.stringify(r.id)},"DIAMBIL MAKLUM")'>Diambil Maklum</button><button class="action-link warn-link" onclick='openTimeReview(${JSON.stringify(r.id)},"DITOLAK")'>Ditolak</button></div>`:`<span class="review-role-tag">${esc(r.reviewerJobTitle||'Pentadbir Sistem')}</span><small class="table-sub">Catatan: ${esc(r.comment||'—')}</small><small class="table-sub">${esc(r.reviewedAt||'—')}</small>`}</td></tr>`).join(''):'<tr><td colspan="8" class="empty-cell">Tiada rekod sepadan.</td></tr>';
+  }
+  function openTimeReview(id,decision){const r=state.timeReview?.rows?.find(x=>x.id===id);if(!r)return;showModal(`<h3>${esc(decision==='DIAMBIL MAKLUM'?'Diambil Maklum':'Tolak')} Rekod Waktu</h3><p><b>${esc(r.name)}</b><br><span class="muted">${esc(r.jobTitle||'')} · ${esc(r.email)}</span></p><div class="review-summary"><div><span>Jenis</span><b>${esc(r.type)}</b></div><div><span>Sesi</span><b>${esc(r.session)}</b></div><div><span>Waktu</span><b>${esc(r.recordTime)}</b></div><div><span>Rujukan</span><b>${esc(r.referenceTime||'—')}</b></div></div><form onsubmit='submitTimeReview(event,${JSON.stringify(id)},${JSON.stringify(decision)})'><label>Ulasan<textarea name="comment" rows="3" placeholder="Catatan (opsyenal)"></textarea></label><p><button class="btn ${decision==='DIAMBIL MAKLUM'?'primary':'dark'}" type="submit">Simpan Keputusan</button></p></form>`);}
+  async function submitTimeReview(ev,id,decision){ev.preventDefault();const comment=new FormData(ev.target).get('comment')||'';try{const r=await runServer('reviewTimeException',state.token,id,decision,comment);closeModal();toast(`${r.status}.`,4500);invalidateClientCache('timeReview','myCard','adminCard');await loadTimeReview(true);}catch(e){handleServerError(e);}}
+  async function generateTimeReviewPdfClient(){try{const filters={fromDate:document.getElementById('timeReviewFrom').value,toDate:document.getElementById('timeReviewTo').value,type:document.getElementById('timeReviewType').value,status:document.getElementById('timeReviewStatus').value};const r=await runServer('generateTimeReviewPdf',state.token,filters);downloadPdfResult(r);toast('Laporan PDF dijana.');}catch(e){handleServerError(e);}}
+
+  // ---------- Admin data / report ----------
+  async function refreshAdmin(){
+    if(!state.boot?.user?.isAdmin)return;
+    try{const date=document.getElementById('reportDate').value||state.boot.today;state.admin=await runServer('getAdminData',state.token,date);renderAdmin();}
+    catch(e){handleServerError(e);}
+  }
+
+  function renderAdmin(){
+    const a=state.admin;if(!a)return;document.getElementById('reportDate').value=a.date;
+    document.getElementById('summaryCards').innerHTML=[['Jumlah',a.summary.total],['Hadir',a.summary.hadir],['Lewat',a.summary.lewat],['Balik Awal',a.summary.balikAwal||0],['Tidak hadir',a.summary.tidakHadir],['Belum hadir',a.summary.belumHadir],['Cuti Umum',a.summary.cutiUmum||0]].map(x=>`<div class="summary-card"><span>${x[0]}</span><strong>${x[1]}</strong></div>`).join('');
+    fillSettings(a.settings);renderPhotoSyncStatus();renderPublicHolidays();applyReportFilters();applyUserFilters();
+  }
+
+  function applyReportFilters(){
+    const data=state.admin?.report||[],q=norm(document.getElementById('reportSearch')?.value),cat=document.getElementById('reportCategoryFilter')?.value||'',st=document.getElementById('reportStatusFilter')?.value||'',src=document.getElementById('reportSourceFilter')?.value||'';
+    // Search intentionally excludes inTime/outTime as requested.
+    const list=sortRecords(data.filter(r=>{
+      const hay=norm([r.date,r.name,r.jobTitle,r.email,r.category,r.status,r.inDistanceM,r.outDistanceM,r.inDistanceM2,r.outDistanceM2,r.source,r.editedBy,r.reason].join(' '));
+      return(!q||hay.includes(q))&&(!cat||r.category===cat)&&(!st||String(r.status||'').includes(st))&&(!src||r.source===src);
+    }),getTableSort('report'));
+    state.filteredReport=list;text('reportFilterCount',`${list.length} / ${data.length} rekod`);updateTableSortIndicators('report');renderReportRows(list);
+  }
+
+  function renderReportRows(list){
+    const body=document.getElementById('reportRows');if(!body)return;
+    body.innerHTML=list.length?list.map(r=>`<tr><td><button class="person-link" onclick='openAdminPunchCard(${JSON.stringify(r.email)},${JSON.stringify(r.name)})'>${esc(r.name)}</button><div class="muted">${esc(r.email)}</div></td><td><b>${esc(r.jobTitle||'—')}</b><small class="table-sub">${esc(r.category)}</small></td><td><span class="badge ${badgeClass(r.status)}">${esc(r.status)}</span></td><td>${esc(r.inTime||'—')}</td><td>${esc(r.outTime||'—')}</td><td>${esc(r.inTime2||'—')}</td><td>${esc(r.outTime2||'—')}</td><td><b>${esc(r.source||'—')}</b><small class="table-sub">${esc(r.reason||'')}</small></td><td><button class="action-link" onclick='openAttendanceModal(${JSON.stringify(r.email)},${JSON.stringify(r.name)},${JSON.stringify(r.inTime||'')},${JSON.stringify(r.outTime||'')},${JSON.stringify(r.inTime2||'')},${JSON.stringify(r.outTime2||'')})'>Ubah</button></td></tr>`).join(''):'<tr><td colspan="9" class="empty-cell">Tiada rekod sepadan.</td></tr>';
+  }
+
+  function switchTab(name,btn){
+    document.querySelectorAll('#adminPanel > .tab-body').forEach(x=>x.classList.add('hidden'));
+    document.querySelectorAll('#adminPanel > .tabs > .tab').forEach(x=>x.classList.remove('active'));
+    document.getElementById('tab-'+name)?.classList.remove('hidden');btn?.classList.add('active');
+    if(name==='settings'){
+      const active=document.querySelector('.settings-subtab.active')||document.querySelector('.settings-subtab');
+      switchSettingsSection(active?.dataset.settingsSection||'general',active);
+    }
+  }
+
+  function switchSettingsSection(name,btn){
+    const allowed=['general','location','calendar','security'];
+    if(!allowed.includes(name))name='general';
+    document.querySelectorAll('.settings-section').forEach(x=>x.classList.add('hidden'));
+    document.querySelectorAll('.settings-subtab').forEach(x=>{
+      const active=x.dataset.settingsSection===name;
+      x.classList.toggle('active',active);
+      x.setAttribute('aria-selected',active?'true':'false');
+    });
+    document.getElementById('settings-section-'+name)?.classList.remove('hidden');
+    if(name==='location')setTimeout(()=>{initLocationPicker().then(()=>state.locationMap?.invalidateSize()).catch(()=>{});},60);
+  }
+
+  function updateSettingsSummary(){
+    const f=document.getElementById('settingsForm');if(!f)return;
+    const mode=String(f.elements.systemMode?.value||'REAL');
+    const radius=Number(f.elements.radiusM?.value||0);
+    const days=String(f.elements.workingDays?.value||'').split(',').map(x=>x.trim()).filter(Boolean);
+    text('settingsModeSummary',mode==='TEST'?'TEST':'SEBENAR');
+    text('settingsRadiusSummary',radius?Math.round(radius)+' m':'—');
+    text('settingsWorkdaySummary',days.length?days.length+' hari':'—');
+  }
+
+  function openAttendanceModal(email,name,inTime,outTime,inTime2,outTime2){const date=document.getElementById('reportDate').value;showModal(`<h3>Ubah rekod waktu</h3><p><b>${esc(name)}</b><br><span class="muted">${esc(email)} · ${esc(date)}</span></p><form onsubmit="saveAttendance(event)"><input type="hidden" name="email" value="${attr(email)}"><input type="hidden" name="date" value="${attr(date)}"><div class="modal-grid"><label>Sesi 1 · Masuk<input type="time" name="inTime" value="${attr((inTime||'').slice(0,5))}"></label><label>Sesi 1 · Keluar<input type="time" name="outTime" value="${attr((outTime||'').slice(0,5))}"></label><label>Sesi 2 · Masuk<input type="time" name="inTime2" value="${attr((inTime2||'').slice(0,5))}"></label><label>Sesi 2 · Keluar<input type="time" name="outTime2" value="${attr((outTime2||'').slice(0,5))}"></label></div><label>Sebab pembetulan<textarea name="reason" rows="3" required placeholder="Contoh: terlupa rakam waktu / arahan rasmi"></textarea></label><p><button class="btn primary" type="submit">Simpan pembetulan</button></p></form>`);}
+  async function saveAttendance(ev){ev.preventDefault();const p=Object.fromEntries(new FormData(ev.target).entries());try{await runServer('adminSaveAttendance',state.token,p);invalidateClientCache('myCard','adminCard','timeReview');closeModal();toast('Rekod dikemas kini.');await refreshAdmin();}catch(e){handleServerError(e);}}
+
+  // ---------- Admin digital card ----------
+  function openAdminPunchCard(email,name){state.adminCardEmail=email;state.adminCardData=null;state.adminCardHalf=1;text('adminCardTitle',name||email);text('adminCardEmail',email);const reportMonth=(document.getElementById('reportDate')?.value||state.boot.today).slice(0,7);document.getElementById('adminCardMonth').value=reportMonth;navigate('admincard');loadAdminCard(true);}
+  async function loadAdminCard(force=false){if(!state.adminCardEmail)return;const month=document.getElementById('adminCardMonth').value||state.boot.today.slice(0,7);if(!force&&state.adminCardData?.month===month){renderAdminCard();if(clientCacheFresh('adminCard'))return;}const loading=document.getElementById('apcLoading');loading.classList.remove('hidden');try{state.adminCardData=await runServer('adminGetPunchCardMonth',state.token,state.adminCardEmail,month);markClientCache('adminCard');renderAdminCard();}catch(e){handleServerError(e);}finally{loading.classList.add('hidden');}}
+  function renderAdminCard(){const d=state.adminCardData;if(!d)return;text('adminCardTitle',d.user?.name||state.adminCardEmail);text('adminCardEmail',d.user?.email||state.adminCardEmail);text('apcCardNumber',d.cardNumber||'1');text('apcName',d.user?.name||'—');text('apcDepartment',d.department||d.schoolName||'—');text('apcMonthLabel',formatMonthMalay(d.month));document.getElementById('adminCardRows').innerHTML=cardRowsHtml(d,state.adminCardHalf);document.getElementById('adminCardHalf1Btn').classList.toggle('active',state.adminCardHalf===1);document.getElementById('adminCardHalf2Btn').classList.toggle('active',state.adminCardHalf===2);}
+  function setAdminCardHalf(half){state.adminCardHalf=half===2?2:1;renderAdminCard();}
+
+  // ---------- Users / dynamic filter / bulk password ----------
+  function userPinState(u){return u.isLocked?'locked':u.mustChangePassword?'temp':!u.pinSet?'unset':'ready';}
+  function applyUserFilters(){
+    const data=state.admin?.users||[],q=norm(document.getElementById('userSearch')?.value),cat=document.getElementById('userCategoryFilter')?.value||'',active=document.getElementById('userActiveFilter')?.value||'',adm=document.getElementById('userAdminFilter')?.value||'',pw=document.getElementById('userPasswordFilter')?.value||'';
+    const list=sortRecords(data.filter(u=>{
+      const ps=userPinState(u),hay=norm([u.active?'aktif':'tidak aktif',u.name,u.jobTitle,u.email,u.category,u.isAdmin?'pentadbir sistem':'bukan admin',ps,u.s1In,u.s1Out,u.s2In,u.s2Out,u.note,u.lockedUntil,u.hasProfilePhoto?'gambar profil':'tiada gambar'].join(' '));
+      return(!q||hay.includes(q))&&(!cat||u.category===cat)&&(!active||(active==='active'?u.active:!u.active))&&(!adm||(adm==='yes'?u.isAdmin:!u.isAdmin))&&(!pw||ps===pw);
+    }),getTableSort('users'));
+    state.filteredUsers=list;text('userFilterCount',`${list.length} / ${data.length} pengguna`);updateTableSortIndicators('users');renderUserRows(list);updateBulkSelectionUI();
+  }
+
+  function renderUserRows(list){
+    const body=document.getElementById('userRows');if(!body)return;
+    body.innerHTML=list.length?list.map(u=>{
+      const ps=userPinState(u),pwStatus=ps==='locked'?`<span class="auth-status locked">Dikunci</span><small class="auth-sub">${esc(u.lockedUntil||'')}</small>`:ps==='unset'?`<span class="auth-status unset">Belum ada PIN</span>`:ps==='temp'?`<span class="auth-status temp">Perlu tetapkan PIN</span><small class="auth-sub">Akan terus ke skrin cipta PIN</small>`:`<span class="auth-status ready">Sedia</span>`;
+      const unlock=u.isLocked?`<button class="action-link warn-link" onclick='unlockUser(${JSON.stringify(u.email)})'>Buka kunci</button>`:'';
+      const schedule=`S1 ${u.s1In||'Default'}–${u.s1Out||'Default'} · S2 ${u.s2In||'—'}–${u.s2Out||'—'}`;
+      return `<tr><td class="select-col"><input class="user-select" type="checkbox" ${state.selectedUserEmails.has(u.email)?'checked':''} onchange='toggleUserSelection(${JSON.stringify(u.email)},this.checked)'></td><td>${u.active?'✓':'—'}</td><td><b>${esc(u.name)}</b><small class="table-sub">${esc(u.jobTitle||'Jawatan belum ditetapkan')} · ${u.hasProfilePhoto?'📷 Gambar dipaut':'Tiada gambar'}</small></td><td>${esc(u.email)}</td><td>${esc(u.category)}</td><td>${u.isAdmin?'✓':'—'}</td><td>${pwStatus}</td><td><b>${esc(schedule)}</b><small class="table-sub">${esc(u.note||'')}</small></td><td class="row-actions"><button class="action-link" onclick='openUserModal(${JSON.stringify(u.email)})'>Edit</button><button class="action-link" onclick='openTrustedDevices(${JSON.stringify(u.email)},${JSON.stringify(u.name)})'>Peranti</button><button class="action-link" onclick='resetUserPassword(${JSON.stringify(u.email)},${JSON.stringify(u.name)})'>Reset PIN</button>${unlock}</td></tr>`;
+    }).join(''):'<tr><td colspan="9" class="empty-cell">Tiada pengguna sepadan.</td></tr>';
+  }
+
+  function toggleUserSelection(email,checked){if(checked)state.selectedUserEmails.add(email);else state.selectedUserEmails.delete(email);updateBulkSelectionUI();}
+  function toggleSelectAllUsers(checked){state.filteredUsers.forEach(u=>checked?state.selectedUserEmails.add(u.email):state.selectedUserEmails.delete(u.email));renderUserRows(state.filteredUsers);updateBulkSelectionUI();}
+  function updateBulkSelectionUI(){text('bulkSelectionCount',`${state.selectedUserEmails.size} dipilih`);const all=document.getElementById('selectAllUsers');if(all){const visible=state.filteredUsers||[];all.checked=visible.length>0&&visible.every(u=>state.selectedUserEmails.has(u.email));all.indeterminate=visible.some(u=>state.selectedUserEmails.has(u.email))&&!all.checked;}}
+
+  async function bulkGeneratePasswords(){
+    const emails=[...state.selectedUserEmails];if(!emails.length)return toast('Pilih pengguna dahulu.');
+    if(!confirm(`Reset PIN untuk ${emails.length} pengguna?\n\nSemua sesi lama akan dibatalkan. Pengguna akan menerima emel arahan dan mencipta PIN 6 digit baharu sendiri.`))return;
+    try{const r=await runServer('adminBulkResetPasswords',state.token,emails);showBulkPasswordsModal(r.results||[]);state.selectedUserEmails.clear();await refreshAdmin();}
+    catch(e){handleServerError(e);}
+  }
+
+  function showBulkPasswordsModal(rows){
+    showModal(`<div class="bulk-password-result"><div class="first-login-badge">RESET PIN PUKAL</div><h3>${rows.length} pengguna</h3><p>Tiada PIN sementara dijana. Pengguna hanya perlu buka e-Keberadaan, masukkan emel DELIMa dan cipta PIN 6 digit baharu sendiri.</p><div class="table-wrap compact-table"><table><thead><tr><th>Nama</th><th>Emel</th><th>Notifikasi emel</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.email)}</td><td>${r.emailSent?'✓ Dihantar':'⚠ Gagal dihantar'}</td></tr>`).join('')}</tbody></table></div><p><button class="btn primary" onclick="closeModal()">Selesai</button></p></div>`);
+  }
+
+  function openUserModal(email){
+    const u=email?state.admin.users.find(x=>x.email===email):{active:true,name:'',email:'',category:'PPP',jobTitle:'',isAdmin:false,s1In:'',s1Out:'',s2In:'',s2Out:'',note:'',hasProfilePhoto:false};
+    showModal(`<h3>${email?'Edit':'Tambah'} pengguna</h3><form onsubmit="saveUser(event)"><div class="modal-grid"><label>Nama<input name="name" required value="${attr(u.name)}"></label><label>Jawatan<input name="jobTitle" value="${attr(u.jobTitle||'')}" placeholder="Contoh: Guru Matematik / Penolong Kanan"></label><label>Emel DELIMa<input name="email" type="email" required value="${attr(u.email)}" ${email?'readonly':''} placeholder="nama@moe-dl.edu.my"></label><label>Kategori<select name="category">${['Pengurusan','AKP','PPP','Praktikum','MySTEP'].map(c=>`<option ${u.category===c?'selected':''}>${c}</option>`).join('')}</select></label><label class="check-line"><input type="checkbox" name="active" ${u.active?'checked':''}> Akaun aktif</label><label class="check-line"><input type="checkbox" name="isAdmin" ${u.isAdmin?'checked':''}> Pentadbir Sistem ✓</label><label>Gambar profil<input value="${u.hasProfilePhoto?'Dipaut dari Google Drive':'Belum dipaut'}" readonly></label><label>Sesi 1 · Masuk<input name="s1In" type="time" value="${attr(u.s1In||'')}"></label><label>Sesi 1 · Keluar<input name="s1Out" type="time" value="${attr(u.s1Out||'')}"></label><label>Sesi 2 · Masuk<input name="s2In" type="time" value="${attr(u.s2In||'')}"></label><label>Sesi 2 · Keluar<input name="s2Out" type="time" value="${attr(u.s2Out||'')}"></label><label>Catatan<input name="note" value="${attr(u.note)}"></label></div><p class="tiny">Kategori Pengurusan diberi akses Semakan Tidak Hadir / Keberadaan. Tanda Pentadbir Sistem memberi akses penuh termasuk Semakan Lewat / Balik Awal.</p><p><button class="btn primary" type="submit">Simpan pengguna</button></p></form>`);
+  }
+  async function saveUser(ev){ev.preventDefault();const fd=new FormData(ev.target),p=Object.fromEntries(fd.entries());p.active=fd.has('active');p.isAdmin=fd.has('isAdmin');try{const res=await runServer('adminSaveUser',state.token,p);closeModal();toast(res.user?.pinSet?'Pengguna disimpan.':'Pengguna disimpan. Pengguna boleh cipta PIN sendiri pada login pertama.',4200);await refreshAdmin();}catch(e){handleServerError(e);}}
+
+  async function resetUserPassword(email,name){if(!confirm(`Reset PIN untuk ${name}?\n\nSemua sesi lama akan dibatalkan. Tiada PIN sementara. Selepas masukkan emel DELIMa, pengguna akan terus diminta mencipta PIN 6 digit baharu.`))return;try{const r=await runServer('adminResetPassword',state.token,email);showPasswordResetModal(r);await refreshAdmin();}catch(e){handleServerError(e);}}
+  function showPasswordResetModal(r){showModal(`<div class="temp-password-result"><div class="first-login-badge">RESET PIN</div><h3>${esc(r.name||'Pengguna')}</h3><p class="muted">${esc(r.email||'')}</p><p>${esc(r.message||'PIN telah direset. Pengguna boleh mencipta PIN 6 digit baharu sendiri.')}</p><div class="login-success-notice">${r.emailSent?'✓ Emel arahan telah dihantar kepada pengguna.':'⚠ Emel arahan tidak dapat dihantar. Maklumkan pengguna supaya buka e-Keberadaan, masukkan emel DELIMa dan cipta PIN baharu.'}</div><p><button class="btn primary" type="button" onclick="closeModal()">Selesai</button></p></div>`);}
+  async function unlockUser(email){if(!confirm('Buka sekatan PIN/login untuk akaun ini?'))return;try{await runServer('adminUnlockUser',state.token,email);toast('Sekatan login dibuka.');await refreshAdmin();}catch(e){handleServerError(e);}}
+
+  async function openTrustedDevices(email,name){
+    try{
+      const r=await runServer('adminListTrustedDevices',state.token,email),devices=r.devices||[];
+      const rows=devices.length?devices.map(d=>{const meta=[d.deviceType,d.model,d.platform,d.browser].filter(Boolean).join(' · '),tech=[d.screen,d.network].filter(Boolean).join(' · ');return `<tr><td><b>${esc(d.deviceName||'Peranti')}</b><small class="table-sub">${esc(meta||'Maklumat peranti terhad')}</small>${tech?`<small class="table-sub">${esc(tech)}</small>`:''}</td><td>${esc(d.lastSeenAt||'—')}</td><td>${esc(d.expiresAt||'—')}</td><td><button class="action-link warn-link" onclick='revokeTrustedDevice(${JSON.stringify(d.deviceId)},${JSON.stringify(email)},${JSON.stringify(name||email)})'>Logout peranti</button></td></tr>`;}).join(''):'<tr><td colspan="4" class="empty-cell">Tiada trusted device aktif.</td></tr>';
+      showModal(`<h3>Trusted Device</h3><p><b>${esc(name||r.user?.name||email)}</b><br><span class="muted">${esc(email)} · maksimum 2 peranti · rolling 7 hari</span></p><div class="table-wrap compact-table"><table><thead><tr><th>Peranti</th><th>Terakhir digunakan</th><th>Tamat jika tidak digunakan</th><th>Tindakan</th></tr></thead><tbody>${rows}</tbody></table></div><p class="tiny">Setiap resume yang berjaya memperbaharui tempoh trusted device kepada 7 hari. Logout peranti hanya membatalkan peranti tersebut.</p><p><button class="btn ghost" onclick='revokeAllTrustedDevices(${JSON.stringify(email)},${JSON.stringify(name||email)})' ${devices.length?'':'disabled'}>Logout semua peranti</button> <button class="btn primary" onclick="closeModal()">Selesai</button></p>`);
+    }catch(e){handleServerError(e);}
+  }
+  async function revokeTrustedDevice(deviceId,email,name){
+    if(!confirm(`Logout trusted device ini untuk ${name}?`))return;
+    try{
+      await runServer('adminRevokeTrustedDevice',state.token,deviceId);
+      if(deviceId===currentTrustedDeviceId()){clearStoredSession();state.token='';state.deviceToken='';closeModal();await showLogin();return toast('Peranti semasa telah dilog keluar.');}
+      toast('Peranti telah dilog keluar.');await openTrustedDevices(email,name);
+    }catch(e){handleServerError(e);}
+  }
+  async function revokeAllTrustedDevices(email,name){
+    if(!confirm(`Logout SEMUA trusted device untuk ${name}?\n\nPengguna perlu login PIN semula pada setiap peranti.`))return;
+    try{
+      const r=await runServer('adminRevokeAllTrustedDevices',state.token,email);
+      if(String(state.boot?.user?.email||'').toLowerCase()===String(email||'').toLowerCase()){clearStoredSession();state.token='';state.deviceToken='';closeModal();await showLogin();return toast(`${r.count||0} peranti dibatalkan. Anda juga telah dilog keluar.`);}
+      toast(`${r.count||0} peranti dibatalkan.`);await openTrustedDevices(email,name);
+    }catch(e){handleServerError(e);}
+  }
+
+  // ---------- Settings / visual map ----------
+  function renderPublicHolidays(){
+    const host=document.getElementById('publicHolidayList');if(!host)return;
+    const rows=(state.admin?.publicHolidays||[]).slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+    host.innerHTML=rows.length?rows.map(h=>`<div class="public-holiday-item"><div class="public-holiday-date">${esc(h.date||'')}</div><div><b>${esc(h.name||'Cuti Umum')}</b><small>${esc([h.type,h.source].filter(Boolean).join(' · '))}</small></div><button class="action-link warn-link" type="button" onclick='deletePublicHoliday(${JSON.stringify(h.date)},${JSON.stringify(h.name||'Cuti Umum')})'>Buang</button></div>`).join(''):'<div class="public-holiday-empty">Tiada cuti umum ditetapkan.</div>';
+  }
+  async function addPublicHoliday(){
+    const date=document.getElementById('publicHolidayDate')?.value||'',name=String(document.getElementById('publicHolidayName')?.value||'').trim();
+    if(!date||!name)return toast('Pilih tarikh dan masukkan nama cuti umum.',4200);
+    try{
+      const r=await runServer('adminAddPublicHoliday',state.token,{date,name,type:'MANUAL'});
+      if(state.admin)state.admin.publicHolidays=r.holidays||[];
+      const n=document.getElementById('publicHolidayName');if(n)n.value='';
+      renderPublicHolidays();state.myCardLoaded=false;state.myCardData=null;state.adminCardData=null;
+      toast(`Cuti umum ${date} ditambah untuk semua pengguna.`,4200);
+    }catch(e){handleServerError(e);}
+  }
+  async function deletePublicHoliday(date,name){
+    if(!confirm(`Buang ${name||'cuti umum'} pada ${date}?\n\nPerubahan ini akan digunakan untuk semua pengguna.`))return;
+    try{
+      const r=await runServer('adminDeletePublicHoliday',state.token,date);
+      if(state.admin)state.admin.publicHolidays=r.holidays||[];
+      renderPublicHolidays();state.myCardLoaded=false;state.myCardData=null;state.adminCardData=null;
+      toast(`Cuti umum ${date} dibuang.`,4200);
+    }catch(e){handleServerError(e);}
+  }
+
+  function fillSettings(s){const f=document.getElementById('settingsForm');if(!f)return;Object.keys(s).forEach(k=>{if(f.elements[k])f.elements[k].value=s[k]??'';});updateModeSettingHint();updateGpsSettingWarning();updateSettingsSummary();if(state.locationMap)setTimeout(syncMapFromInputs,30);}
+  function updateGpsSettingWarning(){
+    const radius=Number(document.getElementById('settingRadius')?.value||0),accuracy=Number(document.getElementById('settingGpsAccuracy')?.value||0),hint=document.getElementById('gpsSettingWarning');
+    if(!hint)return;
+    const risky=radius>0&&accuracy>radius;
+    hint.classList.toggle('hidden',!risky);
+    if(risky)hint.textContent=`⚠ Had ketepatan GPS ${Math.round(accuracy)}m lebih besar daripada radius ${Math.round(radius)}m. Semasa rekod waktu, app akan menunggu bacaan yang lebih tepat supaya pegawai dalam radius tidak tersalah ditolak.`;
+  }
+  async function saveSettings(ev){
+    ev.preventDefault();
+    const p=Object.fromEntries(new FormData(ev.target).entries()),btn=ev.submitter;
+    setButtonBusy(btn,true,'Menyimpan…');
+    try{
+      const r=await runServer('adminSaveSettings',state.token,p);
+      state.admin.settings=r.settings;state.boot.settings=r.settings;
+      renderBoot();fillSettings(r.settings);
+      const submitted=String(p.profileRootFolderId||'').trim();
+      const saved=String(r.settings?.profileRootFolderId||'').trim();
+      if(submitted!==saved){
+        renderPhotoSyncStatus('Backend PHP belum menyimpan ID folder Google Drive. Kemas kini php/api.php di cPanel, kemudian simpan sekali lagi.','error');
+        toast('Tetapan lain disimpan, tetapi ID folder Google Drive belum disahkan oleh MySQL.',6500);
+      }else{
+        renderPhotoSyncStatus();
+        toast('Tetapan berjaya disimpan.');
+      }
+    }catch(e){
+      renderPhotoSyncStatus('Gagal menyimpan tetapan: '+(e?.message||String(e)),'error');
+      handleServerError(e);
+    }finally{setButtonBusy(btn,false,'');}
+  }
+  function updateModeSettingHint(){const mode=document.getElementById('systemModeSelect')?.value||'REAL';const hint=document.getElementById('modeSettingHint');if(hint){hint.textContent=mode==='TEST'?'MOD TEST: rekod waktu boleh dibuat tanpa semakan lokasi dan status waktu. Gunakan hanya untuk ujian sistem.':'MOD SEBENAR: lokasi/radius dikuatkuasakan; masa tidak menyekat rekod tetapi menentukan status LEWAT / BALIK AWAL.';hint.className='setting-hint '+(mode==='TEST'?'test-hint':'real-hint');}}
+
+  function ensureLeaflet(){
+    if(typeof L!=='undefined')return Promise.resolve();
+    if(state.leafletPromise)return state.leafletPromise;
+    state.leafletPromise=new Promise((resolve,reject)=>{
+      if(!document.querySelector('link[data-ek-leaflet]')){
+        const link=document.createElement('link');
+        link.rel='stylesheet';link.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';link.dataset.ekLeaflet='1';
+        document.head.appendChild(link);
+      }
+      const existing=document.querySelector('script[data-ek-leaflet]');
+      if(existing){existing.addEventListener('load',()=>resolve(),{once:true});existing.addEventListener('error',()=>reject(new Error('Peta gagal dimuatkan.')),{once:true});return;}
+      const script=document.createElement('script');
+      script.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';script.async=true;script.dataset.ekLeaflet='1';
+      script.onload=()=>resolve();script.onerror=()=>reject(new Error('Peta gagal dimuatkan.'));document.head.appendChild(script);
+    });
+    return state.leafletPromise;
+  }
+
+  async function initLocationPicker(){
+    if(state.locationMap){syncMapFromInputs();return;}
+    const el=document.getElementById('locationPickerMap');if(!el)return;
+    try{await ensureLeaflet();}catch(e){toast(e.message||'Peta gagal dimuatkan.',4500);return;}
+    if(state.locationMap||typeof L==='undefined')return;
+    let lat=parseFloat(document.getElementById('settingLat')?.value),lng=parseFloat(document.getElementById('settingLng')?.value);if(!Number.isFinite(lat)||!Number.isFinite(lng)){lat=5.65;lng=100.49;}
+    state.locationMap=L.map(el,{zoomControl:true}).setView([lat,lng],16);
+    L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'}).addTo(state.locationMap);
+    state.locationMarker=L.marker([lat,lng],{draggable:true}).addTo(state.locationMap);
+    const radius=Math.max(1,parseFloat(document.getElementById('settingRadius')?.value)||200);state.locationCircle=L.circle([lat,lng],{radius}).addTo(state.locationMap);
+    state.locationMap.on('click',e=>setSettingCoords(e.latlng.lat,e.latlng.lng,true));state.locationMarker.on('dragend',e=>{const p=e.target.getLatLng();setSettingCoords(p.lat,p.lng,false);});
+    syncMapReadout(lat,lng,radius);
+    if(state.liveLocation)syncCurrentLocationMarker(state.locationMap,'settingsCurrentMarker','settingsAccuracyCircle',state.liveLocation);
+  }
+  function setSettingCoords(lat,lng,recenter){document.getElementById('settingLat').value=Number(lat).toFixed(7);document.getElementById('settingLng').value=Number(lng).toFixed(7);syncMapFromInputs(recenter);}
+  function syncMapFromInputs(recenter=false){if(!state.locationMap)return;const lat=parseFloat(document.getElementById('settingLat')?.value),lng=parseFloat(document.getElementById('settingLng')?.value),radius=Math.max(1,parseFloat(document.getElementById('settingRadius')?.value)||200);if(!Number.isFinite(lat)||!Number.isFinite(lng))return;const ll=[lat,lng];state.locationMarker?.setLatLng(ll);state.locationCircle?.setLatLng(ll).setRadius(radius);if(recenter)state.locationMap.setView(ll,Math.max(state.locationMap.getZoom(),16));syncMapReadout(lat,lng,radius);}
+  function syncMapRadius(){updateGpsSettingWarning();if(!state.locationMap)return;const radius=Math.max(1,parseFloat(document.getElementById('settingRadius')?.value)||200);state.locationCircle?.setRadius(radius);const ll=state.locationMarker?.getLatLng();if(ll)syncMapReadout(ll.lat,ll.lng,radius);}
+  function syncMapReadout(lat,lng,radius){text('mapCoordReadout',`${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`);text('mapRadiusReadout',`${Math.round(radius)} m`);}
+  async function useCurrentLocationForSetting(){try{const pos=await currentPosition();setSettingCoords(pos.coords.latitude,pos.coords.longitude,true);toast(`Lokasi peranti digunakan (±${Math.round(pos.coords.accuracy)}m).`);}catch(e){toast(e.message,4500);}}
+
+  function renderPhotoSyncStatus(message='',kind='info'){
+    const host=document.getElementById('profilePhotoSyncDiagnostic');
+    if(!host)return;
+    const saved=String(state.admin?.settings?.profileRootFolderId||'').trim();
+    const users=state.admin?.users||[];
+    const active=users.filter(u=>u.active);
+    const linked=active.filter(u=>u.hasProfilePhoto).length;
+    host.dataset.kind=kind;
+    host.textContent=message||(!saved
+      ? 'Folder Google Drive belum disimpan dalam tetapan MySQL. Isi ID folder, tekan Simpan tetapan, kemudian Sync Sekarang.'
+      : `Folder induk disimpan dalam MySQL. ${linked} daripada ${active.length} pegawai aktif mempunyai ID gambar. Jika masih 0, tekan Sync Sekarang.`);
+  }
+  async function syncProfilePhotos(){
+    const entered=String(document.querySelector('[name="profileRootFolderId"]')?.value||'').trim();
+    const saved=String(state.admin?.settings?.profileRootFolderId||'').trim();
+    if(!saved){
+      renderPhotoSyncStatus('Folder induk belum disimpan dalam MySQL. Sila isi ID folder dan tekan Simpan tetapan dahulu.','error');
+      return toast('Simpan ID folder Google Drive dahulu.',5500);
+    }
+    if(saved!==entered){
+      renderPhotoSyncStatus('ID folder telah diubah tetapi belum disimpan. Tekan Simpan tetapan dahulu sebelum Sync Sekarang.','error');
+      return toast('Simpan perubahan ID folder dahulu.',5500);
+    }
+    if(!confirm('Sync gambar profil Google Drive dengan pengguna MySQL?'))return;
+    renderPhotoSyncStatus('Menyemak struktur folder dan memadankan gambar. Jangan tekan Sync berulang kali.','busy');
+    try{
+      const r=await runServer('adminSyncProfilePhotos',state.token);
+      state.photoCache.clear();
+      const unmatched=Array.isArray(r.unmatched)?r.unmatched:[];
+      await refreshAdmin();
+      await refreshBoot();
+      const result=`${Number(r.matched||0)} gambar dipadankan; ${unmatched.length} tidak dijumpai.`;
+      renderPhotoSyncStatus(result+(Number(r.matched||0)===0?' Semak nama folder, nama staf dan fail eoperasi.png.':''),Number(r.matched||0)?'success':'error');
+      toast('Sync gambar profil: '+result,6000);
+      if(unmatched.length)showModal(`<h3>Hasil Sync Gambar Profil</h3><p><b>${Number(r.matched||0)}</b> berjaya dipadankan.</p><p><b>${unmatched.length}</b> tidak dijumpai:</p><div class="sync-unmatched">${unmatched.slice(0,50).map(x=>`<div>${esc(x)}</div>`).join('')}</div><p><button class="btn primary" onclick="closeModal()">Selesai</button></p>`);
+    }catch(e){
+      renderPhotoSyncStatus('Sync gagal: '+(e?.message||String(e)),'error');
+      handleServerError(e);
+    }
+  }
+
+  function localDateKey(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
+  function getSystemStartDateClient(){return state.boot?.settings?.systemStartDate||'2026-09-01';}
+  function applySystemDateLimits(){
+    const start=getSystemStartDateClient(),startMonth=start.slice(0,7);
+    ['absenceStartDate','absenceEndDate','absencePublicFrom','absencePublicTo','absenceManageFrom','absenceManageTo','timeReviewFrom','timeReviewTo','reportDate'].forEach(id=>{const el=document.getElementById(id);if(!el)return;el.min=start;if(el.value&&el.value<start)el.value=start;});
+    ['myCardMonth','attendanceReportMonth','adminCardMonth'].forEach(id=>{const el=document.getElementById(id);if(!el)return;el.min=startMonth;if(el.value&&el.value<startMonth)el.value=startMonth;});
+  }
+  function initAttendanceReportBuilder(){
+    const today=state.boot?.today||localDateKey(new Date());
+    const month=document.getElementById('attendanceReportMonth');
+    if(month&&!month.value)month.value=today.slice(0,7);
+    applySystemDateLimits();
+    updateAttendanceReportPeriod();
+  }
+  function updateAttendanceReportPeriod(){
+    try{
+      const p=getAttendanceReportPeriod();
+      text('attendanceReportRangeText',`${p.fromDate} hingga ${p.toDate}`);
+    }catch(e){
+      text('attendanceReportRangeText',e.message||'Pilih bulan laporan');
+    }
+  }
+  function getAttendanceReportPeriod(){
+    const month=document.getElementById('attendanceReportMonth')?.value||'';
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))throw new Error('Pilih bulan laporan.');
+    const systemStart=getSystemStartDateClient();
+    if(month<systemStart.slice(0,7))throw new Error(`Tiada data sistem sebelum ${systemStart}.`);
+    const [year,number]=month.split('-').map(Number);
+    const lastDay=new Date(year,number,0).getDate();
+    const fromDate=month+'-01'<systemStart?systemStart:month+'-01';
+    return {type:'MONTHLY',month,fromDate,toDate:`${month}-${String(lastDay).padStart(2,'0')}`};
+  }
+  async function generateAttendancePresenceReportPdfClient(){try{const p=getAttendanceReportPeriod();const r=await runServer('generateAttendancePresenceReportPdf',state.token,p);downloadPdfResult(r);toast(`Laporan ${p.fromDate===p.toDate?p.fromDate:`${p.fromDate} hingga ${p.toDate}`} dijana.`);}catch(e){handleServerError(e);}}
+  async function generateAttendancePresenceReportSheetClient(){try{const p=getAttendanceReportPeriod();const r=await runServer('generateAttendancePresenceReportSheet',state.token,p);const names=Array.isArray(r.sheetNames)&&r.sheetNames.length?r.sheetNames.join(', '):(r.sheetName||'LAP RINGKASAN');toast(`Pakej template dijana: ${names}.`,6500);}catch(e){handleServerError(e);}}
+
+  async function repairDuplicateAttendance(){if(!confirm('Sistem akan menggabungkan rekod KEHADIRAN yang mempunyai tarikh dan emel yang sama. Teruskan?'))return;try{const r=await runServer('adminRepairAttendanceDuplicates',state.token);toast(r.groupsMerged?`${r.groupsMerged} kumpulan duplikat digabungkan; ${r.rowsRemoved} baris dibuang.`:'Tiada rekod duplikat dijumpai.',4500);await refreshAdmin();}catch(e){handleServerError(e);}}
+  async function generateReportSheet(){try{const r=await runServer('generateReportSheet',state.token,document.getElementById('reportDate').value);toast(`Laporan dijana di ${r.sheetName}.`);}catch(e){handleServerError(e);}}
+
+  // ---------- Utilities ----------
+  function downloadPdfResult(r){if(!r?.base64)throw new Error('Fail PDF tidak diterima.');const bytes=Uint8Array.from(atob(r.base64),c=>c.charCodeAt(0)),blob=new Blob([bytes],{type:r.mimeType||'application/pdf'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=r.fileName||'laporan.pdf';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);}
+
+  function toggleMobileMenu(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('sidebarBackdrop').classList.toggle('hidden');}
+  function closeMobileMenu(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebarBackdrop').classList.add('hidden');}
+  function showModal(html){document.getElementById('modalContent').innerHTML=html;document.getElementById('modal').classList.remove('hidden');}
+  function closeModal(){document.getElementById('modal').classList.add('hidden');}
+  function setBadge(id,status){const b=document.getElementById(id);if(!b)return;b.textContent=status;b.className='badge '+badgeClass(status);}
+  function badgeClass(s){s=String(s||'');return s==='HADIR'?'hadir':s==='TIDAK HADIR'?'absent':s.includes('BALIK AWAL')?'awal':s.includes('LEWAT')?'lewat':'neutral';}
+  function text(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
+  function toast(msg,ms=3000){const t=document.getElementById('toast');t.textContent=msg;t.classList.remove('hidden');clearTimeout(t._to);t._to=setTimeout(()=>t.classList.add('hidden'),ms);}
+  function showLoginError(msg){const e=document.getElementById('loginError');e.textContent=msg;e.classList.remove('hidden');}
+  function hideLoginError(){document.getElementById('loginError').classList.add('hidden');}
+  function handleServerError(e,showToast=true){const msg=e?.message||String(e);if(/Sesi|log masuk semula|tidak lagi aktif|dibatalkan kerana tetapan akaun|perlu ditukar sebelum menggunakan|trusted device/i.test(msg)){clearStoredSessionToken();state.token='';if(/trusted device.*dibatalkan|sesi peranti.*dibatalkan|PIN atau tetapan akaun berubah|tidak lagi aktif/i.test(msg)){clearTrustedDevice();state.deviceToken='';}showLogin().catch(()=>{});}if(showToast)toast(msg,4500);}
+  function norm(s){return String(s??'').toLowerCase().replace(/\s+/g,' ').trim();}
+  function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
+  function attr(s){return esc(s).replace(/`/g,'&#096;');}
+
+  // Explicit global exports for Apps Script HtmlService / inline HTML handlers.
+  Object.assign(window, {
+    continueLastAccount,
+    checkDelimaAccount,
+    useDifferentAccount,
+    sanitizePinInput,
+    togglePassword,
+    submitPinLogin,
+    submitFirstPin,
+    logout,
+    navigate,
+    startPunch,
+    refreshLiveLocation,
+    requestLocationPermission,
+    loadMyCard,
+    setMyCardHalf,
+    printMyPunchCard,
+    printAdminPunchCard,
+    loadAbsenceData,
+    updateAbsenceModeUi,
+    updateAbsenceDateLimit,
+    setAbsenceQuickDate,
+    syncAbsenceDatesFromStart,
+    submitAbsence,
+    cancelAbsence,
+    loadAbsencePublic,
+    applyAbsencePublicFilters,
+    setAbsencePublicPreset,
+    generatePublicAbsencePresencePdfClient,
+    loadAbsenceManagement,
+    applyAbsenceManageFilters,
+    openReviewAbsence,
+    reviewAbsence,
+    refreshAdmin,
+    applyReportFilters,
+    switchTab,
+    switchSettingsSection,
+    updateSettingsSummary,
+    openAttendanceModal,
+    saveAttendance,
+    openAdminPunchCard,
+    loadAdminCard,
+    setAdminCardHalf,
+    applyUserFilters,
+    toggleUserSelection,
+    toggleSelectAllUsers,
+    bulkGeneratePasswords,
+    openUserModal,
+    saveUser,
+    resetUserPassword,
+    openTrustedDevices,
+    revokeTrustedDevice,
+    revokeAllTrustedDevices,
+    unlockUser,
+    saveSettings,
+    addPublicHoliday,
+    deletePublicHoliday,
+    updateModeSettingHint,
+    syncMapFromInputs,
+    syncMapRadius,
+    useCurrentLocationForSetting,
+    syncProfilePhotos,
+    repairDuplicateAttendance,
+    generateReportSheet,
+    initAttendanceReportBuilder,
+    updateAttendanceReportPeriod,
+    generateAttendancePresenceReportPdfClient,
+    generateAttendancePresenceReportSheetClient,
+    toggleMobileMenu,
+    closeMobileMenu,
+    closeModal,
+    loadTimeReview,
+    applyTimeReviewFilters,
+    setTimeReviewPreset,
+    setAbsenceManagePreset
+  });
+  window.__EK_SCRIPTS_LOADED__ = true;
+
+/* PHP/MySQL-only PIN management overrides. Not loaded by Google Apps Script. */
+function openChangePin(required=false){
+  const hint=required
+    ? '<p style="color:#8d3a00;font-weight:700">Anda sedang menggunakan PIN sementara. Tukar PIN sebelum menggunakan fungsi lain.</p>'
+    : '<p class="muted">Tukar PIN 6 digit anda. Sesi di peranti lain akan dibatalkan.</p>';
+  showModal('<h3>Tukar PIN e-Keberadaan</h3>'+hint+
+    '<form onsubmit="submitChangePin(event)" autocomplete="off">'+
+    '<label>PIN semasa<input type="password" name="oldPin" required pattern="[0-9]{6}" minlength="6" maxlength="6" inputmode="numeric" autocomplete="current-password"></label>'+
+    '<label>PIN baharu<input type="password" name="newPin" required pattern="[0-9]{6}" minlength="6" maxlength="6" inputmode="numeric" autocomplete="new-password"></label>'+
+    '<label>Sahkan PIN baharu<input type="password" name="confirmPin" required pattern="[0-9]{6}" minlength="6" maxlength="6" inputmode="numeric" autocomplete="new-password"></label>'+
+    '<p><button class="btn primary" type="submit">Simpan PIN baharu</button></p></form>');
+}
+async function submitChangePin(ev){
+  ev.preventDefault();
+  const fd=new FormData(ev.target);
+  const oldPin=String(fd.get('oldPin')||''), pin=String(fd.get('newPin')||''), confirmPin=String(fd.get('confirmPin')||'');
+  if(!/^\d{6}$/.test(oldPin)||!/^\d{6}$/.test(pin)||pin!==confirmPin||pin===oldPin){
+    return toast('PIN baharu mesti 6 digit, sama dengan pengesahan dan berbeza daripada PIN semasa.');
+  }
+  const btn=ev.target.querySelector('button[type="submit"]');
+  if(btn)btn.disabled=true;
+  try{
+    const r=await runServer('changePin',state.token,oldPin,pin,confirmPin);
+    state.boot=r.boot;renderBoot();closeModal();toast('PIN berjaya ditukar. Sesi lain telah dibatalkan.');
+  }catch(e){handleServerError(e,false)}
+  finally{if(btn)btn.disabled=false}
+}
+async function resetUserPassword(email,name){
+  if(!confirm('Jana PIN sementara baharu untuk '+name+'? Semua sesi lama akan dibatalkan. PIN sementara wajib ditukar pada login.'))return;
+  try{const r=await runServer('adminResetPassword',state.token,email);showPasswordResetModal(r);await refreshAdmin();}
+  catch(e){handleServerError(e)}
+}
+function showPasswordResetModal(r){
+  showModal('<div class="temp-password-result"><div class="first-login-badge">PIN SEMENTARA</div>'+
+    '<h3>'+esc(r.name||'Pengguna')+'</h3><p class="muted">'+esc(r.email||'')+'</p>'+
+    '<p>Salin PIN ini sekarang dan serahkan kepada pengguna secara peribadi. Ia hanya ditunjukkan sekali.</p>'+
+    '<label>PIN sementara<input id="tempPinValue" value="'+attr(r.temporaryPin||'')+'" readonly autocomplete="off"></label>'+
+    '<p><button type="button" class="btn primary" onclick="navigator.clipboard.writeText(document.getElementById(\'tempPinValue\').value).then(()=>toast(\'PIN disalin\')).catch(()=>toast(\'Salin PIN secara manual\'))">Salin PIN</button></p>'+
+    '<p>Pengguna mesti log masuk dengan PIN sementara dan menetapkan PIN peribadi baharu.</p>'+
+    '<p><button class="btn" type="button" onclick="closeModal()">Selesai</button></p></div>');
+}
+async function bulkGeneratePasswords(){
+  const emails=[...state.selectedUserEmails];
+  if(!emails.length)return toast('Pilih pengguna dahulu.');
+  if(!confirm('Jana PIN sementara untuk '+emails.length+' pengguna? Semua sesi lama akan dibatalkan. Anda perlu menyerahkan setiap PIN secara peribadi.'))return;
+  try{
+    const r=await runServer('adminBulkResetPasswords',state.token,emails);
+    showBulkPasswordsModal(r.results||[]);
+    state.selectedUserEmails.clear();await refreshAdmin();
+  }catch(e){handleServerError(e)}
+}
+function showBulkPasswordsModal(rows){
+  const textRows=rows.map(r=>String(r.name||'')+'\t'+String(r.email||'')+'\t'+String(r.temporaryPin||'')).join('\n');
+  showModal('<div class="bulk-password-result"><div class="first-login-badge">PIN SEMENTARA</div>'+
+    '<h3>'+rows.length+' pengguna</h3><p>Setiap PIN hanya dipaparkan sekali. Simpan sementara secara selamat, kemudian serahkan secara peribadi.</p>'+
+    '<div class="table-wrap compact-table"><table><thead><tr><th>Nama</th><th>Emel</th><th>PIN sementara</th></tr></thead><tbody>'+
+    rows.map(r=>'<tr><td>'+esc(r.name||'')+'</td><td>'+esc(r.email||'')+'</td><td><b>'+esc(r.temporaryPin||'')+'</b></td></tr>').join('')+
+    '</tbody></table></div><textarea id="bulkPinCopy" readonly style="position:absolute;left:-9999px">'+esc(textRows)+'</textarea><p><button type="button" class="btn primary" onclick="navigator.clipboard.writeText(document.getElementById(\'bulkPinCopy\').value).then(()=>toast(\'PIN disalin\')).catch(()=>toast(\'Salin PIN secara manual\'))">Salin senarai</button></p>'+
+    '<p><button class="btn" type="button" onclick="closeModal()">Selesai</button></p></div>');
+}
+
+  if (!window.__EK_SCRIPTS_LOADED__) {
+    console.error('eKeberadaan: Scripts.html gagal dimuatkan.');
+  }
+  
