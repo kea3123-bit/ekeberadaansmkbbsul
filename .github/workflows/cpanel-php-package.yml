@@ -33,6 +33,7 @@ jobs:
           php -l php/workspace_bridge.php
           php -l php/workspace_services.php
           php -l php/email_queue.php
+          php -l php/mail_schedule.php
           php -l php/cli/workspace_mail_worker.php
           php php/tests/admin-report-settings-test.php
           php php/tests/public-users-bulk-test.php
@@ -53,7 +54,7 @@ jobs:
           install -m 0644 php/api.php /tmp/eke-fix/php/api.php
           install -m 0644 api.php .htaccess /tmp/eke-backend/
           install -m 0644 php/api.php php/_lib.php php/workspace_bridge.php \
-             php/workspace_services.php php/email_queue.php php/.htaccess /tmp/eke-backend/php/
+             php/workspace_services.php php/email_queue.php php/mail_schedule.php php/.htaccess /tmp/eke-backend/php/
           install -m 0644 php/cli/workspace_mail_worker.php php/cli/.htaccess /tmp/eke-backend/php/cli/
           chmod 0755 /tmp/eke-backend/php /tmp/eke-backend/php/cli
           (cd /tmp/eke-fix && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-report-hotfix.zip" php)
@@ -64,7 +65,7 @@ jobs:
               files=set(zipf.namelist())
               expected={'api.php','.htaccess','php/api.php','php/_lib.php',
                         'php/workspace_bridge.php','php/workspace_services.php',
-                        'php/email_queue.php','php/.htaccess',
+                        'php/email_queue.php','php/mail_schedule.php','php/.htaccess',
                         'php/cli/.htaccess','php/cli/workspace_mail_worker.php'}
               assert expected.issubset(files),expected-files
               for item in zipf.infolist():
