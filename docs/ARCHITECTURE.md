@@ -1,49 +1,59 @@
-# eKeberadaan architecture
+# eKeberadaan — PHP/MySQL architecture (30 October 2026)
 
-## Runtime path
+## User-facing application
 
 ```text
-Browser
+Browser / installed PWA
   -> GitHub Pages (static UI, HTTPS)
-  -> Apps Script Web App RPC bridge
-  -> Apps Script domain modules
-  -> Google Sheets / Google Drive / Mail
+  -> CORS-safe JSON POST to cPanel php/api.php (via public api.php)
+  -> PDO / MySQL (single database of record)
+       users / PIN hashes / sessions / attendance / absences / reviews / audit / settings
 ```
 
-GitHub Pages is the only user-facing website. Google Apps Script remains the trusted server runtime; Google Sheets remains the database.
+`mysql-ui/` is the **production frontend source**. `php/` and root
+`api.php` are the **PHP/MySQL backend source**. MySQL handles every
+login/punch/storage read and write. GitHub Pages never directly connects to
+MySQL and never embeds credentials.
 
-## Frontend
+## Google Workspace integration — independent
 
-The editable UI remains `Index.html`, `Styles.html`, `Scripts.html` and `Logo.html`. `scripts/build-pages.py` compiles these into a static site with:
+```text
+Optional profile photo / report export
+  -> cPanel PHP service
+  -> HMAC-signed POST to Apps Script Workspace endpoint
+  -> Google Drive / Docs / Google Sheets report OUTPUT only
 
-- small HTML shell;
-- external content-hashed CSS/JS/logo;
-- modular client bundles (`core`, `attendance`, `absence`, `admin`, `exports`);
-- service-worker cache and web manifest;
-- Apps Script RPC shim from `web/gas-shim.js`.
+Absence event
+  -> MySQL ek_email_outbox
+  -> cPanel Cron (PHP CLI)
+  -> HMAC-signed Apps Script sendEmail
+  -> MailApp
+```
 
-GitHub Actions validates JavaScript, runs a real headless-Chrome runtime check, enforces performance budgets and publishes `_site` to `gh-pages`.
+Google Workspace must **never** be a second application database. Apps Script
+`97_WorkspaceBridge.gs` is restricted to `photo`, `findPhoto`,
+`syncPhotos`, `exportPdf`, `exportSheet`, `sendEmail` and `ping`.
+The old `apps-script/10_Auth.gs`, `41_AttendanceData.gs` and other
+Google Sheets database modules are retained only for historical rollback
+and are **not** part of the MySQL application's runtime path.
 
-## Backend
+Email delivery is asynchronous through `ek_email_outbox`; it does not block
+login, attendance or absence submission if MailApp is unavailable.
+The cPanel worker is the only client authorized to invoke the signed
+`sendEmail` operation, and Google-side deduplication reduces retry duplicates.
 
-`apps-script/` is the canonical backend. It is split by domain instead of a monolithic `Code.gs`.
+## Release boundaries
 
-The Pages RPC bridge accepts only the explicit method allowlist in `Bridges.gs`; the public `/exec` URL is configuration, not a secret. PIN pepper/session secrets stay in Apps Script Script Properties.
+- GitHub Actions `.github/workflows/github-pages.yml` checks the live
+  PHP/MySQL API, CORS and the local build before updating `gh-pages`.
+- cPanel PHP deployment is separate and requires an administrator to upload
+  the validated backend files and run the additive mail outbox migration.
+- The Apps Script Workspace Web App must be deployed with its existing /exec
+  URL. The HMAC secret must match the server's private configuration.
+- The cron email worker runs separately at cPanel. It cannot be invoked from
+  GitHub Pages and contains no database credentials.
+- No production data, PINs or session records are reset by code deployment.
 
-## Database performance
+**Cutover runbook:** `docs/MYSQL_WORKSPACE_CUTOVER_2026-10-30.md`.
 
-The backend avoids repeated whole-sheet scans on common paths:
-
-- users/settings: runtime memoization + short CacheService cache;
-- trusted-device list: short cache, invalidated on security-sensitive mutations;
-- attendance: compact date/month row index, then reads only relevant row groups;
-- login history: one cached Set instead of N repeated LOG_LOGIN/AUDIT scans;
-- absence/time-review: per-execution memoization with explicit invalidation after writes.
-
-Manual maintenance/report operations may still intentionally scan broader ranges because they are not latency-critical user actions.
-
-## Deployment boundary
-
-Frontend changes deploy automatically from GitHub. Backend changes are copied manually from `apps-script/` into the existing Apps Script project and published as a New Version of the existing Web App deployment, preserving the current `/exec` URL and Script Properties.
-
-Timezone is `Asia/Kuala_Lumpur`.
+Timezone: `Asia/Kuala_Lumpur`.
