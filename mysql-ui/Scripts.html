@@ -394,6 +394,16 @@ const state = {
       return;
     }
 
+    // MySQL cannot safely let an unverified email choose a new PIN.
+    // When the imported account has no PIN hash, guide the user to the
+    // administrator's authenticated temporary-PIN reset instead.
+    if(res.pinReady===false){
+      const input=document.getElementById('delimaEmail');
+      if(input)input.value=email;
+      state.selectedAccount=null;
+      showLoginStep('email');
+      throw new Error(res.message||'PIN MySQL belum tersedia. Hubungi Pentadbir Sistem untuk reset PIN.');
+    }
     document.getElementById('delimaAccountCard').innerHTML=html;
     showLoginStep('pin');
     setTimeout(()=>document.getElementById('loginPin')?.focus(),80);
