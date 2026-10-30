@@ -15,10 +15,13 @@ const scriptCache = {
   get(key) { return cache.get(key) || null; },
   put(key, value) { cache.set(key, String(value)); }
 };
+const delivered=[];
 const ctx = {
   EK: {TIMEZONE: 'Asia/Kuala_Lumpur'},
   getScriptCache_: () => scriptCache,
   CacheService: {getScriptCache: () => scriptCache},
+  LockService: {getScriptLock: () => ({waitLock(){},releaseLock(){}})},
+  MailApp: {sendEmail(mail) { delivered.push(mail); }},
   PropertiesService: {
     getScriptProperties: () => ({
       getProperty: key => key === 'EK_WORKSPACE_BRIDGE_SECRET' ? secret : null
@@ -141,4 +144,25 @@ const unauthorized=jsonResponse(signedCall('findPhoto','abcdefabcdefabcdefabcdef
 assert.equal(unauthorized.ok,true);
 assert.equal(unauthorized.result.fileId,'');
 
-console.log('PASS Workspace JSON route, HMAC, replay, expiry, legacy HTML, signed photo lookup and folder diagnostics');
+const emailData={
+  to:'staff@example.test',
+  subject:'Keputusan eKeberadaan',
+  body:'Permohonan anda telah diluluskan.',
+  deliveryKey:'b'.repeat(64)
+};
+const emailOk=jsonResponse(signedCall('sendEmail','0123456789abcdef0123456789abcdea',Math.floor(Date.now()/1000),emailData));
+assert.equal(emailOk.ok,true);
+assert.equal(emailOk.result.sent,true);
+assert.equal(delivered.length,1);
+assert.equal(delivered[0].to,'staff@example.test');
+assert.equal(delivered[0].body,emailData.body);
+// A signed request with a new transport nonce but the SAME delivery key
+// must not send duplicate email when the worker retries.
+const emailAgain=jsonResponse(signedCall('sendEmail','0123456789abcdef0123456789abcdeb',Math.floor(Date.now()/1000),emailData));
+assert.equal(emailAgain.ok,true);
+assert.equal(emailAgain.result.duplicate,true);
+assert.equal(delivered.length,1);
+const invalidRecipient=jsonResponse(signedCall('sendEmail','0123456789abcdef0123456789abcdec',Math.floor(Date.now()/1000),{...emailData,to:'not-an-address'}));
+assert.equal(invalidRecipient.ok,false);
+assert.equal(delivered.length,1);
+console.log('PASS Workspace JSON route, HMAC, replay, expiry, legacy HTML, signed photo lookup and folder diagnostics, signed email and deduplication');
