@@ -163,6 +163,7 @@ jobs:
           node --check < apps-script/97_WorkspaceBridge.gs
           node apps-script/tests/workspace-bridge-routing.test.js
           node apps-script/tests/pin-reset-fresh-read.test.js
+          php php/tests/email-outbox-test.php
           grep -Fq "SELECT * FROM kehadiran" php/_lib.php || grep -Fq "FROM kehadiran" php/_lib.php
           ! grep -Fq 'google.script.run' php/api.php
           grep -Fq 'ek_email_outbox' php/email_queue.php
