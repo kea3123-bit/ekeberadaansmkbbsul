@@ -28,7 +28,7 @@ function notify_absence_submitted_mysql(array $user,string $id,string $type): vo
     try {
         $admins=rows("SELECT emel FROM pengguna WHERE aktif=1 AND (pentadbir=1 OR kategori='Pengurusan')");
         $message="Permohonan Tidak Hadir/Keberadaan baharu.\nNama: ".(string)$user['nama'].
-          "\nJenis: ".mb_substr($type,0,100)."\nRujukan: ".$id.
+          "\nJenis: ".substr($type,0,100)."\nRujukan: ".$id.
           "\nSemak melalui eKeberadaan: https://kea3123-bit.github.io/ekeberadaansmkbbsul/";
         foreach($admins as $admin) {
             $email=strtolower(trim((string)($admin['emel']??'')));
