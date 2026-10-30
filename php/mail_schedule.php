@@ -29,8 +29,8 @@ function schedule_mysql_mail_events(): void {
     }
 }
 function queue_previous_day_report_mysql(string $date): void {
-    $totals=one('SELECT COUNT(DISTINCT emel) AS total, COUNT(DISTINCT CASE WHEN masuk IS NOT NULL AND masuk<>\'\' THEN emel END) AS masuk,
-      COUNT(DISTINCT CASE WHEN balik IS NOT NULL AND balik<>\'\' THEN emel END) AS balik
+    $totals=one('SELECT COUNT(DISTINCT emel) AS total, COUNT(DISTINCT CASE WHEN masuk IS NOT NULL AND CAST(masuk AS CHAR)<>\'\' THEN emel END) AS masuk,
+      COUNT(DISTINCT CASE WHEN balik IS NOT NULL AND CAST(balik AS CHAR)<>\'\' THEN emel END) AS balik
       FROM kehadiran WHERE tarikh=?',[$date]);
     $users=one('SELECT COUNT(*) AS total FROM pengguna WHERE aktif=1');
     $recipients=rows("SELECT emel FROM pengguna WHERE aktif=1 AND (pentadbir=1 OR kategori='Pengurusan')");
