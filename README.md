@@ -6,7 +6,7 @@
 
 **Backend:** PHP API at `https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php` — MySQL is the only authoritative store for accounts, authentication, sessions, punch records, absences, reviews and administration.
 
-**Google Workspace:** Used only through a signed PHP → Apps Script bridge for Google Drive profile photos and PDF/Google Sheet exports. Do **not** use the former Sheets-based login, attendance or RPC path in production.
+**Google Workspace:** Used only through a signed PHP → Apps Script bridge for Google Drive profile photos, PDF/Google Sheet report outputs and **MailApp email delivery**. Notification events are queued in MySQL and delivered by an independent cPanel cron worker. Do **not** use the former Sheets-based login, attendance or RPC path in production.
 
 ### Canonical source
 
@@ -36,3 +36,5 @@ In Chrome → DevTools → Network, after reloading the production URL:
 If the deployment workflow fails, leave the existing public site in place. Inspect the workflow logs rather than bypassing health/CORS checks. Do not reset PINs or re-import MySQL to repair a frontend deployment.
 
 Timezone: `Asia/Kuala_Lumpur`.
+
+**Deployment:** The frontend may be published independently; updated PHP, the additive `ek_email_outbox` table, the Workspace script and cPanel cron still need separate deployment. See [`docs/MYSQL_WORKSPACE_CUTOVER_2026-10-30.md`](docs/MYSQL_WORKSPACE_CUTOVER_2026-10-30.md).
