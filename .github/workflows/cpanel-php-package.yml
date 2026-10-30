@@ -32,6 +32,8 @@ jobs:
           php -l php/_lib.php
           php -l php/workspace_bridge.php
           php -l php/workspace_services.php
+          php -l php/email_queue.php
+          php -l php/cli/workspace_mail_worker.php
           php php/tests/admin-report-settings-test.php
           php php/tests/public-users-bulk-test.php
           php php/tests/profile-photo-lookup-test.php
@@ -43,18 +45,34 @@ jobs:
           node apps-script/tests/pin-reset-fresh-read.test.js
           test ! -e php/config.local.php
 
-      - name: Create one-file cPanel fix
+      - name: Build complete MySQL backend and independent mail worker package
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/eke-fix/php /tmp/eke-backend/php
-          cp php/api.php /tmp/eke-fix/php/api.php
-          cp api.php .htaccess /tmp/eke-backend/
-          cp php/api.php php/_lib.php php/workspace_bridge.php \
-             php/workspace_services.php php/.htaccess /tmp/eke-backend/php/
+          mkdir -p /tmp/eke-fix/php /tmp/eke-backend/php/cli
+          install -m 0644 php/api.php /tmp/eke-fix/php/api.php
+          install -m 0644 api.php .htaccess /tmp/eke-backend/
+          install -m 0644 php/api.php php/_lib.php php/workspace_bridge.php \
+             php/workspace_services.php php/email_queue.php php/.htaccess /tmp/eke-backend/php/
+          install -m 0644 php/cli/workspace_mail_worker.php php/cli/.htaccess /tmp/eke-backend/php/cli/
+          chmod 0755 /tmp/eke-backend/php /tmp/eke-backend/php/cli
           (cd /tmp/eke-fix && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-report-hotfix.zip" php)
           (cd /tmp/eke-backend && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-backend.zip" api.php .htaccess php)
-          unzip -l ekeberadaansmkbbsul-report-hotfix.zip
-          unzip -l ekeberadaansmkbbsul-backend.zip
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile("ekeberadaansmkbbsul-backend.zip") as zipf:
+              files=set(zipf.namelist())
+              expected={'api.php','.htaccess','php/api.php','php/_lib.php',
+                        'php/workspace_bridge.php','php/workspace_services.php',
+                        'php/email_queue.php','php/.htaccess',
+                        'php/cli/.htaccess','php/cli/workspace_mail_worker.php'}
+              assert expected.issubset(files),expected-files
+              for item in zipf.infolist():
+                  mode=(item.external_attr >> 16) & 0o777
+                  assert mode==(0o755 if item.is_dir() else 0o644),(item.filename,oct(mode))
+                  assert 'config.local' not in item.filename
+              print('COMPLETE_MYSQL_BACKEND_SAFE_ZIP_OK')
+          PY
 
       - name: Package 403 permission recovery with safe ZIP modes
         shell: bash
