@@ -1,5 +1,5 @@
 Options -Indexes
-<FilesMatch "^(?:config\.local.*|_lib\.php|workspace_(?:bridge|services)\.php|cli_(?:set_pin|check_db)\.php|schema\.sql|README\.md|error_log(?:[._-].*)?|.*\.(?:sql|log|env|bak|zip|old|save|swp))$">
+<FilesMatch "^(?:config\.local.*|_lib\.php|workspace_(?:bridge|services)\.php|email_queue\.php|cli_(?:set_pin|check_db)\.php|schema\.sql|README\.md|error_log(?:[._-].*)?|.*\.(?:sql|log|env|bak|zip|old|save|swp))$">
   Require all denied
 </FilesMatch>
 <IfModule mod_headers.c>
