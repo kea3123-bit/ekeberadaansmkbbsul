@@ -232,6 +232,10 @@ function rpc(string $fn,array $a) {
         execute_sql('DELETE FROM web_sessions WHERE email=? AND token_hash<>?',
             [$u['emel'],hash('sha256',$token)]);
         audit_event($u['emel'],'TUKAR_PIN',$u['emel']);
+        require_once __DIR__.'/email_queue.php';
+        enqueue_workspace_email('pin-changed:'.$u['emel'].':'.bin2hex(random_bytes(8)),(string)$u['emel'],
+            'eKeberadaan: PIN dikemas kini',
+            'PIN eKeberadaan anda telah dikemas kini. Jika bukan anda, segera hubungi Pentadbir Sistem.');
         return ['ok'=>true,'message'=>'PIN berjaya ditukar. Sesi peranti lain telah dibatalkan.','boot'=>bootstrap($u)];
       case 'adminResetPassword':
         $admin=require_user($a[0]??'',true);
@@ -678,6 +682,10 @@ function issue_temp_pin(array $admin,string $email): array {
        [$email,$hash]);
     execute_sql('DELETE FROM web_sessions WHERE email=?',[$email]);
     audit_event($admin['emel'],'RESET_PIN_PHP',$email,'PIN sementara dijana; sesi lama dibatalkan');
+    require_once __DIR__.'/email_queue.php';
+    enqueue_workspace_email('pin-reset:'.$email.':'.bin2hex(random_bytes(8)),$email,
+        'eKeberadaan: PIN direset',
+        'PIN eKeberadaan anda telah direset oleh Pentadbir Sistem. Hubungi pentadbir secara peribadi untuk PIN sementara. Demi keselamatan, PIN tidak dihantar melalui emel.');
     return ['ok'=>true,'name'=>$u['nama'],'email'=>$email,'temporaryPin'=>$tempPin,'emailSent'=>false,
       'message'=>'Serahkan PIN sementara secara peribadi. Pengguna wajib menukar PIN selepas log masuk.'];
 }
