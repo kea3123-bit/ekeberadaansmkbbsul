@@ -155,13 +155,21 @@ function rpc(string $fn,array $a) {
         $u=require_user($a[0]??''); if (!$u['pentadbir'] && $u['kategori']!=='Pengurusan') throw new RuntimeException('Tiada kebenaran.');
         return management_absences($u,(string)($a[1]??today()),(string)($a[2]??today()));
       case 'submitAbsenceRequest':
-        return submit_absence(require_user($a[0]??''),is_array($a[1]??null)?$a[1]:[]);
+        $user=require_user($a[0]??'');
+        $payload=is_array($a[1]??null)?$a[1]:[];
+        $result=submit_absence($user,$payload);
+        require_once __DIR__.'/email_queue.php';
+        notify_absence_submitted_mysql($user,(string)$result['id'],(string)($payload['type']??''));
+        return $result;
       case 'cancelMyAbsenceRequest':
         $u=require_user($a[0]??'');
         $n=execute_sql("UPDATE tidak_hadir SET status='DIBATALKAN',dikemaskinipada=? WHERE id=? AND emel=? AND status='MENUNGGU'",
           [excel_number(now_myt()),(string)($a[1]??''),$u['emel']]);
         if (!$n) throw new RuntimeException('Permohonan tidak dijumpai atau sudah diproses.');
-        audit_event($u['emel'],'BATAL_TIDAK_HADIR',(string)($a[1]??''));return ['ok'=>true];
+        audit_event($u['emel'],'BATAL_TIDAK_HADIR',(string)($a[1]??''));
+        require_once __DIR__.'/email_queue.php';
+        notify_absence_cancelled_mysql((string)($a[1]??''),$u);
+        return ['ok'=>true];
       case 'reviewAbsenceRequest':
         $u=require_user($a[0]??'');if (!$u['pentadbir'] && $u['kategori']!=='Pengurusan') throw new RuntimeException('Tiada kebenaran.');
         $id=(string)($a[1]??'');$d=(string)($a[2]??'');
@@ -170,6 +178,8 @@ function rpc(string $fn,array $a) {
             [$d,$u['emel'],excel_number(now_myt()),substr((string)($a[3]??''),0,125),excel_number(now_myt()),$id]);
         if (!$n) throw new RuntimeException('Permohonan tidak dijumpai atau sudah diproses.');
         audit_event($u['emel'],'SEMAK_TIDAK_HADIR',$id,$d);
+        require_once __DIR__.'/email_queue.php';
+        notify_absence_reviewed_mysql($id,$d);
         return ['ok'=>true,'status'=>$d];
       case 'getTimeReviewData':
         require_user($a[0]??'',true);return time_reviews((string)($a[1]??today()),(string)($a[2]??today()));
