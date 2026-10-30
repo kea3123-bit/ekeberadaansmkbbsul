@@ -46,6 +46,7 @@ function workspaceBridgePost_(e) {
       case 'syncPhotos':result=workspaceSyncPhotos_(data);break;
       case 'exportPdf':result=workspaceExportPdf_(data);break;
       case 'exportSheet':result=workspaceExportSheet_(data);break;
+      case 'sendEmail':result=workspaceSendEmail_(data);break;
       case 'ping':result={ready:true,version:'workspace-bridge-v1',timezone:'Asia/Kuala_Lumpur'};break;
       default:throw new Error('Workspace operation not allowed.');
     }
@@ -199,4 +200,36 @@ function workspaceExportSheet_(data){
   sh.getRange(1,1,1,table.headers.length).setFontWeight('bold').setBackground('#dce8ff');
   sh.setFrozenRows(1);sh.autoResizeColumns(1,table.headers.length);
   return {ok:true,url:ss.getUrl(),sheetName:'LAPORAN',sheetNames:['LAPORAN']};
+}
+
+/**
+ * Isolated MailApp adapter. Input is signed by PHP's HMAC bridge and comes
+ * only from its server-side MySQL outbox worker, never from a browser.
+ * Does not read or write the historical Google Sheets database.
+ */
+function workspaceSendEmail_(data){
+  const recipient=String(data.to||'').trim().toLowerCase();
+  const subject=String(data.subject||'').trim();
+  const body=String(data.body||'');
+  const deliveryKey=String(data.deliveryKey||'').trim();
+  if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient)||recipient.length>254)
+    throw new Error('Workspace recipient invalid.');
+  if(!subject||subject.length>180||/[\\r\\n]/.test(subject))
+    throw new Error('Workspace email subject invalid.');
+  if(!body||body.length>12000)throw new Error('Workspace email body invalid.');
+  if(!/^[a-f0-9]{64}$/.test(deliveryKey))
+    throw new Error('Workspace email delivery key invalid.');
+  const key='EK_MAIL_SENT_'+deliveryKey;
+  const cache=CacheService.getScriptCache();
+  const lock=LockService.getScriptLock();
+  lock.waitLock(15000);
+  try{
+    if(cache.get(key))return {sent:true,duplicate:true};
+    MailApp.sendEmail({to:recipient,subject:subject,body:body,name:'eKeberadaan'});
+    // Within six hours repeated worker retries will not duplicate an email.
+    cache.put(key,'1',21600);
+    return {sent:true,duplicate:false};
+  }finally{
+    lock.releaseLock();
+  }
 }
