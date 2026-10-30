@@ -7,7 +7,7 @@
 declare(strict_types=1);
 
 function workspace_rpc(string $action, array $data=[]): array {
-    $allowed=['ping','photo','findPhoto','syncPhotos','exportPdf','exportSheet'];
+    $allowed=['ping','photo','findPhoto','syncPhotos','exportPdf','exportSheet','sendEmail'];
     if (!in_array($action,$allowed,true)) throw new InvalidArgumentException('Workspace action not allowed');
     $config=cfg();
     $secret=(string)($config['workspace_bridge_secret']??'');
