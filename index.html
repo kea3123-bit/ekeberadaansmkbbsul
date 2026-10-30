@@ -1,25 +1,28 @@
 <!doctype html>
 <html lang="ms">
 <head>
-  <base target="_top">
-  <title>e-Keberadaan — Perakam Waktu Digital</title>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <link rel="stylesheet" href="./vendor/bootstrap/bootstrap.min.css">
-  <link rel="stylesheet" href="./assets/app.2cc398ea16a6.css">
-  <link rel="stylesheet" href="./assets/mobile.3b1920d1212a.css">
-
   <meta name="theme-color" content="#0753b9">
-  <meta name="description" content="e-Keberadaan — Perakam Waktu Digital">
-  <link rel="preconnect" href="https://script.google.com">
-  <link rel="dns-prefetch" href="//script.google.com">
-  <link rel="dns-prefetch" href="//script.googleusercontent.com">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="eKeberadaan">
+  <meta name="application-name" content="eKeberadaan">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>eKeberadaan — Perakam Waktu Digital</title>
   <link rel="manifest" href="./manifest.webmanifest">
-</head>
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+  <base target="_top">
+  <link rel="stylesheet" href="./assets/app.b5ed03f4581c.css">
+
+<meta name="robots" content="noindex,nofollow"></head>
 <body>
   <!-- LOGIN PAGE -->
   <section id="loginPage" class="login-page">
     <div class="login-card v8-login-card pin-login-card">
-      <div class="login-logo"><img class="school-logo" alt="Logo sekolah" src="./assets/logo.8a416c3282a0.png" decoding="async"></div>
+      <div class="login-logo"><img class="school-logo" alt="Logo sekolah" src="./assets/logo.8a416c3282a0.png">
+</div>
       <div class="eyebrow">e-Keberadaan</div>
       <h1 id="loginSchoolName">Perakam Waktu Digital</h1>
       <p class="login-copy"></p>
@@ -90,20 +93,21 @@
 
   <!-- APP SHELL -->
   <div id="appShell" class="shell hidden">
-    <aside id="sidebar" class="sidebar collapse">
+    <aside id="sidebar" class="sidebar">
       <div class="brand">
-        <div class="brand-logo"><img class="school-logo" alt="Logo sekolah" src="./assets/logo.8a416c3282a0.png" decoding="async"></div>
+        <div class="brand-logo"><img class="school-logo" alt="Logo sekolah" src="./assets/logo.8a416c3282a0.png">
+</div>
         <div><div class="eyebrow">e-Keberadaan</div><b id="sideSchoolName">Kad Perakam Waktu</b></div>
       </div>
 
-      <nav class="menu nav nav-pills flex-column" aria-label="Navigasi utama">
-        <button class="menu-item nav-link active" data-screen="home" onclick="navigate('home',this)"><span>⌂</span> Utama</button>
-        <button class="menu-item nav-link" data-screen="mycard" onclick="navigate('mycard',this)"><span>▤</span> Kad Perakam Waktu Saya</button>
-        <button class="menu-item nav-link" data-screen="absence" onclick="navigate('absence',this)"><span>◷</span> Tidak Hadir / Keberadaan</button>
-        <button class="menu-item nav-link" data-screen="absencepublic" onclick="navigate('absencepublic',this)"><span>☷</span> Senarai Tidak Hadir / Keberadaan</button>
-        <button id="absenceManageMenu" class="menu-item nav-link hidden" data-screen="absencemanage" onclick="navigate('absencemanage',this)"><span>✓</span> Semakan Tidak Hadir / Keberadaan</button>
-        <button id="timeReviewMenu" class="menu-item nav-link hidden" data-screen="timereview" onclick="navigate('timereview',this)"><span>!</span> Semakan Lewat / Balik Awal</button>
-        <button id="adminMenu" class="menu-item nav-link hidden" data-screen="admin" onclick="navigate('admin',this)"><span>⚙</span> Pentadbir Sistem</button>
+      <nav class="menu">
+        <button class="menu-item active" data-screen="home" onclick="navigate('home',this)"><span>⌂</span> Utama</button>
+        <button class="menu-item" data-screen="mycard" onclick="navigate('mycard',this)"><span>▤</span> Kad Perakam Waktu Saya</button>
+        <button class="menu-item" data-screen="absence" onclick="navigate('absence',this)"><span>◷</span> Tidak Hadir / Keberadaan</button>
+        <button class="menu-item" data-screen="absencepublic" onclick="navigate('absencepublic',this)"><span>☷</span> Senarai Tidak Hadir / Keberadaan</button>
+        <button id="absenceManageMenu" class="menu-item hidden" data-screen="absencemanage" onclick="navigate('absencemanage',this)"><span>✓</span> Semakan Tidak Hadir / Keberadaan</button>
+        <button id="timeReviewMenu" class="menu-item hidden" data-screen="timereview" onclick="navigate('timereview',this)"><span>!</span> Semakan Lewat / Balik Awal</button>
+        <button id="adminMenu" class="menu-item hidden" data-screen="admin" onclick="navigate('admin',this)"><span>⚙</span> Pentadbir Sistem</button>
       </nav>
 
       <div class="sidebar-user">
@@ -117,12 +121,12 @@
 
     <div class="main-area">
       <header class="topbar">
-        <button class="hamburger" type="button" onclick="toggleMobileMenu()" aria-controls="sidebar" aria-expanded="false" aria-label="Buka menu navigasi">☰</button>
+        <button class="hamburger" onclick="toggleMobileMenu()">☰</button>
         <div><b id="pageTitle">Utama</b><small id="topDate">—</small></div>
-        <div class="top-actions"><span id="topRole" class="role-chip">—</span><button class="btn ghost small" onclick="logout()">Keluar</button></div>
+        <div class="top-actions"><span id="topRole" class="role-chip">—</span><button class="btn ghost small" type="button" onclick="openChangePin()">Tukar PIN</button><button class="btn ghost small" onclick="logout()">Keluar</button></div>
       </header>
 
-      <main class="content container-fluid">
+      <main class="content">
         <section id="errorPanel" class="panel error-panel hidden"></section>
 
         <!-- HOME SCREEN: main punch screen -->
@@ -220,7 +224,8 @@
           <div class="card-side-switch" role="group"><button id="cardHalf1Btn" class="card-side-btn active" onclick="setMyCardHalf(1)">1 – 15</button><button id="cardHalf2Btn" class="card-side-btn" onclick="setMyCardHalf(2)">16 – 31</button></div>
           <section id="physicalPunchCard" class="physical-card" aria-label="Kad mencatit waktu digital">
             <div class="pc-topline"><div class="pc-government">KERAJAAN MALAYSIA</div><div class="pc-number"><strong id="pcCardNumber">1</strong><span>NOMBOR:</span></div></div>
-            <div class="pc-emblem-wrap"><div class="pc-emblem"><img class="school-logo" alt="Logo sekolah" src="./assets/logo.8a416c3282a0.png" decoding="async"></div></div>
+            <div class="pc-emblem-wrap"><div class="pc-emblem"><img class="school-logo" alt="Logo sekolah" src="./assets/logo.8a416c3282a0.png">
+</div></div>
             <div class="pc-info-row"><span>NAMA :</span><strong id="pcName">—</strong></div>
             <div class="pc-info-row"><span>KEM / JAB:</span><strong id="pcDepartment">—</strong></div>
             <div class="pc-title-row"><div><strong>KAD MENCATIT WAKTU</strong><span>BULAN</span></div><b id="pcMonthLabel">—</b></div>
@@ -480,6 +485,7 @@
                     <div class="settings-group-title span-2"><b>Gambar profil</b><small>Sumber Google Drive untuk sinkronisasi gambar pengguna.</small></div>
                     <label class="span-2">Folder induk gambar profil Google Drive<input name="profileRootFolderId" placeholder="Folder ID Google Drive"></label>
                     <div class="span-2 profile-sync-card"><div><b>Struktur gambar profil</b><small>01 - Pengurusan / 02 - Guru / 03 - Anggota Kumpulan Pelaksana / 04 - Praktikum / 05 - MySTEP → folder nama pegawai → eoperasi.png</small></div><button class="btn ghost" type="button" onclick="syncProfilePhotos()">Sync Sekarang</button></div>
+                    <div id="profilePhotoSyncDiagnostic" class="span-2 profile-sync-diagnostic" role="status" aria-live="polite">Semak ID folder induk, simpan tetapan, kemudian Sync Sekarang.</div>
                   </div>
                 </section>
 
@@ -501,7 +507,8 @@
           <div class="card-side-switch"><button id="adminCardHalf1Btn" class="card-side-btn active" onclick="setAdminCardHalf(1)">1 – 15</button><button id="adminCardHalf2Btn" class="card-side-btn" onclick="setAdminCardHalf(2)">16 – 31</button></div>
           <section id="adminPhysicalPunchCard" class="physical-card admin-physical-card">
             <div class="pc-topline"><div class="pc-government">KERAJAAN MALAYSIA</div><div class="pc-number"><strong id="apcCardNumber">1</strong><span>NOMBOR:</span></div></div>
-            <div class="pc-emblem-wrap"><div class="pc-emblem"><img class="school-logo" alt="Logo sekolah" src="./assets/logo.8a416c3282a0.png" decoding="async"></div></div>
+            <div class="pc-emblem-wrap"><div class="pc-emblem"><img class="school-logo" alt="Logo sekolah" src="./assets/logo.8a416c3282a0.png">
+</div></div>
             <div class="pc-info-row"><span>NAMA :</span><strong id="apcName">—</strong></div>
             <div class="pc-info-row"><span>KEM / JAB:</span><strong id="apcDepartment">—</strong></div>
             <div class="pc-title-row"><div><strong>KAD MENCATIT WAKTU</strong><span>BULAN</span></div><b id="apcMonthLabel">—</b></div>
@@ -513,16 +520,17 @@
     </div>
   </div>
 
-  <div id="modal" class="modal fade" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content ek-modal-content"><div class="modal-body"><button type="button" class="btn-close ek-modal-close" aria-label="Tutup" onclick="closeModal()"></button><div id="modalContent"></div></div></div></div></div>
-  <div id="toast" class="toast align-items-center text-bg-dark border-0" role="status" aria-live="polite" aria-atomic="true"><div class="d-flex"><div id="toastBody" class="toast-body"></div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Tutup"></button></div></div>
-  <script src="./vendor/bootstrap/bootstrap.bundle.min.js" defer></script>
-  <script src="./assets/config.c9a53c4ab8ab.js" defer></script>
-  <script src="./assets/gas-shim.8a36f9e99c8e.js" defer></script>
-  <script src="./assets/core.49749273d944.js" defer></script>
-  <script src="./assets/attendance.9f4f5a00131d.js" defer></script>
-  <script src="./assets/absence.35288278e45f.js" defer></script>
-  <script src="./assets/admin.9853ea7881f3.js" defer></script>
-  <script src="./assets/exports.cf3e14429360.js" defer></script>
-  <script src="./assets/runtime.768618465b1f.js" defer></script>
-</body>
+  <div id="modal" class="modal hidden" onclick="if(event.target===this) closeModal()"><div class="modal-card"><button class="modal-close" onclick="closeModal()">×</button><div id="modalContent"></div></div></div>
+  <div id="toast" class="toast hidden"></div>
+  <script defer src="./assets/app.15efa6a0c0ba.js"></script>
+<script>
+(() => {
+  if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(() => {
+      // Login and punch still work online when SW is unavailable.
+    });
+  }, {once:true});
+})();
+</script></body>
 </html>

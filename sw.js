@@ -1,12 +1,29 @@
-const CACHE='eke-static-96d049c7ddee';
-const ASSETS=["./","./index.html","./manifest.webmanifest","./assets/logo.8a416c3282a0.png","./vendor/bootstrap/bootstrap.min.css","./vendor/bootstrap/bootstrap.bundle.min.js","./assets/app.2cc398ea16a6.css","./assets/mobile.3b1920d1212a.css","./assets/config.c9a53c4ab8ab.js","./assets/gas-shim.8a36f9e99c8e.js","./assets/runtime.768618465b1f.js","./assets/core.49749273d944.js","./assets/attendance.9f4f5a00131d.js","./assets/absence.35288278e45f.js","./assets/admin.9853ea7881f3.js","./assets/exports.cf3e14429360.js"];
-self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
-self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('eke-static-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
-self.addEventListener('fetch',e=>{
-  const r=e.request;
-  if(r.method!=='GET')return;
-  const u=new URL(r.url);
-  if(u.origin!==self.location.origin)return;
-  if(r.mode==='navigate'){e.respondWith(fetch(r).then(res=>{const cp=res.clone();caches.open(CACHE).then(c=>c.put('./index.html',cp));return res;}).catch(()=>caches.match('./index.html')));return;}
-  e.respondWith(caches.match(r).then(hit=>hit||fetch(r)));
+// eKeberadaan PHP/MySQL PWA: install support, not offline attendance.
+// Never cache login responses, MySQL API requests or personal data.
+const PWA_CACHE='eke-pwa-shell-v1';
+const ASSETS=['./offline.html','./manifest.webmanifest','./icon-192.png',
+  './icon-512.png','./apple-touch-icon.png'];
+self.addEventListener('install',event=>{
+  event.waitUntil(caches.open(PWA_CACHE)
+    .then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()));
+});
+self.addEventListener('activate',event=>{
+  event.waitUntil((async()=>{
+    const keys=await caches.keys();
+    await Promise.all(keys.filter(key=>
+      (key.startsWith('eke-static-')||key.startsWith('eke-pwa-'))&&key!==PWA_CACHE
+    ).map(key=>caches.delete(key)));
+    await self.clients.claim();
+  })());
+});
+self.addEventListener('fetch',event=>{
+  const request=event.request;
+  if(request.method!=='GET'||request.mode!=='navigate')return;
+  if(new URL(request.url).origin!==self.location.origin)return;
+  // Fetch the current app shell on every navigation so updates win.
+  // Offline we display a notice rather than pretending punch succeeded.
+  event.respondWith(fetch(request).catch(async()=>{
+    const cache=await caches.open(PWA_CACHE);
+    return await cache.match('./offline.html')||Response.error();
+  }));
 });
