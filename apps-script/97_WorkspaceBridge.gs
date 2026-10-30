@@ -212,9 +212,9 @@ function workspaceSendEmail_(data){
   const subject=String(data.subject||'').trim();
   const body=String(data.body||'');
   const deliveryKey=String(data.deliveryKey||'').trim();
-  if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(recipient)||recipient.length>254)
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)||recipient.length>254)
     throw new Error('Workspace recipient invalid.');
-  if(!subject||subject.length>180||/[\\r\\n]/.test(subject))
+  if(!subject||subject.length>180||/[\r\n]/.test(subject))
     throw new Error('Workspace email subject invalid.');
   if(!body||body.length>12000)throw new Error('Workspace email body invalid.');
   if(!/^[a-f0-9]{64}$/.test(deliveryKey))
