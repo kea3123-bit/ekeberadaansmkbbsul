@@ -21,7 +21,6 @@ if ($ekOrigin !== '') {
     $isHostingOrigin = $requestHost !== '' && $requestHost === $serverHost
         && in_array(parse_url($ekOrigin, PHP_URL_SCHEME), array('https', 'http'), true);
     $isPagesOrigin = in_array($ekOrigin, array(
-        'https://farshoffs.github.io',
         'https://kea3123-bit.github.io'
     ), true);
     if (!$isHostingOrigin && !$isPagesOrigin) {
