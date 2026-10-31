@@ -1779,7 +1779,19 @@ function ensureAbsenceManageTableLayout(){
     const fromDate=month+'-01'<systemStart?systemStart:month+'-01';
     return {type:'MONTHLY',month,fromDate,toDate:`${month}-${String(lastDay).padStart(2,'0')}`};
   }
-  async function generateAttendancePresenceReportPdfClient(){try{const p=getAttendanceReportPeriod();const r=await runServer('generateAttendancePresenceReportPdf',state.token,p);downloadPdfResult(r);toast(`Laporan ${p.fromDate===p.toDate?p.fromDate:`${p.fromDate} hingga ${p.toDate}`} dijana.`);}catch(e){handleServerError(e);}}
+  async function generateAttendancePresenceReportPdfClient(){
+    // Open synchronously on user gesture: Safari/iOS PWA blocks async popups.
+    const preview=window.open('','_blank');
+    if(!preview){toast('Benarkan pop-up untuk membuka laporan PDF.',5500);return;}
+    preview.document.write('<!doctype html><meta charset="utf-8"><title>Menjana laporan...</title><p style="font:16px Arial;padding:24px">Mengambil data laporan daripada MySQL...</p>');
+    try {
+      const p=getAttendanceReportPeriod();
+      const result=await runServer('generateAttendancePresenceReportHtml',state.token,p);
+      if(!result?.html||!result.html.startsWith('<!doctype html>'))throw new Error('Pelayan tidak memulangkan laporan yang sah.');
+      preview.document.open();preview.document.write(result.html);preview.document.close();
+      preview.focus();toast('Laporan dibuka. Tekan Cetak / Simpan PDF.',5000);
+    } catch(e){preview.close();handleServerError(e);}
+  }
   async function generateAttendancePresenceReportSheetClient(){try{const p=getAttendanceReportPeriod();const r=await runServer('generateAttendancePresenceReportSheet',state.token,p);const names=Array.isArray(r.sheetNames)&&r.sheetNames.length?r.sheetNames.join(', '):(r.sheetName||'LAP RINGKASAN');toast(`Pakej template dijana: ${names}.`,6500);}catch(e){handleServerError(e);}}
 
   async function repairDuplicateAttendance(){if(!confirm('Sistem akan menggabungkan rekod KEHADIRAN yang mempunyai tarikh dan emel yang sama. Teruskan?'))return;try{const r=await runServer('adminRepairAttendanceDuplicates',state.token);toast(r.groupsMerged?`${r.groupsMerged} kumpulan duplikat digabungkan; ${r.rowsRemoved} baris dibuang.`:'Tiada rekod duplikat dijumpai.',4500);await refreshAdmin();}catch(e){handleServerError(e);}}
