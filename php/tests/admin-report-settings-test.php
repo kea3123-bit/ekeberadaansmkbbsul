@@ -24,7 +24,7 @@ function rows(string $query, array $params=[]): array {
             ['nama'=>'B','emel'=>'b@example.test','aktif'=>1,'kategori'=>'AKP','jawatan'=>'Pembantu']
         ];
     }
-    if (strpos($query,'FROM kehadiran') !== false) return [];
+    if (strpos($query,'FROM kehadiran') !== false || strpos($query,'FROM cuti_umum') !== false) return [];
     throw new RuntimeException('Unexpected query in report test');
 }
 function all_absence_rows(): array { return []; }
