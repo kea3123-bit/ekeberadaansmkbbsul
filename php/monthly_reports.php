@@ -79,24 +79,6 @@ function mysql_monthly_report_sections(array $admin,string $from,string $to):arr
             $cardByUser[$email][$day]=$cell;
         }
     }
-    foreach($days as $day) {
-        $t=['hadir'=>0,'lewat'=>0,'balikAwal'=>0,'tidakHadir'=>0,'belumHadir'=>0];
-        foreach($staff as $user) {
-            $email=strtolower(trim((string)$user['emel']));
-            $r=$byDay[$day][$email]??null;
-            $sch=schedule($user,$s);$rec=attendance_public($r,$sch);
-            $in=$rec['inTime']??'';$out=$rec['outTime']??'';$in2=$rec['inTime2']??'';
-            $absent=false;
-            if(!$in && !$in2)foreach($absentByUser[$email]??[] as $a)
-                if($a['startDate']<=$day && $a['endDate']>=$day){$absent=true;break;}
-            if($in!==''||$in2!=='')$t['hadir']++;
-            elseif($absent)$t['tidakHadir']++;
-            else $t['belumHadir']++;
-            if($in!=='' && $in>($sch['s1In']??'07:30'))$t['lewat']++;
-            if($out!=='' && $out<($sch['s1Out']??'16:30'))$t['balikAwal']++;
-        }
-        $summary[]=[$day,count($staff),$t['hadir'],$t['lewat'],$t['balikAwal'],$t['tidakHadir'],$t['belumHadir']];
-    }
     $presence=[];
     foreach($absence as $item) {
         if(($item['mode']??'')==='KEBERADAAN' &&
