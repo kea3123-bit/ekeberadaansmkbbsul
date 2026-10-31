@@ -166,43 +166,80 @@ function workspaceTableData_(data){
     })
   };
 }
+function workspaceReportSections_(data){
+  if(!Array.isArray(data.sections)||!data.sections.length)
+    return [{name:'LAPORAN',...workspaceTableData_(data)}];
+  if(data.sections.length>12)throw new Error('Laporan melebihi 12 bahagian.');
+  const safe=v=>String(v===null||v===undefined?'':v).slice(0,250);
+  let count=0;
+  return data.sections.map((s,i)=>{
+    const headers=Array.isArray(s.headers)?s.headers:[];
+    const rows=Array.isArray(s.rows)?s.rows:[];
+    if(!headers.length||headers.length>20 || rows.length>3500)
+      throw new Error('Format jadual laporan tidak sah.');
+    count+=rows.length;
+    if(count>5000)throw new Error('Terlalu banyak baris laporan; pilih tempoh lebih pendek.');
+    return {name:workspaceSanitizeName_(s.name||'LAPORAN '+(i+1)).slice(0,31),
+      headers:headers.map(safe),
+      rows:rows.map(r=>headers.map((_,j)=>safe(Array.isArray(r)?r[j]:'')))};
+  });
+}
 function workspaceExportPdf_(data){
-  const table=workspaceTableData_(data);
+  const sections=workspaceReportSections_(data);
+  const total=sections.reduce((n,s)=>n+s.rows.length,0);
+  if(total>1600)throw new Error('Terlalu banyak baris untuk PDF. Gunakan eksport Google Sheets atau pilih tempoh lebih pendek.');
   const title=workspaceSanitizeName_(data.title);
   const doc=DocumentApp.create(title+' [sementara]');
   try{
     const body=doc.getBody();
     body.appendParagraph(title).setHeading(DocumentApp.ParagraphHeading.HEADING1);
     body.appendParagraph(String(data.subtitle||'').slice(0,250));
-    const count=Math.min(table.rows.length,180); // PDF response must stay bounded.
-    const cells=[table.headers].concat(table.rows.slice(0,count));
-    if(cells.length) body.appendTable(cells);
-    if(table.rows.length>count)
-      body.appendParagraph('Nota: laporan melebihi '+count+' baris; gunakan eksport Google Sheets untuk data penuh.');
+    sections.forEach((section,index)=>{
+      if(index)body.appendPageBreak();
+      body.appendParagraph(section.name).setHeading(DocumentApp.ParagraphHeading.HEADING2);
+      if(section.name==='INDIVIDU' && sections.length>1){
+        // Each staff member receives a dedicated PDF page.
+        section.rows.forEach((row,i)=>{
+          if(i)body.appendPageBreak();
+          body.appendParagraph(String(row[0]||'Pegawai')).setHeading(DocumentApp.ParagraphHeading.HEADING2);
+          const detail=section.headers.map((header,j)=>[header,row[j]||'']);
+          body.appendTable(detail);
+        });
+      }else{
+        // No silent 180-row slice: everything present in this section is printed.
+        body.appendTable([section.headers].concat(section.rows));
+      }
+    });
     doc.saveAndClose();
     const file=DriveApp.getFileById(doc.getId());
-    const blob=file.getAs(MimeType.PDF);
-    // Apps Script Blob does not implement getSize(): only Drive File does.
-    // Read bytes once, check the real byte length and encode that same buffer.
-    const pdfBytes=blob.getBytes();
-    if(pdfBytes.length>2500000) throw new Error('PDF melebihi 2.5 MB. Kecilkan julat tarikh.');
+    const pdfBytes=file.getAs(MimeType.PDF).getBytes();
+    if(pdfBytes.length>2500000)throw new Error('PDF melebihi 2.5 MB. Pilih tempoh lebih pendek atau eksport ke Google Sheets.');
     return {ok:true,mimeType:'application/pdf',fileName:title+'.pdf',base64:Utilities.base64Encode(pdfBytes)};
-  }finally {
+  }finally{
     try{DriveApp.getFileById(doc.getId()).setTrashed(true);}catch(e){}
   }
 }
 function workspaceExportSheet_(data){
-  const table=workspaceTableData_(data);
+  const sections=workspaceReportSections_(data);
   const title=workspaceSanitizeName_(data.title);
   const ss=SpreadsheetApp.create(title);
-  const sh=ss.getSheets()[0];sh.setName('LAPORAN');
-  // Escape formula-style user-supplied cells to avoid spreadsheet formula injection.
+  const names=[];
+  // Escape formula-style imported cells and use batched setValues.
   const safe=value=>/^[=+\-@]/.test(value)?"'"+value:value;
-  const values=[table.headers].concat(table.rows).map(r=>r.map(safe));
-  sh.getRange(1,1,values.length,table.headers.length).setValues(values);
-  sh.getRange(1,1,1,table.headers.length).setFontWeight('bold').setBackground('#dce8ff');
-  sh.setFrozenRows(1);sh.autoResizeColumns(1,table.headers.length);
-  return {ok:true,url:ss.getUrl(),sheetName:'LAPORAN',sheetNames:['LAPORAN']};
+  sections.forEach((section,index)=>{
+    const sh=index===0?ss.getSheets()[0]:ss.insertSheet();
+    const name=section.name.slice(0,31);
+    sh.setName(name);names.push(name);
+    const header=section.headers;
+    const rows=[header].concat(section.rows).map(r=>r.map(safe));
+    for(let at=0;at<rows.length;at+=250){
+      const chunk=rows.slice(at,at+250);
+      sh.getRange(at+1,1,chunk.length,header.length).setValues(chunk);
+    }
+    sh.getRange(1,1,1,header.length).setFontWeight('bold').setBackground('#dce8ff');
+    sh.setFrozenRows(1);sh.autoResizeColumns(1,Math.min(header.length,12));
+  });
+  return {ok:true,url:ss.getUrl(),sheetName:names[0],sheetNames:names};
 }
 
 /**
