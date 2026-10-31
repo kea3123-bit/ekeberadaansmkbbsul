@@ -84,7 +84,7 @@ function workspace_report(array $user,string $method,$arg) {
     $filter=is_array($arg)?$arg:[];
     $title='Laporan eKeberadaan';
     $subtitle='';
-    $headers=[];$data=[];
+    $headers=[];$data=[];$sections=[];
 
     if($method==='generatePublicAbsencePresencePdf' || $method==='generateAbsencePresencePdf'){
         $from=valid_day((string)($filter['fromDate']??today()));
@@ -116,16 +116,12 @@ function workspace_report(array $user,string $method,$arg) {
     } elseif($method==='generateAttendancePresenceReportPdf'||$method==='generateAttendancePresenceReportSheet') {
         $from=valid_day((string)($filter['fromDate']??today()));
         $to=valid_day((string)($filter['toDate']??$from));
-        if($from>$to || (strtotime($to)-strtotime($from))>31*86400)throw new InvalidArgumentException('Julat melebihi 31 hari.');
-        $title='Laporan Ringkasan Kehadiran';
-        $headers=['Tarikh','Jumlah pegawai','Hadir','Lewat','Balik awal','Tidak hadir','Belum hadir'];
-        for($d=$from;$d<=$to;$d=date('Y-m-d',strtotime($d.' +1 day'))){
-            $report=admin_data($user,$d);
-            $s=$report['summary'];
-            $data[]=[$d,$s['total']??0,$s['hadir']??0,$s['lewat']??0,$s['balikAwal']??0,
-                $s['tidakHadir']??0,$s['belumHadir']??0];
-        }
-        $subtitle=$from.' hingga '.$to.' · Data MySQL (ringkasan)';
+        if($from>$to || (strtotime($to)-strtotime($from))>31*86400)
+            throw new InvalidArgumentException('Julat laporan melebihi 31 hari.');
+        require_once __DIR__.'/monthly_reports.php';
+        $sections=mysql_monthly_report_sections($user,$from,$to);
+        $title='Laporan Kehadiran Bulanan';
+        $subtitle=$from.' hingga '.$to.' · Data MySQL · Ringkasan / Lewat / Perakam / Individu';
     } elseif($method==='generateReportSheet'){
         $date=valid_day(is_string($arg)?$arg:(string)($filter['date']??today()));
         $report=admin_data($user,$date);
@@ -136,8 +132,16 @@ function workspace_report(array $user,string $method,$arg) {
             $x['category']??'',$x['jobTitle']??'',$x['status']??'',$x['inTime']??'',
             $x['outTime']??'',$x['inTime2']??'',$x['outTime2']??'',$x['source']??''];
     } else throw new RuntimeException('Jenis laporan Google Workspace tidak disokong.');
-    if(count($data)>250)throw new RuntimeException('Laporan melebihi 250 baris. Kecilkan penapis/julat tarikh.');
-    $out=workspace_rpc($type,['title'=>$title,'subtitle'=>$subtitle,'headers'=>$headers,'rows'=>$data]);
+    if(!$sections && count($data)>250)
+        throw new RuntimeException('Laporan melebihi 250 baris. Kecilkan penapis/julat tarikh.');
+    $payload=['title'=>$title,'subtitle'=>$subtitle,'headers'=>$headers,'rows'=>$data];
+    if($sections)$payload['sections']=$sections;
+    // The Apps Script HMAC transport rejects payloads above 175 KB. Fail
+    // explicitly instead of truncating staff data or silently dropping rows.
+    $bytes=strlen(json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE));
+    if($bytes>165000)
+        throw new RuntimeException('Data laporan terlalu besar untuk satu eksport. Pilih julat tarikh lebih pendek.');
+    $out=workspace_rpc($type,$payload);
     audit_event($user['emel'],'EKSPORT_GOOGLE_WORKSPACE',$method,$subtitle);
     return $out;
 }
