@@ -85,7 +85,7 @@ function rpc(string $fn,array $a) {
         return pin_recovery_request($a[0]??'');
       case 'completePinRecovery':
         require_once __DIR__.'/pin_recovery.php';
-        return pin_recovery_confirm($a[0]??'',$a[1]??'',$a[2]??'',$a[3]??'');
+        return pin_recovery_confirm($a[0]??'',$a[1]??'',$a[2]??'');
       case 'getLoginPageData':
         $s=settings_raw();
         // Login must remain available during staggered cPanel deployment.
