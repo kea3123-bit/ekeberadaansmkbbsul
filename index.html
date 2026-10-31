@@ -33,7 +33,7 @@
         <button id="continueLastAccountBtn" class="btn primary btn-login-full" type="button" onclick="continueLastAccount()">Teruskan sebagai pengguna ini</button>
         <button class="change-account-link" type="button" onclick="useDifferentAccount()">Bukan anda? Gunakan akaun DELIMa lain</button>
         <p class="trusted-device-note">Peranti ini boleh kekal log masuk sehingga 30 hari. Jika sesi tamat, anda boleh log masuk semula.</p>
-        <button id="forgotPinReturnBtn" class="change-account-link hidden" type="button" onclick="openPinRecovery()">Lupa PIN? Set semula melalui emel DELIMa</button>
+        <button id="forgotPinReturnBtn" class="change-account-link hidden" type="button" onclick="openPinRecovery()">Lupa PIN? Cipta PIN baharu</button>
       </div>
 
       <div id="loginStepEmail" class="login-step">
@@ -45,8 +45,8 @@
           <span class="delima-icon" aria-hidden="true">→</span>
           <span><b>Teruskan</b><small>Semak akaun DELIMa berdaftar</small></span>
         </button>
-        <p class="tiny center">Akaun baharu atau PIN terlupa? Gunakan pengesahan emel DELIMa.</p>
-        <button id="forgotPinEmailBtn" class="change-account-link hidden" type="button" onclick="openPinRecovery()">Lupa PIN? Dapatkan kod melalui emel</button>
+        <p class="tiny center">Lupa PIN? Cipta PIN baharu sepanjang tempoh reset sementara.</p>
+        <button id="forgotPinEmailBtn" class="change-account-link hidden" type="button" onclick="openPinRecovery()">Lupa PIN? Cipta PIN baharu</button>
       </div>
 
       <div id="loginStepPin" class="login-step hidden">
@@ -60,7 +60,7 @@
           </div>
         </label>
         <div class="pin-helper">Masukkan PIN 6 digit anda.</div>
-        <button id="forgotPinPinBtn" class="change-account-link hidden" type="button" onclick="openPinRecovery()">Lupa PIN? Reset sendiri melalui emel DELIMa</button>
+        <button id="forgotPinPinBtn" class="change-account-link hidden" type="button" onclick="openPinRecovery()">Lupa PIN? Cipta PIN baharu</button>
         <button id="pinLoginBtn" class="btn primary btn-login-full" type="button" onclick="submitPinLogin()">Masuk</button>
         <p class="trusted-device-note">Selepas berjaya, peranti ini boleh diingati sehingga 30 hari.</p>
       </div>
@@ -92,19 +92,16 @@
       <div id="loginStepRecovery" class="login-step hidden">
         <div class="first-login-badge">RESET PIN SEMENTARA</div>
         <h2>Cipta PIN baharu</h2>
-        <p class="login-copy">Kami telah meminta kod 6 digit dihantar ke emel DELIMa berdaftar. Semak Inbox atau Spam. Kod sah selama 30 minit.</p>
+        <p class="login-copy">Tetapkan PIN baharu 6 digit. Fungsi reset sementara ini tamat pada 7 November 2026.</p>
         <p id="recoveryEmailLabel" class="tiny center"></p>
-        <label class="login-field"><span>Kod pengesahan 6 digit daripada emel</span>
-          <input id="recoveryCode" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 digit" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
-        </label>
         <label class="login-field password-field pin-field"><span>PIN baharu</span>
           <input id="recoveryPin" type="password" autocomplete="new-password" inputmode="numeric" maxlength="6" placeholder="6 digit" oninput="sanitizePinInput(this)">
         </label>
         <label class="login-field password-field pin-field"><span>Sahkan PIN baharu</span>
           <input id="recoveryPinConfirm" type="password" autocomplete="new-password" inputmode="numeric" maxlength="6" placeholder="Ulang PIN" oninput="sanitizePinInput(this)">
         </label>
-        <button id="recoveryConfirmBtn" class="btn primary btn-login-full" type="button" onclick="submitPinRecovery()">Sahkan kod & tetapkan PIN</button>
-        <button class="change-account-link" type="button" onclick="resendPinRecovery()">Hantar kod baharu (had keselamatan dikenakan)</button>
+        <button id="recoveryConfirmBtn" class="btn primary btn-login-full" type="button" onclick="submitPinRecovery()">Simpan PIN baharu & Teruskan</button>
+        
         <button class="change-account-link" type="button" onclick="useDifferentAccount()">← Kembali ke login</button>
       </div>
 
@@ -544,7 +541,7 @@
 
   <div id="modal" class="modal hidden" onclick="if(event.target===this) closeModal()"><div class="modal-card"><button class="modal-close" onclick="closeModal()">×</button><div id="modalContent"></div></div></div>
   <div id="toast" class="toast hidden"></div>
-  <script defer src="./assets/app.31e17b2831fa.js"></script>
+  <script defer src="./assets/app.2bedca1e3cf4.js"></script>
 <script>
 (() => {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
