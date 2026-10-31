@@ -225,7 +225,7 @@ const sheetResult=ctx.workspaceExportSheet_({title:'Laporan Bulanan',sections:mo
 assert.equal(sheetResult.ok,true);
 assert.equal(sheetResult.sheetNames.length,2);
 assert.equal(sheetValues.length,2);
-assert.match(sheetValues[1].rows[2][0],/^'=HYPERLINK/,'Untrusted report formulas must be escaped');
+assert.match(sheetValues[1].rows[3][0],/^'=HYPERLINK/,'Untrusted report formulas must be escaped');
 
 const emailData={
   to:'staff@example.test',
