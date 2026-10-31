@@ -203,6 +203,21 @@ function settings_raw(): array {
     }
     return $defaults;
 }
+function public_holidays_safe(?string $from=null,?string $to=null): array {
+    $sql='SELECT tarikh,nama,jenis,sumber FROM cuti_umum WHERE (aktif=1 OR aktif IS NULL)';
+    $args=[];
+    if($from!==null && $to!==null) {
+        $sql.=' AND tarikh BETWEEN ? AND ?';
+        $args=[$from,$to];
+    }
+    $sql.=' ORDER BY tarikh DESC LIMIT 500';
+    try {return rows($sql,$args);}
+    catch(PDOException $e) {
+        if((int)($e->errorInfo[1]??0)===1146)return [];
+        throw $e;
+    }
+}
+
 function public_settings(array $s): array {
     $out=['schoolName'=>$s['SCHOOL_NAME']??'','schoolLat'=>$s['SCHOOL_LAT']??'','schoolLng'=>$s['SCHOOL_LNG']??'',
         'radiusM'=>(float)($s['RADIUS_M']??200),'maxGpsAccuracyM'=>(float)($s['MAX_GPS_ACCURACY_M']??120),
