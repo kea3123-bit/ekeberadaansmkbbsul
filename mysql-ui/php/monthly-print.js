@@ -230,4 +230,7 @@ function showMonthlyReportPreview(report){
     setTimeout(()=>URL.revokeObjectURL(url),15000);
   });
 }
+window.showMonthlyReportPreview=showMonthlyReportPreview;
+window.closeMonthlyHtmlReport=closeMonthlyHtmlReport;
+window.buildMonthlyHtmlReport=buildMonthlyHtmlReport;
 })();
