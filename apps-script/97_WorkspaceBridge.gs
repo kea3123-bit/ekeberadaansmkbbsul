@@ -182,8 +182,11 @@ function workspaceExportPdf_(data){
     doc.saveAndClose();
     const file=DriveApp.getFileById(doc.getId());
     const blob=file.getAs(MimeType.PDF);
-    if(blob.getSize()>2500000) throw new Error('PDF melebihi 2.5 MB. Kecilkan julat tarikh.');
-    return {ok:true,mimeType:'application/pdf',fileName:title+'.pdf',base64:Utilities.base64Encode(blob.getBytes())};
+    // Apps Script Blob does not implement getSize(): only Drive File does.
+    // Read bytes once, check the real byte length and encode that same buffer.
+    const pdfBytes=blob.getBytes();
+    if(pdfBytes.length>2500000) throw new Error('PDF melebihi 2.5 MB. Kecilkan julat tarikh.');
+    return {ok:true,mimeType:'application/pdf',fileName:title+'.pdf',base64:Utilities.base64Encode(pdfBytes)};
   }finally {
     try{DriveApp.getFileById(doc.getId()).setTrashed(true);}catch(e){}
   }
