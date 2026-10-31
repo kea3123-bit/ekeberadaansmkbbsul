@@ -448,7 +448,7 @@ const state = {
   function openPinRecovery(){
     if(!state.pinRecoveryAvailable)return showLoginError('Tempoh reset PIN sementara tidak tersedia.');
     const email=String(state.selectedAccount?.email||document.getElementById('delimaEmail')?.value||readLastAccount()?.email||'').trim().toLowerCase();
-    if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email))return showLoginError('Masukkan emel DELIMa berdaftar dahulu.');
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return showLoginError('Masukkan emel DELIMa berdaftar dahulu.');
     state.recoveryEmail=email;
     hideLoginError();
     text('recoveryEmailLabel',email);
@@ -471,9 +471,9 @@ const state = {
   async function submitPinRecovery(){
     if(!state.pinRecoveryAvailable)return showLoginError('Tempoh reset PIN sementara telah tamat.');
     const email=state.recoveryEmail;
-    const code=String(document.getElementById('recoveryCode')?.value||'').replace(/\\D/g,'');
-    const pin=String(document.getElementById('recoveryPin')?.value||'').replace(/\\D/g,'');
-    const confirm=String(document.getElementById('recoveryPinConfirm')?.value||'').replace(/\\D/g,'');
+    const code=String(document.getElementById('recoveryCode')?.value||'').replace(/\D/g,'');
+    const pin=String(document.getElementById('recoveryPin')?.value||'').replace(/\D/g,'');
+    const confirm=String(document.getElementById('recoveryPinConfirm')?.value||'').replace(/\D/g,'');
     if(!email)return showLoginError('Mulakan semula dari halaman login.');
     if(code.length!==6)return showLoginError('Masukkan kod pengesahan 6 digit daripada emel.');
     if(pin.length!==6||pin!==confirm)return showLoginError('PIN baharu mesti 6 digit dan kedua-duanya sepadan.');
