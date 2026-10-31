@@ -176,7 +176,7 @@ const pdfInput={
   title:'Laporan Bulanan',subtitle:'October 2026',
   headers:['Nama','Masuk'],rows:[['Staf A','08:20']]
 };
-const pdfResponse=jsonResponse(signedCall('exportPdf','abcdefabcdefabcdefabcdefabcd01',Math.floor(Date.now()/1000),pdfInput));
+const pdfResponse=jsonResponse(signedCall('exportPdf','abcdefabcdefabcdefabcdefabcdef01',Math.floor(Date.now()/1000),pdfInput));
 assert.equal(pdfResponse.ok,true,'PDF export must succeed with a Blob that lacks getSize');
 assert.equal(pdfResponse.result.mimeType,'application/pdf');
 assert.equal(pdfResponse.result.fileName,'Laporan Bulanan.pdf');
@@ -189,7 +189,7 @@ ctx.DriveApp.getFileById=id=>({
   getAs:()=>({getBytes:()=>[...bigFile]}),
   setTrashed: value=>trashed.push(value)
 });
-const tooBig=jsonResponse(signedCall('exportPdf','abcdefabcdefabcdefabcdefabcd02',Math.floor(Date.now()/1000),pdfInput));
+const tooBig=jsonResponse(signedCall('exportPdf','abcdefabcdefabcdefabcdefabcdef02',Math.floor(Date.now()/1000),pdfInput));
 assert.equal(tooBig.ok,false,'over 2.5 MB PDF must not be returned');
 assert.match(tooBig.error,/2.5 MB/);
 assert.equal(trashed.length,2,'oversized temporary document must still be deleted');
