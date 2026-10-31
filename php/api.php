@@ -585,7 +585,7 @@ function submit_absence(array $u,array $p): array {
     if ($mode==='KEBERADAAN'&&(!$st||!$en||$st>=$en)) throw new InvalidArgumentException('Masa Keberadaan tidak sah.');
     $id='TH-'.strtoupper(bin2hex(random_bytes(8)));$now=excel_number(now_myt());
     $r=one('SELECT COALESCE(MAX(_source_row),1)+1 AS n FROM tidak_hadir');
-    execute_sql('INSERT INTO tidak_hadir (_source_row,id,dihantarpada,emel,nama,kategori,jenis,tarikhmula,tarikhakhir,catatan,status,dikemaskinipada,mod,masamula,masaakhir,jawatan) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    execute_sql('INSERT INTO tidak_hadir (_source_row,id,dihantarpada,emel,nama,kategori,jenis,tarikhmula,tarikhakhir,catatan,status,dikemaskinipada,`mod`,masamula,masaakhir,jawatan) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       [(int)$r['n'],$id,$now,$u['emel'],$u['nama'],$u['kategori'],$type,(int)excel_number($start),(int)excel_number($end),
       substr((string)($p['note']??''),0,500),'MENUNGGU',$now,$mode,$st,$en,$u['jawatan']??'']);
     audit_event($u['emel'],'MOHON_TIDAK_HADIR',$id,$type);
