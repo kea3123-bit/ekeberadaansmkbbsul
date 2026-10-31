@@ -47,7 +47,7 @@ function create_session($u) { return ['ok'=>true,'token'=>'test-session','device
 function audit_event($actor,$act,$target,$detail=''){}
 require_once __DIR__.'/../pin_recovery.php';
 function check($ok,$why){if(!$ok)throw new RuntimeException($why);}
-check(pin_recovery_public_status()['codeLength']===8,'Expected 8-digit code');
+check(pin_recovery_public_status()['codeLength']===6,'Expected 6-digit code');
 check(pin_recovery_public_status()['codeMinutes']===30,'OTP TTL must be 30 minutes');
 check(pin_recovery_public_status()['endsAt']==='2026-11-07T23:59:59+08:00','Disable deadline missing');
 // CI may execute after the temporary window has closed: only exercise recovery
@@ -59,9 +59,9 @@ if(pin_recovery_available()){
   $result=pin_recovery_request($knownEmail);
   check($result['ok']===true && count($outbox)===1,'Queued email expected');
   check($record!==null && strpos($record['code_hash'],'$2')===0,'Code must be hashed at rest');
-  check(preg_match('/[0-9]{8}/',$outbox[0][3],$match)===1,'8-digit code absent from queued mail');
+  check(preg_match('/[0-9]{6}/',$outbox[0][3],$match)===1,'6-digit code absent from queued mail');
   $code=$match[0];
-  check(!password_verify('00000000',$record['code_hash']),'Unrelated code accepted');
+  check(!password_verify('000000',$record['code_hash']),'Unrelated code accepted');
   pin_recovery_request($knownEmail);
   check(count($outbox)===1,'Cooldown must prevent repeated requests');
   try{pin_recovery_confirm($knownEmail,'00000000','654321','654321');throw new RuntimeException('Invalid code was accepted');}
