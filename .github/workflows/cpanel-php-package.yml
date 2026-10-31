@@ -41,6 +41,8 @@ jobs:
           php php/tests/admin-report-settings-test.php
           php php/tests/absence-submit-sql-test.php
           php php/tests/monthly-report-test.php
+          node --check mysql-ui/php/monthly-print.js
+          node mysql-ui/tests/monthly-print.test.js
           php php/tests/public-users-bulk-test.php
           php php/tests/profile-photo-lookup-test.php
           php php/tests/email-outbox-test.php
