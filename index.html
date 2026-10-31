@@ -95,7 +95,7 @@
         <p class="login-copy">Kami telah meminta kod 6 digit dihantar ke emel DELIMa berdaftar. Semak Inbox atau Spam. Kod sah selama 30 minit.</p>
         <p id="recoveryEmailLabel" class="tiny center"></p>
         <label class="login-field"><span>Kod pengesahan 6 digit daripada emel</span>
-          <input id="recoveryCode" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 digit" oninput="this.value=this.value.replace(/\\D/g,'').slice(0,6)">
+          <input id="recoveryCode" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 digit" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)">
         </label>
         <label class="login-field password-field pin-field"><span>PIN baharu</span>
           <input id="recoveryPin" type="password" autocomplete="new-password" inputmode="numeric" maxlength="6" placeholder="6 digit" oninput="sanitizePinInput(this)">
