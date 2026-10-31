@@ -410,8 +410,7 @@ function punch_card(array $u,string $month): array {
     // but never hides actual staff punches.
     $weekdays=array_filter(array_map('trim',explode(',',strtoupper((string)($s['WORKING_DAYS']??'SUN,MON,TUE,WED,THU')))));
     $weekDays=array_fill_keys($weekdays,true);
-    $holidayRows=rows('SELECT tarikh,nama,jenis,sumber FROM cuti_umum WHERE tarikh BETWEEN ? AND ? AND (aktif=1 OR aktif IS NULL)',
-        [$start,$end]);
+    $holidayRows=public_holidays_safe($start,$end);
     $holidays=[];
     foreach($holidayRows as $h) $holidays[date_key($h['tarikh'])]=$h;
     $isRecorded=static fn($row)=>!empty($row['inTime'])||!empty($row['outTime'])||!empty($row['inTime2'])||!empty($row['outTime2']);
@@ -564,7 +563,7 @@ function admin_data(array $admin,string $day): array {
       'settings'=>array_merge(public_settings($s),[
           'profileRootFolderId'=>(string)($s['PROFILE_ROOT_FOLDER_ID']??'')
       ]),'report'=>$report,'summary'=>$sum,
-      'publicHolidays'=>rows('SELECT tarikh AS date,nama AS name,jenis AS type,sumber AS source FROM cuti_umum WHERE (aktif=1 OR aktif IS NULL) ORDER BY tarikh DESC LIMIT 500')];
+      'publicHolidays'=>array_map(static fn($h)=>['date'=>$h['tarikh'],'name'=>$h['nama'],'type'=>$h['jenis'],'source'=>$h['sumber']],public_holidays_safe())];
 }
 function all_absence_rows(): array {
     $list=rows('SELECT * FROM tidak_hadir ORDER BY _row_id DESC');
