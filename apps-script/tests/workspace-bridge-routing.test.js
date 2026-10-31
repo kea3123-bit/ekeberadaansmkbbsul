@@ -144,6 +144,56 @@ const unauthorized=jsonResponse(signedCall('findPhoto','abcdefabcdefabcdefabcdef
 assert.equal(unauthorized.ok,true);
 assert.equal(unauthorized.result.fileId,'');
 
+// Regression: DocumentApp exports an Apps Script Blob, which has getBytes()
+// but NOT getSize(). Verify the signed PHP/MySQL PDF export path end-to-end.
+const pdfData=Buffer.from('%PDF-1.4\\nTest file for eKeberadaan PDF export');
+const trashed=[];
+const paragraphs=[],tables=[];
+ctx.MimeType={PDF:'application/pdf'};
+ctx.DocumentApp={
+  ParagraphHeading:{HEADING1:'H1'},
+  create: name=>({
+    getId:()=> 'testDocumentId123456',
+    getBody:()=>({
+      appendParagraph(text){paragraphs.push(text);return {setHeading:()=>this};},
+      appendTable(cells){tables.push(cells);return this;}
+    }),
+    saveAndClose(){}
+  })
+};
+ctx.DriveApp.getFileById = id=>{
+  assert.equal(id,'testDocumentId123456');
+  return {
+    getAs:mime=>{
+      assert.equal(mime,'application/pdf');
+      // Only real Blob methods; getSize() intentionally absent.
+      return {getBytes:()=>[...pdfData]};
+    },
+    setTrashed: value=>trashed.push(value)
+  };
+};
+const pdfInput={
+  title:'Laporan Bulanan',subtitle:'October 2026',
+  headers:['Nama','Masuk'],rows:[['Staf A','08:20']]
+};
+const pdfResponse=jsonResponse(signedCall('exportPdf','abcdefabcdefabcdefabcdefabcd01',Math.floor(Date.now()/1000),pdfInput));
+assert.equal(pdfResponse.ok,true,'PDF export must succeed with a Blob that lacks getSize');
+assert.equal(pdfResponse.result.mimeType,'application/pdf');
+assert.equal(pdfResponse.result.fileName,'Laporan Bulanan.pdf');
+assert.equal(Buffer.from(pdfResponse.result.base64,'base64').toString('utf8'),pdfData.toString('utf8'));
+assert.equal(tables.length,1);
+assert.deepEqual(trashed,[true],'temporary Google Docs file must be trashed');
+const originalPdfBytes=pdfData;
+const bigFile=Buffer.alloc(2500001);
+ctx.DriveApp.getFileById=id=>({
+  getAs:()=>({getBytes:()=>[...bigFile]}),
+  setTrashed: value=>trashed.push(value)
+});
+const tooBig=jsonResponse(signedCall('exportPdf','abcdefabcdefabcdefabcdefabcd02',Math.floor(Date.now()/1000),pdfInput));
+assert.equal(tooBig.ok,false,'over 2.5 MB PDF must not be returned');
+assert.match(tooBig.error,/2.5 MB/);
+assert.equal(trashed.length,2,'oversized temporary document must still be deleted');
+
 const emailData={
   to:'staff@example.test',
   subject:'Keputusan eKeberadaan',
@@ -165,4 +215,4 @@ assert.equal(delivered.length,1);
 const invalidRecipient=jsonResponse(signedCall('sendEmail','0123456789abcdef0123456789abcdec',Math.floor(Date.now()/1000),{...emailData,to:'not-an-address'}));
 assert.equal(invalidRecipient.ok,false);
 assert.equal(delivered.length,1);
-console.log('PASS Workspace JSON route, HMAC, replay, expiry, legacy HTML, signed photo lookup and folder diagnostics, signed email and deduplication');
+console.log('PASS Workspace JSON route, HMAC, replay, expiry, legacy HTML, signed photo lookup and folder diagnostics, bounded PDF Blob export, signed email and deduplication');
