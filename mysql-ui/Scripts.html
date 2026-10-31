@@ -284,7 +284,7 @@ const state = {
 
   function isAuthSessionError(err){
     const msg=String(err?.message||err||'');
-    return /Sesi tidak sah|Sesi rosak|Sesi telah tamat|Sesi peranti|Trusted device|log masuk semula|tidak lagi aktif|dibatalkan kerana|PIN akaun perlu/i.test(msg);
+    return /Sesi tidak sah|Sesi rosak|Sesi tamat|Sesi telah tamat|Sesi peranti|Trusted device|log masuk semula|tidak lagi aktif|dibatalkan kerana|PIN akaun perlu/i.test(msg);
   }
 
   function readLastAccount(){
@@ -449,7 +449,7 @@ const state = {
       const res=await runServer('setFirstPin',state.changeTicket,p1,p2,clientInfo,loadStoredDevice());
       state.changeTicket=''; state.setupPurpose=''; applySessionResult(res);
       rememberLastAccount(res.boot?.user||state.selectedAccount);
-      toast('PIN berjaya ditetapkan. Peranti ini diingati selama 7 hari.',4200);
+      toast('PIN berjaya ditetapkan. Peranti ini diingati sehingga 30 hari.',4200);
       enterApp();
     }catch(e){showLoginError(e.message);}
     finally{setButtonBusy(btn,false,'');}
@@ -491,8 +491,8 @@ const state = {
     if(!deviceToken)return;
     state.deviceToken=deviceToken;
     safeLocalSet('ek_device',deviceToken);
-    writeCookie('ek_device',deviceToken,7*24*60*60,false);
-    writeCookie('ek_device_p',deviceToken,7*24*60*60,true);
+    writeCookie('ek_device',deviceToken,30*24*60*60,false);
+    writeCookie('ek_device_p',deviceToken,30*24*60*60,true);
   }
   function loadStoredSession(){
     let current='';
