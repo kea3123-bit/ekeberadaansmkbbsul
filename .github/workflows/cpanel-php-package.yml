@@ -82,7 +82,7 @@ jobs:
           set -euo pipefail
           cp php/migrations/20261031_pin_recovery.sql ekeberadaansmkbbsul-pin-recovery.sql
           grep -Fq 'CREATE TABLE IF NOT EXISTS ek_pin_recovery' ekeberadaansmkbbsul-pin-recovery.sql
-          ! grep -Eiq '(^|[[:space:]])(DROP|TRUNCATE)[[:space:]]' ekeberadaansmkbbsul-pin-recovery.sql
+          ! grep -Eiv '^[[:space:]]*--' ekeberadaansmkbbsul-pin-recovery.sql | grep -Eiq '(^|[[:space:]])(DROP|TRUNCATE)[[:space:]]'
 
       - uses: actions/upload-artifact@v4
         with:
