@@ -105,6 +105,21 @@ jobs:
           path: ekeberadaansmkbbsul-audit-holidays.sql
           retention-days: 14
 
+      - name: Package one safe additive audit migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp php/migrations/20261031_audit_additive.sql ekeberadaansmkbbsul-audit-additive.sql
+          grep -Fq 'CREATE TABLE IF NOT EXISTS audit' ekeberadaansmkbbsul-audit-additive.sql
+          grep -Fq 'CREATE TABLE IF NOT EXISTS cuti_umum' ekeberadaansmkbbsul-audit-additive.sql
+          ! grep -Eiv '^[[:space:]]*--' ekeberadaansmkbbsul-audit-additive.sql | grep -Eiq '(^|[[:space:]])(DROP|TRUNCATE)[[:space:]]'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ekeberadaansmkbbsul-audit-additive-sql
+          path: ekeberadaansmkbbsul-audit-additive.sql
+          retention-days: 14
+
       - name: Package 403 permission recovery with safe ZIP modes
         shell: bash
         run: |
