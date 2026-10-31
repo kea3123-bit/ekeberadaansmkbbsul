@@ -227,6 +227,28 @@ assert.equal(sheetResult.sheetNames.length,2);
 assert.equal(sheetValues.length,2);
 assert.match(sheetValues[1].rows[3][0],/^'=HYPERLINK/,'Untrusted report formulas must be escaped');
 
+// Color/structure regression against user's 96-page October report.
+assert.equal(ctx.workspaceReportColors_().aqua,'#C9F5F5');
+assert.equal(ctx.workspaceReportColors_().blue,'#91C6F4');
+assert.equal(ctx.workspaceReportColors_().amber,'#FFD09B');
+assert.equal(ctx.workspaceReportColors_().red,'#FF2A20');
+assert.equal(ctx.workspaceReportColors_().green,'#2D9D68');
+assert.equal(ctx.workspaceReportCellColor_('BALIK AWAL','LEWAT BALIK AWAL',false),'#FF2A20');
+assert.equal(ctx.workspaceReportCellColor_('HUJUNG MINGGU','PERAKAM 01-07',false),'#FFD09B');
+assert.equal(ctx.workspaceReportCellColor_('07:21','PERAKAM 01-07',false),'#FFFFFF');
+const samplePeople=ctx.workspaceReportIndividualRows_([
+  {name:'PERAKAM 01-07',headers:['Nama','Emel','2026-10-01','2026-10-02'],rows:[
+    ['Staf A','staff@example.test','07:15/15:00|LEWAT','HUJUNG MINGGU']]},
+  {name:'INDIVIDU',headers:['Nama','Emel','Kategori'],rows:[['Staf A','staff@example.test','PPP']]}
+]);
+assert.equal(samplePeople.length,1);
+assert.equal(samplePeople[0].days.length,2);
+assert.equal(samplePeople[0].days[0][6],'LEWAT');
+assert.equal(samplePeople[0].days[1][6],'HUJUNG MINGGU');
+const individualLayout=ctx.workspaceReportIndividualTable_(samplePeople[0]);
+assert.equal(individualLayout.headers.length,16);
+assert.equal(individualLayout.rows.length,2);
+
 const emailData={
   to:'staff@example.test',
   subject:'Keputusan eKeberadaan',
