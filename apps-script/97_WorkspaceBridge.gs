@@ -292,34 +292,49 @@ function workspaceReportIndividualTable_(person){
 
 function workspaceExportPdf_(data){
   const sections=workspaceReportSections_(data);
-  const total=sections.reduce((n,s)=>n+s.rows.length,0);
-  if(total>1600)throw new Error('Terlalu banyak baris untuk PDF. Gunakan eksport Google Sheets atau pilih tempoh lebih pendek.');
   const title=workspaceSanitizeName_(data.title);
+  const monthly=sections.some(s=>s.name==='RINGKASAN')&&sections.some(s=>s.name==='INDIVIDU');
+  const individuals=monthly?workspaceReportIndividualRows_(sections):[];
+  if(individuals.length>150)
+    throw new Error('Laporan melebihi 150 staf. Gunakan eksport Google Sheets.');
   const doc=DocumentApp.create(title+' [sementara]');
-  try{
+  try {
     const body=doc.getBody();
-    body.appendParagraph(title).setHeading(DocumentApp.ParagraphHeading.HEADING1);
-    body.appendParagraph(String(data.subtitle||'').slice(0,250));
+    if(body.setMarginTop)body.setMarginTop(28);
+    if(body.setMarginBottom)body.setMarginBottom(27);
+    if(body.setMarginLeft)body.setMarginLeft(25);
+    if(body.setMarginRight)body.setMarginRight(25);
+    let page=0;
     sections.forEach((section,index)=>{
-      if(index)body.appendPageBreak();
-      body.appendParagraph(section.name).setHeading(DocumentApp.ParagraphHeading.HEADING2);
-      if(section.name==='INDIVIDU' && sections.length>1){
-        // Each staff member receives a dedicated PDF page.
-        section.rows.forEach((row,i)=>{
-          if(i)body.appendPageBreak();
-          body.appendParagraph(String(row[0]||'Pegawai')).setHeading(DocumentApp.ParagraphHeading.HEADING2);
-          const detail=section.headers.map((header,j)=>[header,row[j]||'']);
-          body.appendTable(detail);
+      if(section.name==='INDIVIDU'&&monthly){
+        individuals.forEach((person,i)=>{
+          if(page++)body.appendPageBreak();
+          workspaceDocReportHeading_(body,'Laporan Individu',
+             'Bil: '+person.bil+'  |  Nama: '+person.name+'  |  '+person.category+
+             '  |  Tempoh: '+String(data.subtitle||'').split(' · ')[0]);
+          const detail=workspaceReportIndividualTable_(person);
+          const table=body.appendTable([detail.headers].concat(detail.rows));
+          workspaceDocStyleTable_(table,detail.headers,detail.rows,'INDIVIDU');
+          const note=body.appendParagraph('Petunjuk: Merah = Lewat / Balik Awal   •   Jingga = Tidak Hadir / Cuti / Hujung Minggu');
+          if(note.editAsText&&note.editAsText().setFontSize)note.editAsText().setFontSize(7);
         });
-      }else{
-        // No silent 180-row slice: everything present in this section is printed.
-        body.appendTable([section.headers].concat(section.rows));
+        return;
       }
+      if(page++)body.appendPageBreak();
+      let heading=section.name;
+      if(section.name==='RINGKASAN')heading='SMK Bandar Baru Sungai Lalang — Ringkasan Kehadiran';
+      if(section.name==='LEWAT BALIK AWAL')heading='SMK Bandar Baru Sungai Lalang — Laporan Lewat / Balik Awal';
+      if(/^PERAKAM /.test(section.name))heading='Laporan Perakam Waktu — '+section.name;
+      workspaceDocReportHeading_(body,heading,String(data.subtitle||'').split(' · ')[0]);
+      // Never silently truncate monthly report rows.
+      const table=body.appendTable([section.headers].concat(section.rows));
+      workspaceDocStyleTable_(table,section.headers,section.rows,section.name);
     });
     doc.saveAndClose();
     const file=DriveApp.getFileById(doc.getId());
     const pdfBytes=file.getAs(MimeType.PDF).getBytes();
-    if(pdfBytes.length>2500000)throw new Error('PDF melebihi 2.5 MB. Pilih tempoh lebih pendek atau eksport ke Google Sheets.');
+    if(pdfBytes.length>2500000)
+      throw new Error('PDF melebihi 2.5 MB. Gunakan eksport Google Sheets atau pilih tempoh lebih pendek.');
     return {ok:true,mimeType:'application/pdf',fileName:title+'.pdf',base64:Utilities.base64Encode(pdfBytes)};
   }finally{
     try{DriveApp.getFileById(doc.getId()).setTrashed(true);}catch(e){}
