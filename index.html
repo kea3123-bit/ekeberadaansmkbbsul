@@ -365,7 +365,7 @@
               <section class="report-builder">
                 <div class="report-builder-head">
                   <div><div class="eyebrow">Jana laporan</div><h3>Laporan Kehadiran Bulanan</h3><p>Pilih bulan untuk menjana laporan. Menggunakan format Ringkasan, Lewat/Balik Awal, Laporan Perakam Waktu dan Laporan Individu. Data Tidak Hadir dan Keberadaan digabungkan secara automatik.</p></div>
-                  <div class="report-builder-actions"><button id="monthlyPrintReportButton" class="btn primary" type="button" onclick="generateAttendancePresenceReportPdfClient()">Cetak / Simpan PDF (HTML)</button><button class="btn ghost" type="button" onclick="generateAttendancePresenceReportSheetClient()">Jana Template ke Sheet</button></div>
+                  <div class="report-builder-actions"><button id="monthlyPrintReportButton" class="btn primary" type="button" onclick="generateAttendancePresenceReportPdfClient()">Jana Laporan PDF</button><button class="btn ghost" type="button" onclick="generateAttendancePresenceReportSheetClient()">Jana Template ke Sheet</button></div>
                 </div>
                 <div class="report-builder-grid report-builder-monthly">
                   <label>Bulan laporan<input id="attendanceReportMonth" type="month" onchange="updateAttendanceReportPeriod()" required></label>
@@ -541,7 +541,7 @@
 
   <div id="modal" class="modal hidden" onclick="if(event.target===this) closeModal()"><div class="modal-card"><button class="modal-close" onclick="closeModal()">×</button><div id="modalContent"></div></div></div>
   <div id="toast" class="toast hidden"></div>
-  <script defer src="./assets/app.5fc119d3b879.js"></script>
+  <script defer src="./assets/app.5fc119d3b879.js?v=report-native-html-20261031"></script>
 <script>
 (() => {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;

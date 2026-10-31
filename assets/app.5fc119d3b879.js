@@ -1842,17 +1842,65 @@ function ensureAbsenceManageTableLayout(){
     const fromDate=month+'-01'<systemStart?systemStart:month+'-01';
     return {type:'MONTHLY',month,fromDate,toDate:`${month}-${String(lastDay).padStart(2,'0')}`};
   }
+  function showMonthlyNativeHtmlInline(html){
+    const previous=document.getElementById('ek-native-report-dialog');
+    if(previous)previous.remove();
+    const host=document.createElement('div');
+    host.id='ek-native-report-dialog';
+    Object.assign(host.style,{position:'fixed',inset:'0',background:'#eef3f5',zIndex:'1000000',display:'flex',flexDirection:'column'});
+    const controls=document.createElement('div');
+    Object.assign(controls.style,{display:'flex',gap:'10px',alignItems:'center',background:'#164e69',color:'#fff',padding:'12px',flexWrap:'wrap'});
+    const heading=document.createElement('strong');heading.textContent='Laporan eKeberadaan — A4 Landscape';
+    const printBtn=document.createElement('button');printBtn.type='button';printBtn.textContent='Cetak / Simpan PDF';
+    const closeBtn=document.createElement('button');closeBtn.type='button';closeBtn.textContent='Tutup';
+    for(const item of [printBtn,closeBtn]){item.style.padding='9px 15px';item.style.borderRadius='7px';item.style.border='0';item.style.cursor='pointer';}
+    controls.append(heading,printBtn,closeBtn);
+    const frame=document.createElement('iframe');
+    frame.title='Laporan eKeberadaan — cetak atau simpan PDF';
+    frame.style.cssText='border:0;flex:1;min-height:0;width:100%;background:#fff';
+    frame.srcdoc=html;
+    host.append(controls,frame);
+    document.body.appendChild(host);
+    printBtn.addEventListener('click',()=>frame.contentWindow?.print());
+    closeBtn.addEventListener('click',()=>host.remove());
+  }
   async function generateAttendancePresenceReportPdfClient(){
     const btn=document.getElementById('monthlyPrintReportButton');
-    if(btn)btn.disabled=true;
+    let popup=null;
     try{
       const period=getAttendanceReportPeriod();
+      // Opening inside the click event keeps Safari/iOS and PWA popup handling reliable.
+      popup=window.open('','_blank');
+      if(popup){
+        popup.document.open();
+        popup.document.write('<!doctype html><html lang="ms"><meta charset="utf-8"><title>Menjana laporan</title><body style="font:16px Arial;padding:30px">Mengambil data laporan daripada MySQL…</body></html>');
+        popup.document.close();
+      }
+      if(btn)btn.disabled=true;
       const report=await runServer('generateAttendancePresenceReportHtml',state.token,period);
-      if(typeof window.showMonthlyReportPreview!=='function')
-        throw new Error('Modul laporan HTML belum dimuatkan. Segar semula aplikasi.');
-      window.showMonthlyReportPreview(report);
-    }catch(e){handleServerError(e);}
-    finally{if(btn)btn.disabled=false;}
+      // Backend cPanel may return a complete server-rendered HTML report.
+      if(typeof report?.html==='string'&&/^\s*<!doctype html>/i.test(report.html)&&
+          report.html.includes('Ringkasan Kehadiran')&&report.html.includes('Laporan Individu')){
+        if(popup&&!popup.closed){
+          popup.document.open();popup.document.write(report.html);popup.document.close();popup.focus();
+        }else{
+          showMonthlyNativeHtmlInline(report.html);
+        }
+        toast('Laporan dibuka. Klik Cetak / Simpan PDF pada laporan.',6000);
+      }else if(report?.kind==='MONTHLY_HTML'&&Array.isArray(report.sections)){
+        // Remain compatible with previously deployed structured-report backends.
+        if(popup&&!popup.closed)popup.close();
+        if(typeof window.showMonthlyReportPreview!=='function')
+          throw new Error('Modul laporan belum dimuatkan. Segar semula aplikasi.');
+        window.showMonthlyReportPreview(report);
+      }else{
+        if(popup&&!popup.closed)popup.close();
+        throw new Error('Format respons laporan tidak dikenali. Semak versi php/api.php dan php/monthly_print.php di cPanel.');
+      }
+    }catch(e){
+      if(popup&&!popup.closed)popup.close();
+      handleServerError(e);
+    }finally{if(btn)btn.disabled=false;}
   }
   async function generateAttendancePresenceReportSheetClient(){
     try{
