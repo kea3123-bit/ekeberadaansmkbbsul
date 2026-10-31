@@ -2,7 +2,7 @@ const state = {
     token:'', deviceToken:'', boot:null, admin:null, currentScreen:'home',
     myCardLoaded:false, myCardHalf:1, myCardData:null,
     adminCardEmail:'', adminCardData:null, adminCardHalf:1,
-    selectedAccount:null, changeTicket:'', setupPurpose:'',
+    selectedAccount:null, changeTicket:'', setupPurpose:'', recoveryEmail:'', pinRecoveryAvailable:false,
     selectedUserEmails:new Set(), filteredUsers:[], filteredReport:[], tableSorts:{},
     absence:null, absencePublic:null, absenceManagement:null, timeReview:null,
     cacheTimes:{},
@@ -336,7 +336,7 @@ const state = {
   }
 
   function showLoginStep(step){
-    const map={return:'loginStepReturn',email:'loginStepEmail',pin:'loginStepPin',setpin:'loginStepSetPin'};
+    const map={return:'loginStepReturn',email:'loginStepEmail',pin:'loginStepPin',setpin:'loginStepSetPin',recovery:'loginStepRecovery'};
     Object.values(map).forEach(id=>document.getElementById(id)?.classList.add('hidden'));
     document.getElementById(map[step]||map.email)?.classList.remove('hidden');
   }
