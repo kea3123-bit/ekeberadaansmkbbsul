@@ -80,6 +80,12 @@ function rpc(string $fn,array $a) {
         return ['ok'=>true];
       case 'setFirstPin':
         throw new RuntimeException('Akaun dipindahkan dari Google Sheets. Gunakan PIN lama atau minta reset PIN sementara daripada Pentadbir Sistem.');
+      case 'requestPinRecovery':
+        require_once __DIR__.'/pin_recovery.php';
+        return pin_recovery_request($a[0]??'');
+      case 'completePinRecovery':
+        require_once __DIR__.'/pin_recovery.php';
+        return pin_recovery_confirm($a[0]??'',$a[1]??'',$a[2]??'',$a[3]??'');
       case 'getLoginPageData':
         $s=settings_raw();
         return ['schoolName'=>$s['SCHOOL_NAME']??'e-Keberadaan','mode'=>'delima-email-pin','pinLength'=>6,'sessionDays'=>30];
