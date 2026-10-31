@@ -30,6 +30,7 @@
         <div id="returnAccountCard" class="account-box allowed delima-account-card returning-account-card"></div>
         <button id="continueLastAccountBtn" class="btn primary btn-login-full" type="button" onclick="continueLastAccount()">Teruskan sebagai pengguna ini</button>
         <button class="change-account-link" type="button" onclick="useDifferentAccount()">Bukan anda? Gunakan akaun DELIMa lain</button>
+        <button id="forgotPinReturnBtn" class="change-account-link hidden" type="button" onclick="openPinRecovery()">Lupa PIN? Reset melalui kod emel DELIMa</button>
         <p class="trusted-device-note">Jika sesi 7 hari anda telah tamat, sistem hanya akan meminta PIN. Akaun DELIMa tidak perlu ditaip semula.</p>
       </div>
 
@@ -42,6 +43,7 @@
           <span class="delima-icon" aria-hidden="true">→</span>
           <span><b>Teruskan</b><small>Semak akaun DELIMa berdaftar</small></span>
         </button>
+        <button id="forgotPinEmailBtn" class="change-account-link hidden" type="button" onclick="openPinRecovery()">Lupa PIN? Reset melalui kod emel DELIMa</button>
         <p class="tiny center">Pengguna baharu akan terus diminta mencipta PIN sendiri.</p>
       </div>
 
@@ -55,7 +57,8 @@
             <button type="button" class="password-toggle" onclick="togglePassword('loginPin',this)" aria-label="Tunjukkan PIN">👁</button>
           </div>
         </label>
-        <div class="pin-helper">Masukkan PIN 6 digit anda. <span class="pin-forgot">Lupa PIN? Minta Pentadbir Sistem reset PIN anda.</span></div>
+        <div class="pin-helper">Masukkan PIN 6 digit anda.</div>
+        <button id="forgotPinPinBtn" class="change-account-link hidden" type="button" onclick="openPinRecovery()">Lupa PIN? Reset melalui kod emel DELIMa</button>
         <button id="pinLoginBtn" class="btn primary btn-login-full" type="button" onclick="submitPinLogin()">Masuk</button>
         <p class="trusted-device-note">Selepas berjaya, peranti ini akan diingati selama 7 hari.</p>
       </div>
@@ -84,6 +87,19 @@
         <button id="setPinBtn" class="btn primary btn-login-full" type="button" onclick="submitFirstPin()">Simpan PIN & Teruskan</button>
       </div>
 
+      <div id="loginStepRecovery" class="login-step hidden">
+        <div class="first-login-badge">RESET PIN SEMENTARA</div>
+        <h2>Cipta PIN baharu</h2>
+        <p class="login-copy">Reset PIN sementara sehingga 7 November 2026. Pengesahan melalui kod emel DELIMa diperlukan.</p>
+        <p id="recoveryEmailLabel" class="tiny center"></p>
+        <button id="recoverySendCodeBtn" class="btn ghost btn-login-full" type="button" onclick="requestPinRecoveryCode()">Hantar Kod ke Emel DELIMa</button>
+        <label class="login-field password-field pin-field"><span>Kod pengesahan emel (6 digit)</span><input id="recoveryCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Kod pengesahan" oninput="sanitizePinInput(this)"></label>
+        <p id="recoveryCodeHint" class="tiny center">Kod sah selama 30 minit. Semak Inbox dan Spam.</p>
+        <label class="login-field password-field pin-field"><span>PIN baharu</span><input id="recoveryPin" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password" placeholder="6 digit" oninput="sanitizePinInput(this)"></label>
+        <label class="login-field password-field pin-field"><span>Sahkan PIN baharu</span><input id="recoveryPinConfirm" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password" placeholder="Ulang PIN" oninput="sanitizePinInput(this)"></label>
+        <button id="recoveryConfirmBtn" class="btn primary btn-login-full" type="button" onclick="submitPinRecovery()">Sahkan Kod & Simpan PIN</button>
+        <button class="change-account-link" type="button" onclick="useDifferentAccount()">← Kembali ke login</button>
+      </div>
       <div id="loginError" class="inline-error hidden"></div>
       <p class="tiny center login-security-note">Selepas 5 percubaan PIN salah, akaun dikunci sementara selama 15 minit.</p>
     </div>
