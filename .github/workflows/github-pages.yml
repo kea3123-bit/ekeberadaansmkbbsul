@@ -58,7 +58,12 @@ jobs:
             }, {once:true});
           })();
           </script>"""
-          html=html.replace('</body>', registration+'</body>',1)
+          # Inject before the LAST closing body tag. The monthly HTML report
+          # exporter contains an escaped </body> inside a JS string; replacing
+          # the first one corrupts the script and fails Node syntax checking.
+          prefix,marker,suffix=html.rpartition('</body>')
+          assert marker and '</html>' in suffix, 'No final HTML body closing tag'
+          html=prefix+registration+marker+suffix
           Path('/tmp/eke-mysql-ui/index.html').write_text(html, 'utf-8')
           print('PASS: frontend uses only cPanel PHP/MySQL RPC')
           PY
