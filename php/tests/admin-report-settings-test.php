@@ -27,6 +27,7 @@ function rows(string $query, array $params=[]): array {
     if (strpos($query,'FROM kehadiran') !== false || strpos($query,'FROM cuti_umum') !== false) return [];
     throw new RuntimeException('Unexpected query in report test');
 }
+function public_holidays_safe(?string $from=null,?string $to=null): array {return [];}
 function all_absence_rows(): array { return []; }
 function settings_raw(): array {
     return ['SCHOOL_NAME'=>'Sekolah Ujian','PROFILE_ROOT_FOLDER_ID'=>'test-drive-folder'];
