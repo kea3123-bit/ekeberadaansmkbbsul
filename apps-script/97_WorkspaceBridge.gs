@@ -230,6 +230,7 @@ function workspaceDocStyleTable_(table,headers,rows,kind){
       const value=i===0?headers[j]:(rows[i-1]||[])[j];
       let color=workspaceReportCellColor_(value,kind,i===0);
       if(i>0&&kind==='RINGKASAN'&&j===cols-1)color=c.amber;
+      if(/^PERAKAM/.test(kind) && i>0 && i%2===0)color=c.blue;
       // For perakam, highlighted column stays amber for a Saturday/holiday.
       if(i>0&&/^PERAKAM/.test(kind)&&j>=2&&
          /HUJUNG MINGGU|CUTI UMUM/.test(String(value||'')))color=c.amber;
@@ -290,6 +291,27 @@ function workspaceReportIndividualTable_(person){
   return {headers:cols,rows:rows};
 }
 
+function workspacePdfPerakamCard_(person){
+  const all=person.days||[];
+  const rows=[];
+  for(let start=0;start<all.length;start+=7){
+    const dates=all.slice(start,start+7);
+    const heads=dates.map(d=>d[0]+'\n'+d[1]);
+    const values=dates.map(d=>{
+      const status=String(d[6]||'');
+      if(/HUJUNG MINGGU|CUTI UMUM|TIDAK HADIR|BELUM HADIR/.test(status))return status;
+      const session1=(d[2]||'--')+'/'+(d[3]||'--');
+      const session2=d[4]||d[5]?' ; '+(d[4]||'--')+'/'+(d[5]||'--'):'';
+      return session1+session2+(status==='HADIR'?'':'\n'+status);
+    });
+    while(heads.length<7)heads.push('');
+    while(values.length<7)values.push('');
+    rows.push(heads,values);
+  }
+  if(!rows.length)rows.push(Array(7).fill(''),Array(7).fill(''));
+  return {headers:rows[0],rows:rows.slice(1)};
+}
+
 function workspaceExportPdf_(data){
   const sections=workspaceReportSections_(data);
   const title=workspaceSanitizeName_(data.title);
@@ -304,8 +326,26 @@ function workspaceExportPdf_(data){
     if(body.setMarginBottom)body.setMarginBottom(27);
     if(body.setMarginLeft)body.setMarginLeft(25);
     if(body.setMarginRight)body.setMarginRight(25);
-    let page=0;
+    let page=0,perakamRendered=false;
     sections.forEach((section,index)=>{
+      if(monthly&&/^PERAKAM /.test(section.name)){
+        if(perakamRendered)return;
+        perakamRendered=true;
+        for(let i=0;i<individuals.length;i+=4){
+          if(page++)body.appendPageBreak();
+          workspaceDocReportHeading_(body,'Laporan Perakam Waktu',
+            'SMK Bandar Baru Sungai Lalang  |  '+String(data.subtitle||'').split(' · ')[0]);
+          individuals.slice(i,i+4).forEach(person=>{
+            const detail=workspacePdfPerakamCard_(person);
+            const who=body.appendParagraph('Bil: '+person.bil+'   Nama: '+person.name+
+                '   Kategori: '+person.category);
+            if(who.editAsText&&who.editAsText().setFontSize)who.editAsText().setFontSize(7);
+            const t=body.appendTable([detail.headers].concat(detail.rows));
+            workspaceDocStyleTable_(t,detail.headers,detail.rows,'PERAKAM WAKTU');
+          });
+        }
+        return;
+      }
       if(section.name==='INDIVIDU'&&monthly){
         individuals.forEach((person,i)=>{
           if(page++)body.appendPageBreak();
