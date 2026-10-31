@@ -88,7 +88,9 @@ function rpc(string $fn,array $a) {
         return pin_recovery_confirm($a[0]??'',$a[1]??'',$a[2]??'',$a[3]??'');
       case 'getLoginPageData':
         $s=settings_raw();
-        return ['schoolName'=>$s['SCHOOL_NAME']??'e-Keberadaan','mode'=>'delima-email-pin','pinLength'=>6,'sessionDays'=>30];
+        require_once __DIR__.'/pin_recovery.php';
+        return ['schoolName'=>$s['SCHOOL_NAME']??'e-Keberadaan','mode'=>'delima-email-pin',
+            'pinLength'=>6,'sessionDays'=>30,'pinRecovery'=>pin_recovery_public_status()];
       case 'checkDelimaAccount':
         $u=user_by_email(email_key($a[0]??''));
         if (!$u) throw new RuntimeException('Akaun tidak didaftarkan atau tidak aktif.');
