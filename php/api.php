@@ -88,9 +88,19 @@ function rpc(string $fn,array $a) {
         return pin_recovery_confirm($a[0]??'',$a[1]??'',$a[2]??'',$a[3]??'');
       case 'getLoginPageData':
         $s=settings_raw();
-        require_once __DIR__.'/pin_recovery.php';
+        // Login must remain available during staggered cPanel deployment.
+        // A missing optional OTP module must never cause an HTTP 500.
+        $recovery=['enabled'=>false,'endsAt'=>'2026-11-07T23:59:59+08:00','codeLength'=>6,'codeMinutes'=>30];
+        if(is_file(__DIR__.'/pin_recovery.php')) {
+            require_once __DIR__.'/pin_recovery.php';
+            $recovery=pin_recovery_public_status();
+            if($recovery['enabled']) {
+                $exists=one("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='ek_pin_recovery'");
+                if((int)($exists['n']??0)===0)$recovery['enabled']=false;
+            }
+        }
         return ['schoolName'=>$s['SCHOOL_NAME']??'e-Keberadaan','mode'=>'delima-email-pin',
-            'pinLength'=>6,'sessionDays'=>30,'pinRecovery'=>pin_recovery_public_status()];
+            'pinLength'=>6,'sessionDays'=>30,'pinRecovery'=>$recovery];
       case 'checkDelimaAccount':
         $u=user_by_email(email_key($a[0]??''));
         if (!$u) throw new RuntimeException('Akaun tidak didaftarkan atau tidak aktif.');
