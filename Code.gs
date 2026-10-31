@@ -4477,20 +4477,8 @@ function finalizeExpiredPresenceWithoutPunchForDate_(dateKey, settings, options)
 }
 
 function checkExpiredPresenceWithoutPunchTrigger() {
-  // Never read or write the retired Google Sheets attendance database from a timed trigger.
-  return {ok:true,skipped:true,reason:'Legacy Sheets Keberadaan trigger retired; MySQL is authoritative.'};
-  /*
-  try {
-    const settings = getSettings_();
-    if (String(settings.SYSTEM_MODE || 'REAL').toUpperCase() === 'TEST') {
-      return {ok:true,skipped:true,reason:'MOD TEST'};
-    }
-    return finalizeExpiredPresenceWithoutPunchForDate_(todayKey_(), settings);
-  } catch (err) {
-    audit_('TRIGGER_KEBERADAAN_TAMAT_GAGAL', todayKey_(), String(err && err.message ? err.message : err), 'SISTEM');
-    return {ok:false,error:String(err && err.message ? err.message : err)};
-  }
-  */
+  // Disable legacy timer before any call that could read or write Google Sheets.
+  return {ok:true,skipped:true,reason:'Legacy Keberadaan timer stopped; MySQL is authoritative.'};
 }
 
 /**
