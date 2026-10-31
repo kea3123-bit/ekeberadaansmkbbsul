@@ -249,6 +249,60 @@ const individualLayout=ctx.workspaceReportIndividualTable_(samplePeople[0]);
 assert.equal(individualLayout.headers.length,16);
 assert.equal(individualLayout.rows.length,2);
 
+// PDF regression: reference-format sections produce a blue/amber/red/green
+// styled perakam card and a separate individual page, not generic raw tables.
+const docColors=[],docBorders=[],docTables=[],docHeadings=[];
+function docTextMock(){return {
+  setBold(){return this;},setFontSize(){return this;},
+  setForegroundColor(){return this;},
+  setBackgroundColor(color){docColors.push(color);return this;}
+};}
+ctx.DocumentApp={
+  ParagraphHeading:{HEADING1:'H1',HEADING2:'H2'},
+  create:()=>({
+    getId:()=> 'styledDocumentId',
+    getBody:()=>({
+      appendPageBreak(){},
+      appendParagraph(txt){docHeadings.push(txt);return {
+        setHeading(){return this;},editAsText:docTextMock
+      };},
+      appendTable(rows){
+        docTables.push(rows);
+        return {
+          setBorderColor(color){docBorders.push(color);},
+          setBorderWidth(){},
+          getRow:i=>({
+            getCell:j=>({
+              setBackgroundColor(color){docColors.push(color);},
+              editAsText:docTextMock
+            })
+          })
+        };
+      }
+    }),
+    saveAndClose(){}
+  })
+};
+ctx.DriveApp.getFileById=()=>({
+  getAs:()=>({getBytes:()=>[...pdfData]}),setTrashed(){}
+});
+const styledPdf=ctx.workspaceExportPdf_({title:'Laporan Bulanan',
+  subtitle:'2026-10-01 hingga 2026-10-31',sections:[
+    {name:'RINGKASAN',headers:['Bil.','Nama','Catatan'],rows:[[1,'Staf A','']]},
+    {name:'LEWAT BALIK AWAL',headers:['Nama','Lewat'],rows:[['Staf A','LEWAT']]},
+    {name:'PERAKAM 01-07',headers:['Nama','Emel','2026-10-01','2026-10-02'],
+      rows:[['Staf A','staff@example.test','07:15/15:00|LEWAT','HUJUNG MINGGU']]},
+    {name:'INDIVIDU',headers:['Nama','Emel','Kategori'],rows:[['Staf A','staff@example.test','PPP']]}
+  ]});
+assert.equal(styledPdf.ok,true);
+assert.ok(docHeadings.some(x=>/Laporan Perakam Waktu/.test(x)));
+assert.ok(docHeadings.some(x=>/Laporan Individu/.test(x)));
+assert.ok(docTables.length>=4);
+assert.ok(docColors.includes('#91C6F4'),'Blue table headings missing');
+assert.ok(docColors.includes('#FFD09B'),'Amber weekends missing');
+assert.ok(docColors.includes('#FF2A20'),'Red late statuses missing');
+assert.ok(docBorders.includes('#2D9D68'),'Thin green table borders missing');
+
 const emailData={
   to:'staff@example.test',
   subject:'Keputusan eKeberadaan',
