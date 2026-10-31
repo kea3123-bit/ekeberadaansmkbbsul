@@ -202,6 +202,15 @@ function rpc(string $fn,array $a) {
         return admin_save_attendance(require_user($a[0]??'',true),is_array($a[1]??null)?$a[1]:[]);
       case 'adminSaveUser':
         return admin_save_user(require_user($a[0]??'',true),is_array($a[1]??null)?$a[1]:[]);
+      case 'adminAddPublicHoliday':
+        $admin=require_user($a[0]??'',true);require_once __DIR__.'/admin_maintenance.php';
+        return admin_add_public_holiday($admin,is_array($a[1]??null)?$a[1]:[]);
+      case 'adminDeletePublicHoliday':
+        $admin=require_user($a[0]??'',true);require_once __DIR__.'/admin_maintenance.php';
+        return admin_delete_public_holiday($admin,(string)($a[1]??''));
+      case 'adminRepairAttendanceDuplicates':
+        $admin=require_user($a[0]??'',true);require_once __DIR__.'/admin_maintenance.php';
+        return admin_repair_attendance_duplicates($admin);
       case 'adminSaveSettings':
         return admin_save_settings(require_user($a[0]??'',true),is_array($a[1]??null)?$a[1]:[]);
       case 'adminUnlockUser':
@@ -252,18 +261,23 @@ function rpc(string $fn,array $a) {
         $admin=require_user($a[0]??'',true);
         $emails=is_array($a[1]??null)?$a[1]:[];
         if (!count($emails)||count($emails)>150)throw new InvalidArgumentException('Pilih 1 hingga 150 pengguna.');
+        // Invitations only: no PIN or session change until email OTP verified.
+        require_once __DIR__.'/email_queue.php';
         $results=[];
         foreach(array_unique(array_map('strtolower',$emails)) as $mail) {
             $email=email_key($mail);
             if ($email===$admin['emel']) continue;
-            if (user_by_email($email,false)) $results[]=issue_temp_pin($admin,$email);
+            $user=user_by_email($email);
+            if (!$user) continue;
+            $queued=enqueue_workspace_email(
+              'pin-recovery-invitation:'.$email.':'.date('Y-m-d'),
+              $email,'eKeberadaan: Panduan reset PIN',
+              'Buka https://kea3123-bit.github.io/ekeberadaansmkbbsul/ dan tekan Lupa PIN. Kod pengesahan akan dihantar ke emel DELIMa. Semak tarikh akhir ciri tersebut di halaman login.');
+            $results[]=['name'=>$user['nama'],'email'=>$email,'emailQueued'=>$queued,'emailSent'=>false];
         }
+        audit_event($admin['emel'],'JEMPUTAN_RESET_PIN_PUKAL','PENGGUNA',(string)count($results));
         return ['ok'=>true,'results'=>$results];
       default:
-        if (in_array($fn,['adminRepairAttendanceDuplicates'],true)) {
-            require_user($a[0]??'',true);
-            throw new RuntimeException('Fungsi eksport / penyelenggaraan ini belum dimigrasi kepada PHP.');
-        }
         throw new RuntimeException('Fungsi API tidak disokong: '.$fn);
     }
 }
@@ -307,9 +321,8 @@ function punch_mysql(array $u,string $type,$location): array {
         if ($step['complete']||$step['type']!==$type) throw new RuntimeException('Turutan masuk/keluar tidak sah. Muat semula rekod.');
         $n=(int)$step['session'];$now=now_myt();$excel=excel_number($now);
         if (!$r) {
-            $sr=one('SELECT COALESCE(MAX(_source_row),1)+1 AS n FROM kehadiran');
             execute_sql("INSERT INTO kehadiran (_source_row,tarikh,emel,nama,kategori,masuk,masuklat,masuklng,masukjarakm,masukakurasim,masukip,status,sumber,dikemaskinipada) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-              [(int)$sr['n'],$date,$email,$u['nama'],$u['kategori'],$now,$lat,$lng,$distance,$accuracy,$ip,'HADIR','PHP_MYSQL',$excel]);
+              [0,$date,$email,$u['nama'],$u['kategori'],$now,$lat,$lng,$distance,$accuracy,$ip,'HADIR','PHP_MYSQL',$excel]);
         } else {
             $col=$n===1?($type==='IN'?'masuk':'balik'):($type==='IN'?'masuk2':'balik2');
             $suffix=$n===1?($type==='IN'?'masuk':'balik'):($type==='IN'?'masuk2':'balik2');
@@ -497,7 +510,7 @@ function punch_card(array $u,string $month): array {
     unset($r);
     ksort($byDay,SORT_NUMERIC);
     return ['month'=>$month,'daysInMonth'=>$days,
-      'cardNumber'=>str_pad((string)max(1,(int)($u['_source_row']??2)-1),3,'0',STR_PAD_LEFT),
+      'cardNumber'=>str_pad((string)max(1,(int)($u['_source_row']??0)>1?(int)$u['_source_row']-1:(int)($u['_row_id']??1)),3,'0',STR_PAD_LEFT),
       'schoolName'=>$s['SCHOOL_NAME']??'SMK Bandar Baru Sungai Lalang',
       'department'=>$s['SCHOOL_NAME']??'SMK Bandar Baru Sungai Lalang',
       'user'=>public_user($u),'records'=>array_values($byDay)];
@@ -540,7 +553,8 @@ function admin_data(array $admin,string $day): array {
       // never in the public user bootstrap settings.
       'settings'=>array_merge(public_settings($s),[
           'profileRootFolderId'=>(string)($s['PROFILE_ROOT_FOLDER_ID']??'')
-      ]),'report'=>$report,'summary'=>$sum];
+      ]),'report'=>$report,'summary'=>$sum,
+      'publicHolidays'=>rows('SELECT tarikh AS date,nama AS name,jenis AS type,sumber AS source FROM cuti_umum WHERE (aktif=1 OR aktif IS NULL) ORDER BY tarikh DESC LIMIT 500')];
 }
 function all_absence_rows(): array {
     $list=rows('SELECT * FROM tidak_hadir ORDER BY _row_id DESC');
@@ -584,9 +598,8 @@ function submit_absence(array $u,array $p): array {
     $en=$mode==='KEBERADAAN'?valid_time($p['endTime']??''):'';
     if ($mode==='KEBERADAAN'&&(!$st||!$en||$st>=$en)) throw new InvalidArgumentException('Masa Keberadaan tidak sah.');
     $id='TH-'.strtoupper(bin2hex(random_bytes(8)));$now=excel_number(now_myt());
-    $r=one('SELECT COALESCE(MAX(_source_row),1)+1 AS n FROM tidak_hadir');
     execute_sql('INSERT INTO tidak_hadir (_source_row,id,dihantarpada,emel,nama,kategori,jenis,tarikhmula,tarikhakhir,catatan,status,dikemaskinipada,`mod`,masamula,masaakhir,jawatan) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-      [(int)$r['n'],$id,$now,$u['emel'],$u['nama'],$u['kategori'],$type,(int)excel_number($start),(int)excel_number($end),
+      [0,$id,$now,$u['emel'],$u['nama'],$u['kategori'],$type,(int)excel_number($start),(int)excel_number($end),
       substr((string)($p['note']??''),0,500),'MENUNGGU',$now,$mode,$st,$en,$u['jawatan']??'']);
     audit_event($u['emel'],'MOHON_TIDAK_HADIR',$id,$type);
     return ['ok'=>true,'id'=>$id,'message'=>'Permohonan berjaya dihantar.'];
@@ -611,9 +624,8 @@ function admin_save_attendance(array $admin,array $p): array {
     if (($out&&!$in)||($in2&&!$out)||($out2&&!$in2))throw new InvalidArgumentException('Turutan masa tidak sah.');
     $r=attendance_row($email,$date);
     if (!$r) {
-        $n=one('SELECT COALESCE(MAX(_source_row),1)+1 AS n FROM kehadiran');
         execute_sql('INSERT INTO kehadiran (_source_row,tarikh,emel,nama,kategori,sumber) VALUES (?,?,?,?,?,?)',
-         [(int)$n['n'],$date,$email,$u['nama'],$u['kategori'],'ADMIN_MANUAL']);
+         [0,$date,$email,$u['nama'],$u['kategori'],'ADMIN_MANUAL']);
         $r=attendance_row($email,$date);
     }
     $d=$date.' ';$ts=excel_number(now_myt());
@@ -633,9 +645,8 @@ function admin_save_user(array $admin,array $p): array {
     if ($u) execute_sql('UPDATE pengguna SET nama=?,kategori=?,aktif=?,pentadbir=?,jawatan=?,sesi1masuk=?,sesi1keluar=?,sesi2masuk=?,sesi2keluar=?,catatan=? WHERE _row_id=?',
        [...$data,$u['_row_id']]);
     else {
-        $r=one('SELECT COALESCE(MAX(_source_row),1)+1 AS n FROM pengguna');
         execute_sql('INSERT INTO pengguna (_source_row,nama,kategori,aktif,pentadbir,jawatan,sesi1masuk,sesi1keluar,sesi2masuk,sesi2keluar,catatan,emel) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-          [(int)$r['n'],...$data,$email]);
+          [0,...$data,$email]);
     }
     audit_event($admin['emel'],'SIMPAN_PENGGUNA',$email);
     return ['ok'=>true,'message'=>'Pengguna dikemaskini. PIN baharu mesti ditetapkan melalui CLI hosting.'];
@@ -663,9 +674,8 @@ function admin_save_settings(array $admin,array $p): array {
         if (one('SELECT _row_id FROM tetapan WHERE kunci=? LIMIT 1',[$key])) {
            execute_sql('UPDATE tetapan SET nilai=? WHERE kunci=?',[$v,$key]);
         } else {
-           $row=one('SELECT COALESCE(MAX(_source_row),1)+1 AS n FROM tetapan');
            execute_sql('INSERT INTO tetapan (_source_row,kunci,nilai,keterangan) VALUES (?,?,?,?)',
-             [(int)$row['n'],$key,$v,'PHP MySQL']);
+             [0,$key,$v,'PHP MySQL']);
         }
     }
     audit_event($admin['emel'],'SIMPAN_TETAPAN','TETAPAN');
