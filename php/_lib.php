@@ -287,9 +287,10 @@ function create_session(array $u): array {
     return ['ok'=>true,'token'=>$token,'deviceToken'=>$token,'remember'=>true,'boot'=>bootstrap($u)];
 }
 function audit_event(string $actor,string $action,string $target,string $detail=''): void {
-    try { $row=one('SELECT COALESCE(MAX(_source_row),1)+1 AS n FROM audit');
-      execute_sql('INSERT INTO audit (_source_row,masa,pelaku,tindakan,sasaran,butiran) VALUES (?,?,?,?,?,?)',
-        [(int)$row['n'],now_myt(),$actor,$action,$target,substr($detail,0,500)]); } catch(Throwable $ignored) {}
+    // _source_row is Excel import metadata; new database rows use 0.
+    // _row_id AUTO_INCREMENT supplies a safe monotonically increasing identity.
+    try { execute_sql('INSERT INTO audit (_source_row,masa,pelaku,tindakan,sasaran,butiran) VALUES (?,?,?,?,?,?)',
+        [0,now_myt(),$actor,$action,$target,substr($detail,0,500)]); } catch(Throwable $ignored) {}
 }
 function must_admin(array $u): void {
     if (!(bool)$u['pentadbir']) throw new RuntimeException('Akses pentadbir tidak dibenarkan.');
