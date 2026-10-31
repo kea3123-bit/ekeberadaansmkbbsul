@@ -38,7 +38,7 @@ async function submitPinRecovery(){
   const pin=String(document.getElementById('recoveryPin')?.value||'').replace(/\D/g,'');
   const confirm=String(document.getElementById('recoveryPinConfirm')?.value||'').replace(/\D/g,'');
   if(!state.recoveryEmail)return showLoginError('Sila mulakan semula permintaan reset PIN.');
-  if(code.length!==8)return showLoginError('Masukkan kod pengesahan 8 digit.');
+  if(code.length!==6)return showLoginError('Masukkan kod pengesahan 6 digit.');
   if(pin.length!==6 || confirm!==pin)return showLoginError('PIN baharu mesti 6 digit dan kedua-duanya sepadan.');
   hideLoginError();
   const btn=document.getElementById('recoveryConfirmBtn');
