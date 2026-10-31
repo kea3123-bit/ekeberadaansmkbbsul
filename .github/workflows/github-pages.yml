@@ -208,7 +208,12 @@ jobs:
         run: |
           set -euo pipefail
           python3 mysql-ui/optimize_static.py /tmp/eke-mysql-ui
-          node --check "$(find /tmp/eke-mysql-ui/assets -name 'app.*.js' -type f | head -1)"
+          jsfile="$(find /tmp/eke-mysql-ui/assets -name 'app.*.js' -type f | head -1)"
+          if ! node --check "$jsfile"; then
+            echo "::error::Rendered bundle has a syntax issue; source excerpts:"
+            grep -n -C 4 '<script>' "$jsfile" | tail -50 || true
+            exit 1
+          fi
           python3 - <<'PY'
           from pathlib import Path
           import re
