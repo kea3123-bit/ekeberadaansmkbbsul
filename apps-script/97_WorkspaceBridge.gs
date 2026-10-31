@@ -264,7 +264,7 @@ function workspaceReportIndividualRows_(sections){
           noTime?'':(s1[1]==='--'?'':s1[1]||''),
           noTime?'':(s2[0]==='--'?'':s2[0]||''),
           noTime?'':(s2[1]==='--'?'':s2[1]||''),
-          status, /HUJUNG MINGGU|CUTI UMUM/.test(status)?status:''];
+          status, noTime?(chunks.slice(1).join('|')||(/HUJUNG MINGGU|CUTI UMUM/.test(status)?status:'')):''];
       });
     });
   });
