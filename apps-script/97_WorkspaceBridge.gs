@@ -184,6 +184,112 @@ function workspaceReportSections_(data){
       rows:rows.map(r=>headers.map((_,j)=>safe(Array.isArray(r)?r[j]:'')))};
   });
 }
+/**
+ * Exact palette sampled from the supplied 96-page Google Sheets PDF.
+ * Styles apply ONLY to Google Workspace output; MySQL is the source.
+ */
+function workspaceReportColors_(){
+  return {aqua:'#C9F5F5',blue:'#91C6F4',amber:'#FFD09B',
+    red:'#FF2A20',green:'#2D9D68',white:'#FFFFFF',
+    ink:'#183452',pale:'#F7FBFF'};
+}
+function workspaceReportCellColor_(value,kind,head){
+  const c=workspaceReportColors_();
+  if(head)return c.blue;
+  const txt=String(value||'').toUpperCase();
+  if(/LEWAT|BALIK AWAL/.test(txt))return c.red;
+  if(/HUJUNG MINGGU|CUTI UMUM|TIDAK HADIR|BELUM HADIR|CUTI SAKIT/.test(txt))return c.amber;
+  return kind==='RINGKASAN'&&txt==='CATATAN'?c.amber:c.white;
+}
+function workspaceDocReportHeading_(body,text,subtitle){
+  const c=workspaceReportColors_();
+  const p=body.appendParagraph(String(text));
+  if(p.setHeading)p.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+  if(p.editAsText){
+    const t=p.editAsText();
+    if(t.setForegroundColor)t.setForegroundColor(c.ink);
+    if(t.setBold)t.setBold(true);
+    if(t.setFontSize)t.setFontSize(12);
+    if(t.setBackgroundColor)t.setBackgroundColor(c.aqua);
+  }
+  if(subtitle){
+    const sub=body.appendParagraph(String(subtitle).slice(0,220));
+    if(sub.editAsText&&sub.editAsText().setFontSize)sub.editAsText().setFontSize(8);
+  }
+}
+function workspaceDocStyleTable_(table,headers,rows,kind){
+  if(!table||typeof table.getRow!=='function')return; // mocked in CI
+  const c=workspaceReportColors_();
+  if(table.setBorderColor)table.setBorderColor(c.green);
+  if(table.setBorderWidth)table.setBorderWidth(0.5);
+  const n=rows.length+1,cols=headers.length;
+  for(let i=0;i<n;i++){
+    const row=table.getRow(i);if(!row)continue;
+    for(let j=0;j<cols;j++){
+      const cell=row.getCell(j);if(!cell)continue;
+      const value=i===0?headers[j]:(rows[i-1]||[])[j];
+      let color=workspaceReportCellColor_(value,kind,i===0);
+      if(i>0&&kind==='RINGKASAN'&&j===cols-1)color=c.amber;
+      // For perakam, highlighted column stays amber for a Saturday/holiday.
+      if(i>0&&/^PERAKAM/.test(kind)&&j>=2&&
+         /HUJUNG MINGGU|CUTI UMUM/.test(String(value||'')))color=c.amber;
+      if(cell.setBackgroundColor)cell.setBackgroundColor(color);
+      if(cell.editAsText){
+        const t=cell.editAsText();
+        if(t.setFontSize)t.setFontSize(cols>=11?6:8);
+        if(i===0&&t.setBold)t.setBold(true);
+        if(t.setForegroundColor)t.setForegroundColor(c.ink);
+      }
+    }
+  }
+}
+function workspaceReportIndividualRows_(sections){
+  const map={},order=[];
+  sections.filter(s=>/^PERAKAM /.test(s.name)).forEach(section=>{
+    section.rows.forEach(row=>{
+      const email=String(row[1]||'').trim().toLowerCase();
+      if(!email)return;
+      if(!map[email]){map[email]={name:row[0],email:email,days:{}};order.push(email);}
+      section.headers.slice(2).forEach((date,j)=>{
+        const raw=String(row[j+2]||'');
+        const chunks=raw.split('|');
+        const time=chunks[0].split(';');
+        const s1=time[0].split('/'),s2=(time[1]||'').split('/');
+        const noTime=/^(BELUM HADIR|TIDAK HADIR|HUJUNG MINGGU|CUTI UMUM|TH|--)$/i.test(chunks[0]);
+        const status=noTime?chunks[0]:(chunks[1]||'HADIR');
+        const dt=new Date(String(date)+'T00:00:00Z');
+        const day=isNaN(dt.valueOf())?'':(['Ahd','Isn','Sel','Rab','Kha','Jum','Sab'][dt.getUTCDay()]);
+        map[email].days[date]=[date.slice(8,10)+'/'+date.slice(5,7),day,
+          noTime?'':(s1[0]==='--'?'':s1[0]||''),
+          noTime?'':(s1[1]==='--'?'':s1[1]||''),
+          noTime?'':(s2[0]==='--'?'':s2[0]||''),
+          noTime?'':(s2[1]==='--'?'':s2[1]||''),
+          status, /HUJUNG MINGGU|CUTI UMUM/.test(status)?status:''];
+      });
+    });
+  });
+  const stats=sections.find(s=>s.name==='INDIVIDU');
+  const staff=stats?stats.rows.map(r=>{
+    const email=String(r[1]||'').trim().toLowerCase();
+    const m=map[email]||{days:{}};
+    return {name:r[0],email:email,category:r[2],summary:r,days:m.days};
+  }):order.map(email=>map[email]);
+  return staff.map((x,i)=>({
+    bil:i+1,name:x.name||'',category:x.category||'',email:x.email||'',
+    summary:x.summary||[],days:Object.keys(x.days||{}).sort().map(date=>x.days[date])
+  }));
+}
+function workspaceReportIndividualTable_(person){
+  const h=['Tarikh','Hari','Masuk','Keluar','Masuk 2','Keluar 2','Status','Catatan'];
+  const items=person.days||[];
+  // Pair first 16 dates with the remaining 15, matching the sample PDF.
+  const top=items.slice(0,16),bottom=items.slice(16,32);
+  const cols=h.concat(h);
+  const rows=Array.from({length:Math.max(top.length,bottom.length)},(_,i)=>
+    (top[i]||Array(8).fill('')).concat(bottom[i]||Array(8).fill('')));
+  return {headers:cols,rows:rows};
+}
+
 function workspaceExportPdf_(data){
   const sections=workspaceReportSections_(data);
   const total=sections.reduce((n,s)=>n+s.rows.length,0);
