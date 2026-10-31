@@ -3,7 +3,7 @@ declare(strict_types=1);
 /**
  * Temporary self-service PIN recovery.
  * Opens 2026-10-31 and permanently closes after 2026-11-07 23:59 MYT.
- * Identity proof is an 8-digit single-use code sent ONLY to the existing
+ * Identity proof is a 6-digit single-use code sent ONLY to the existing
  * account's registered DELIMa email through the asynchronous Workspace outbox.
  * Never changes an account when a code is requested or sent.
  */
@@ -14,7 +14,7 @@ function pin_recovery_available(): bool {
 }
 function pin_recovery_public_status(): array {
     return ['enabled'=>pin_recovery_available(),'endsAt'=>'2026-11-07T23:59:59+08:00',
-      'codeLength'=>8,'codeMinutes'=>30];
+      'codeLength'=>6,'codeMinutes'=>30];
 }
 function pin_recovery_normalize_email($raw): string {
     $email=strtolower(trim((string)$raw));
@@ -27,7 +27,7 @@ function pin_recovery_request($rawEmail): array {
     $status=pin_recovery_public_status();
     if(!$status['enabled'])throw new RuntimeException('Tempoh reset PIN kendiri telah tamat. Hubungi Pentadbir Sistem.');
     $email=pin_recovery_normalize_email($rawEmail);
-    $generic=['ok'=>true,'message'=>'Jika emel itu berdaftar dan aktif, kod 8 digit akan dihantar ke emel DELIMa. Sila semak Inbox atau Spam. Kod sah selama 30 minit.'];
+    $generic=['ok'=>true,'message'=>'Jika emel itu berdaftar dan aktif, kod 6 digit akan dihantar ke emel DELIMa. Sila semak Inbox atau Spam. Kod sah selama 30 minit.'];
     $u=user_by_email($email);
     if(!$u)return $generic; // Never reveal whether an email exists.
     $ip=(string)($_SERVER['REMOTE_ADDR']??'');
@@ -48,7 +48,7 @@ function pin_recovery_request($rawEmail): array {
                 db()->rollBack();return $generic;
             }
         }
-        $code=(string)random_int(10000000,99999999);
+        $code=(string)random_int(100000,999999);
         $hash=password_hash($code,PASSWORD_DEFAULT);
         $dayCount=$row && (string)$row['day_key']===gmdate('Y-m-d') ? (int)$row['day_count']+1 : 1;
         execute_sql('INSERT INTO ek_pin_recovery (email,code_hash,requested_at,expires_at,attempts,day_key,day_count,request_ip_hash)
@@ -78,7 +78,7 @@ function pin_recovery_confirm($rawEmail,$rawCode,$rawPin,$rawConfirm): array {
     $code=trim((string)$rawCode);
     $pin=(string)$rawPin;
     $confirm=(string)$rawConfirm;
-    if(!preg_match('/^[0-9]{8}$/D',$code))
+    if(!preg_match('/^[0-9]{6}$/D',$code))
         throw new InvalidArgumentException('Masukkan kod 8 digit daripada emel.');
     if(!preg_match('/^[0-9]{6}$/D',$pin) || !hash_equals($pin,$confirm))
         throw new InvalidArgumentException('PIN baharu mesti 6 digit dan kedua-duanya sepadan.');
