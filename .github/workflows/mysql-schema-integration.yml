@@ -1,0 +1,42 @@
+name: MySQL clean-schema and 200 concurrent inserts (staging only)
+
+on:
+  push:
+    branches: [refactor/performance-v2]
+    paths:
+      - 'php/**'
+      - '.github/workflows/mysql-schema-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-staging:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: audit-temporary-only
+          MYSQL_DATABASE: eke_audit
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -paudit-temporary-only"
+          --health-interval=5s --health-timeout=4s --health-retries=12
+    env:
+      EK_AUDIT_STAGING: '1'
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_DATABASE: eke_audit
+      MYSQL_USER: root
+      MYSQL_PASSWORD: audit-temporary-only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate schema and 200 concurrent inserts against ephemeral MySQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -m | grep -Eiq 'pdo_mysql'
+          php php/tests/staging-schema-test.php seed
+          seq 1 20 | xargs -P 10 -I {} php php/tests/staging-schema-test.php worker {}
+          php php/tests/staging-schema-test.php verify
