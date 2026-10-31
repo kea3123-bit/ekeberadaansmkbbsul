@@ -35,6 +35,7 @@ jobs:
           php -l php/email_queue.php
           php -l php/mail_schedule.php
           php -l php/pin_recovery.php
+          php -l php/admin_maintenance.php
           php -l php/cli/workspace_mail_worker.php
           php php/tests/admin-report-settings-test.php
           php php/tests/absence-submit-sql-test.php
@@ -57,7 +58,7 @@ jobs:
           install -m 0644 php/api.php /tmp/eke-fix/php/api.php
           install -m 0644 api.php .htaccess /tmp/eke-backend/
           install -m 0644 php/api.php php/_lib.php php/workspace_bridge.php \
-             php/workspace_services.php php/email_queue.php php/mail_schedule.php php/pin_recovery.php php/.htaccess /tmp/eke-backend/php/
+             php/workspace_services.php php/email_queue.php php/mail_schedule.php php/pin_recovery.php php/admin_maintenance.php php/.htaccess /tmp/eke-backend/php/
           install -m 0644 php/cli/workspace_mail_worker.php php/cli/.htaccess /tmp/eke-backend/php/cli/
           chmod 0755 /tmp/eke-backend/php /tmp/eke-backend/php/cli
           (cd /tmp/eke-fix && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-report-hotfix.zip" php)
@@ -68,7 +69,7 @@ jobs:
               files=set(zipf.namelist())
               expected={'api.php','.htaccess','php/api.php','php/_lib.php',
                         'php/workspace_bridge.php','php/workspace_services.php',
-                        'php/email_queue.php','php/mail_schedule.php','php/pin_recovery.php','php/.htaccess',
+                        'php/email_queue.php','php/mail_schedule.php','php/pin_recovery.php','php/admin_maintenance.php','php/.htaccess',
                         'php/cli/.htaccess','php/cli/workspace_mail_worker.php'}
               assert expected.issubset(files),expected-files
               for item in zipf.infolist():
@@ -89,6 +90,17 @@ jobs:
         with:
           name: ekeberadaansmkbbsul-pin-recovery-sql
           path: ekeberadaansmkbbsul-pin-recovery.sql
+          retention-days: 14
+
+      - name: Package additive holiday schema
+        run: |
+          cp php/migrations/20261031_audit_holidays.sql ekeberadaansmkbbsul-audit-holidays.sql
+          grep -q 'CREATE TABLE IF NOT EXISTS cuti_umum' ekeberadaansmkbbsul-audit-holidays.sql
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ekeberadaansmkbbsul-audit-holidays-sql
+          path: ekeberadaansmkbbsul-audit-holidays.sql
           retention-days: 14
 
       - name: Package 403 permission recovery with safe ZIP modes
