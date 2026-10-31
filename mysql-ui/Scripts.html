@@ -509,7 +509,14 @@ const state = {
   function loadStoredDevice(){
     return safeLocalGet('ek_device')||readCookie('ek_device')||readCookie('ek_device_p')||'';
   }
-  function currentTrustedDeviceId(){return String(loadStoredDevice()||'').split('.')[0]||'';}
+  async function currentTrustedDeviceId(){
+    // MySQL stores SHA-256(token), not the raw bearer token. Never expose it
+    // to another service; hash locally to identify the current admin device.
+    const token=String(loadStoredDevice()||'');
+    if(!token||!globalThis.crypto?.subtle)return '';
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token));
+    return [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+  }
   function clearStoredSessionToken(){
     try{sessionStorage.removeItem('ek_session');}catch(e){}
     clearLegacySessionPersistence();
@@ -1611,15 +1618,15 @@ function ensureAbsenceManageTableLayout(){
   async function openTrustedDevices(email,name){
     try{
       const r=await runServer('adminListTrustedDevices',state.token,email),devices=r.devices||[];
-      const rows=devices.length?devices.map(d=>{const meta=[d.deviceType,d.model,d.platform,d.browser].filter(Boolean).join(' · '),tech=[d.screen,d.network].filter(Boolean).join(' · ');return `<tr><td><b>${esc(d.deviceName||'Peranti')}</b><small class="table-sub">${esc(meta||'Maklumat peranti terhad')}</small>${tech?`<small class="table-sub">${esc(tech)}</small>`:''}</td><td>${esc(d.lastSeenAt||'—')}</td><td>${esc(d.expiresAt||'—')}</td><td><button class="action-link warn-link" onclick='revokeTrustedDevice(${attr(JSON.stringify(d.deviceId))},${attr(JSON.stringify(email))},${attr(JSON.stringify(name||email))})'>Logout peranti</button></td></tr>`;}).join(''):'<tr><td colspan="4" class="empty-cell">Tiada trusted device aktif.</td></tr>';
-      showModal(`<h3>Trusted Device</h3><p><b>${esc(name||r.user?.name||email)}</b><br><span class="muted">${esc(email)} · sesi MySQL maksimum 30 hari (bukan rolling)</span></p><div class="table-wrap compact-table"><table><thead><tr><th>Peranti</th><th>Terakhir digunakan</th><th>Tamat jika tidak digunakan</th><th>Tindakan</th></tr></thead><tbody>${rows}</tbody></table></div><p class="tiny">Resume tidak memanjangkan tarikh luput sesi. Sesi sah maksimum 30 hari dari login asal. Logout peranti membatalkan sesi tersebut.</p><p><button class="btn ghost" onclick='revokeAllTrustedDevices(${attr(JSON.stringify(email))},${attr(JSON.stringify(name||email))})' ${devices.length?'':'disabled'}>Logout semua peranti</button> <button class="btn primary" onclick="closeModal()">Selesai</button></p>`);
+      const rows=devices.length?devices.map(d=>{const meta=[d.deviceType,d.model,d.platform,d.browser].filter(Boolean).join(' · '),tech=[d.screen,d.network].filter(Boolean).join(' · ');return `<tr><td><b>${esc(d.deviceName||'Peranti')}</b><small class="table-sub">${esc(meta||'Maklumat peranti terhad')}</small>${tech?`<small class="table-sub">${esc(tech)}</small>`:''}</td><td>${esc(d.createdAt||'—')}</td><td>${esc(d.expiresAt||'—')}</td><td><button class="action-link warn-link" onclick='revokeTrustedDevice(${attr(JSON.stringify(d.deviceId))},${attr(JSON.stringify(email))},${attr(JSON.stringify(name||email))})'>Logout peranti</button></td></tr>`;}).join(''):'<tr><td colspan="4" class="empty-cell">Tiada trusted device aktif.</td></tr>';
+      showModal(`<h3>Trusted Device</h3><p><b>${esc(name||r.user?.name||email)}</b><br><span class="muted">${esc(email)} · sesi MySQL maksimum 30 hari (bukan rolling)</span></p><div class="table-wrap compact-table"><table><thead><tr><th>Peranti</th><th>Sesi dicipta</th><th>Tamat jika tidak digunakan</th><th>Tindakan</th></tr></thead><tbody>${rows}</tbody></table></div><p class="tiny">Resume tidak memanjangkan tarikh luput sesi. Sesi sah maksimum 30 hari dari login asal. Logout peranti membatalkan sesi tersebut.</p><p><button class="btn ghost" onclick='revokeAllTrustedDevices(${attr(JSON.stringify(email))},${attr(JSON.stringify(name||email))})' ${devices.length?'':'disabled'}>Logout semua peranti</button> <button class="btn primary" onclick="closeModal()">Selesai</button></p>`);
     }catch(e){handleServerError(e);}
   }
   async function revokeTrustedDevice(deviceId,email,name){
     if(!confirm(`Logout trusted device ini untuk ${name}?`))return;
     try{
       await runServer('adminRevokeTrustedDevice',state.token,deviceId);
-      if(deviceId===currentTrustedDeviceId()){clearStoredSession();state.token='';state.deviceToken='';closeModal();await showLogin();return toast('Peranti semasa telah dilog keluar.');}
+      if(deviceId===await currentTrustedDeviceId()){clearStoredSession();state.token='';state.deviceToken='';closeModal();await showLogin();return toast('Peranti semasa telah dilog keluar.');}
       toast('Peranti telah dilog keluar.');await openTrustedDevices(email,name);
     }catch(e){handleServerError(e);}
   }
