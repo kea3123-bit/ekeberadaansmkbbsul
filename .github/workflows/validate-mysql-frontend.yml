@@ -27,6 +27,8 @@ jobs:
           php -l mysql-ui/php/index.php
           node --check < mysql-ui/Scripts.html
           node mysql-ui/tests/handler-escaping.test.js
+          node --check mysql-ui/php/monthly-print.js
+          node mysql-ui/tests/monthly-print.test.js
           mkdir -p /tmp/eke-mysql-preview
           php mysql-ui/index.php > /tmp/eke-mysql-preview/index.html
           python3 - <<'PY'
