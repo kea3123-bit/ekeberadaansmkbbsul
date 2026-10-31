@@ -8,7 +8,7 @@ async function openPinRecovery(){
     return showLoginError('Masukkan emel DELIMa yang berdaftar dahulu.');
   hideLoginError();
   state.recoveryEmail=email;
-  const btn=event?.currentTarget?.tagName==='BUTTON'?event.currentTarget:null;
+  const btn=(typeof event!=='undefined' && event?.currentTarget?.tagName==='BUTTON')?event.currentTarget:null;
   if(btn)setButtonBusy(btn,true,'Menghantar kod…');
   try{
     const result=await runServer('requestPinRecovery',email);
