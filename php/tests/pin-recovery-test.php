@@ -64,7 +64,7 @@ if(pin_recovery_available()){
   check(!password_verify('000000',$record['code_hash']),'Unrelated code accepted');
   pin_recovery_request($knownEmail);
   check(count($outbox)===1,'Cooldown must prevent repeated requests');
-  try{pin_recovery_confirm($knownEmail,'00000000','654321','654321');throw new RuntimeException('Invalid code was accepted');}
+  try{pin_recovery_confirm($knownEmail,'000000','654321','654321');throw new RuntimeException('Invalid code was accepted');}
   catch(RuntimeException $e){check(strpos($e->getMessage(),'Kod tidak sah')!==false,'Unexpected error');}
   check($record['attempts']===1,'Failed OTP attempt should persist');
   $res=pin_recovery_confirm($knownEmail,$code,'654321','654321');
