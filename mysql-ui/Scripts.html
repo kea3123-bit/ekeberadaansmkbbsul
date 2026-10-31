@@ -2,7 +2,7 @@ const state = {
     token:'', deviceToken:'', boot:null, admin:null, currentScreen:'home',
     myCardLoaded:false, myCardHalf:1, myCardData:null,
     adminCardEmail:'', adminCardData:null, adminCardHalf:1,
-    selectedAccount:null, changeTicket:'', setupPurpose:'',
+    selectedAccount:null, changeTicket:'', setupPurpose:'', recoveryEmail:'', pinRecoveryAvailable:false,
     selectedUserEmails:new Set(), filteredUsers:[], filteredReport:[], tableSorts:{},
     absence:null, absencePublic:null, absenceManagement:null, timeReview:null,
     cacheTimes:{},
@@ -324,6 +324,10 @@ const state = {
       const school=d?.schoolName||'e-Keberadaan';
       text('loginSchoolName',school);
       safeLocalSet('ek_school_name',school);
+      state.pinRecoveryAvailable=!!d?.pinRecovery?.enabled;
+      ['forgotPinReturnBtn','forgotPinEmailBtn','forgotPinPinBtn'].forEach(id=>{
+        document.getElementById(id)?.classList.toggle('hidden',!state.pinRecoveryAvailable);
+      });
     }).catch(()=>{});
     const last=readLastAccount();
     if(last){
@@ -336,7 +340,7 @@ const state = {
   }
 
   function showLoginStep(step){
-    const map={return:'loginStepReturn',email:'loginStepEmail',pin:'loginStepPin',setpin:'loginStepSetPin'};
+    const map={return:'loginStepReturn',email:'loginStepEmail',pin:'loginStepPin',setpin:'loginStepSetPin',recovery:'loginStepRecovery'};
     Object.values(map).forEach(id=>document.getElementById(id)?.classList.add('hidden'));
     document.getElementById(map[step]||map.email)?.classList.remove('hidden');
   }
@@ -438,6 +442,51 @@ const state = {
       toast('PIN berjaya ditetapkan. Peranti ini diingati selama 7 hari.',4200);
       enterApp();
     }catch(e){showLoginError(e.message);}
+    finally{setButtonBusy(btn,false,'');}
+  }
+
+  function openPinRecovery(){
+    if(!state.pinRecoveryAvailable)return showLoginError('Tempoh reset PIN sementara tidak tersedia.');
+    const email=String(state.selectedAccount?.email||document.getElementById('delimaEmail')?.value||readLastAccount()?.email||'').trim().toLowerCase();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return showLoginError('Masukkan emel DELIMa berdaftar dahulu.');
+    state.recoveryEmail=email;
+    hideLoginError();
+    text('recoveryEmailLabel',email);
+    text('recoveryCodeHint','Hantar kod pengesahan ke emel DELIMa terlebih dahulu.');
+    ['recoveryCode','recoveryPin','recoveryPinConfirm'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    showLoginStep('recovery');
+  }
+  async function requestPinRecoveryCode(){
+    if(!state.pinRecoveryAvailable)return showLoginError('Tempoh reset PIN sementara telah tamat.');
+    if(!state.recoveryEmail)return showLoginError('Mulakan semula dari halaman login.');
+    hideLoginError();
+    const btn=document.getElementById('recoverySendCodeBtn');setButtonBusy(btn,true,'Menghantar kod…');
+    try{
+      const result=await runServer('requestPinRecovery',state.recoveryEmail);
+      text('recoveryCodeHint',result?.message||'Jika akaun berdaftar, kod akan dihantar. Semak emel DELIMa dan folder Spam.');
+      document.getElementById('recoveryCode')?.focus();
+    }catch(e){showLoginError(e?.message||'Gagal meminta kod pengesahan.');}
+    finally{setButtonBusy(btn,false,'');}
+  }
+  async function submitPinRecovery(){
+    if(!state.pinRecoveryAvailable)return showLoginError('Tempoh reset PIN sementara telah tamat.');
+    const email=state.recoveryEmail;
+    const code=String(document.getElementById('recoveryCode')?.value||'').replace(/\D/g,'');
+    const pin=String(document.getElementById('recoveryPin')?.value||'').replace(/\D/g,'');
+    const confirm=String(document.getElementById('recoveryPinConfirm')?.value||'').replace(/\D/g,'');
+    if(!email)return showLoginError('Mulakan semula dari halaman login.');
+    if(code.length!==6)return showLoginError('Masukkan kod pengesahan 6 digit daripada emel.');
+    if(pin.length!==6||pin!==confirm)return showLoginError('PIN baharu mesti 6 digit dan kedua-duanya sepadan.');
+    hideLoginError();
+    const btn=document.getElementById('recoveryConfirmBtn');setButtonBusy(btn,true,'Menyimpan PIN…');
+    try{
+      const result=await runServer('completePinRecovery',email,code,pin,confirm);
+      applySessionResult(result);
+      state.recoveryEmail='';
+      ['recoveryCode','recoveryPin','recoveryPinConfirm'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+      enterApp();
+      toast('PIN berjaya ditetapkan.',4500);
+    }catch(e){showLoginError(e?.message||'Gagal menetapkan PIN.');}
     finally{setButtonBusy(btn,false,'');}
   }
 
@@ -1779,7 +1828,19 @@ function ensureAbsenceManageTableLayout(){
     const fromDate=month+'-01'<systemStart?systemStart:month+'-01';
     return {type:'MONTHLY',month,fromDate,toDate:`${month}-${String(lastDay).padStart(2,'0')}`};
   }
-  async function generateAttendancePresenceReportPdfClient(){try{const p=getAttendanceReportPeriod();const r=await runServer('generateAttendancePresenceReportPdf',state.token,p);downloadPdfResult(r);toast(`Laporan ${p.fromDate===p.toDate?p.fromDate:`${p.fromDate} hingga ${p.toDate}`} dijana.`);}catch(e){handleServerError(e);}}
+  async function generateAttendancePresenceReportPdfClient(){
+    // Open synchronously on user gesture: Safari/iOS PWA blocks async popups.
+    const preview=window.open('','_blank');
+    if(!preview){toast('Benarkan pop-up untuk membuka laporan PDF.',5500);return;}
+    preview.document.write('<!doctype html><meta charset="utf-8"><title>Menjana laporan...</title><p style="font:16px Arial;padding:24px">Mengambil data laporan daripada MySQL...</p>');
+    try {
+      const p=getAttendanceReportPeriod();
+      const result=await runServer('generateAttendancePresenceReportHtml',state.token,p);
+      if(!result?.html||!result.html.startsWith('<!doctype html>'))throw new Error('Pelayan tidak memulangkan laporan yang sah.');
+      preview.document.open();preview.document.write(result.html);preview.document.close();
+      preview.focus();toast('Laporan dibuka. Tekan Cetak / Simpan PDF.',5000);
+    } catch(e){preview.close();handleServerError(e);}
+  }
   async function generateAttendancePresenceReportSheetClient(){try{const p=getAttendanceReportPeriod();const r=await runServer('generateAttendancePresenceReportSheet',state.token,p);const names=Array.isArray(r.sheetNames)&&r.sheetNames.length?r.sheetNames.join(', '):(r.sheetName||'LAP RINGKASAN');toast(`Pakej template dijana: ${names}.`,6500);}catch(e){handleServerError(e);}}
 
   async function repairDuplicateAttendance(){if(!confirm('Sistem akan menggabungkan rekod KEHADIRAN yang mempunyai tarikh dan emel yang sama. Teruskan?'))return;try{const r=await runServer('adminRepairAttendanceDuplicates',state.token);toast(r.groupsMerged?`${r.groupsMerged} kumpulan duplikat digabungkan; ${r.rowsRemoved} baris dibuang.`:'Tiada rekod duplikat dijumpai.',4500);await refreshAdmin();}catch(e){handleServerError(e);}}
@@ -1812,6 +1873,9 @@ function ensureAbsenceManageTableLayout(){
     togglePassword,
     submitPinLogin,
     submitFirstPin,
+    openPinRecovery,
+    requestPinRecoveryCode,
+    submitPinRecovery,
     logout,
     navigate,
     startPunch,
