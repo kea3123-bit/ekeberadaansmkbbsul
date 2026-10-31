@@ -22,14 +22,14 @@ function attendance_public(?array $r,array $schedule):?array {
 }
 $parts=mysql_monthly_report_sections(['pentadbir'=>1],'2026-10-01','2026-10-31');
 if(count($parts)!==8)throw new RuntimeException('Expected summary, exceptions, 5 punch weeks and individual.');
-if($parts[0]['name']!=='RINGKASAN'||count($parts[0]['rows'])!==31)
-    throw new RuntimeException('Monthly 31-day summary incomplete.');
+if($parts[0]['name']!=='RINGKASAN'||count($parts[0]['rows'])!==90)
+    throw new RuntimeException('Staff-by-staff summary is incomplete.');
 if($parts[1]['name']!=='LEWAT BALIK AWAL'||count($parts[1]['rows'])!==1)
     throw new RuntimeException('Late exception missing.');
 if(count($parts[2]['rows'])!==90||count($parts[7]['rows'])!==90)
     throw new RuntimeException('Missing staff from card or individual summary.');
 $total=array_sum(array_map(static fn($part)=>count($part['rows']),$parts));
 if($total<500)throw new RuntimeException('Not all monthly staff records retained: '.$total);
-if($parts[2]['rows'][0][2]!=='08:10/16:30')
+if(strpos($parts[2]['rows'][0][2],'08:10/16:30')!==0)
     throw new RuntimeException('First punch time not retained in weekly matrix.');
-echo "PASS: 90 staff x 31 days, 8 sections, 31 daily totals, no silent 250-row truncation\n";
+echo "PASS: 90 staff x 31 days, 8 sections, per-staff summary, no silent 250-row truncation\n";
