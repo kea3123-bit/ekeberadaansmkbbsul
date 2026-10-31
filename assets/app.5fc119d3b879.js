@@ -2038,29 +2038,47 @@ function openPinRecovery(){
   hideLoginError();
   state.recoveryEmail=email;
   text('recoveryEmailLabel',email);
-  ['recoveryPin','recoveryPinConfirm'].forEach(id=>{
+  ['recoveryPin','recoveryPinConfirm','recoveryCode'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
   });
+  text('recoveryCodeHint','Hantar kod pengesahan ke emel DELIMa sebelum menetapkan PIN.');
   showLoginStep('recovery');
   setTimeout(()=>document.getElementById('recoveryPin')?.focus(),80);
+}
+async function requestPinRecoveryCode(){
+  if(!state.pinRecoveryAvailable)return showLoginError('Tempoh reset PIN sementara telah tamat.');
+  const email=state.recoveryEmail;
+  if(!email)return showLoginError('Mulakan semula dari halaman login.');
+  hideLoginError();
+  const btn=document.getElementById('recoverySendCodeBtn');
+  setButtonBusy(btn,true,'Menghantar kod…');
+  try{
+    const result=await runServer('requestPinRecovery',email);
+    text('recoveryCodeHint',result?.message||'Jika akaun berdaftar, kod pengesahan dihantar ke emel DELIMa. Semak Inbox dan Spam.');
+    const code=document.getElementById('recoveryCode');
+    if(code)code.focus();
+  }catch(e){showLoginError(e?.message||'Tidak dapat meminta kod pengesahan.');}
+  finally{setButtonBusy(btn,false,'');}
 }
 async function submitPinRecovery(){
   if(!state.pinRecoveryAvailable)
     return showLoginError('Tempoh reset PIN sementara telah tamat.');
   const email=state.recoveryEmail;
+  const code=String(document.getElementById('recoveryCode')?.value||'').replace(/\D/g,'');
   const pin=String(document.getElementById('recoveryPin')?.value||'').replace(/\D/g,'');
   const confirm=String(document.getElementById('recoveryPinConfirm')?.value||'').replace(/\D/g,'');
   if(!email)return showLoginError('Mulakan semula daripada halaman login.');
+  if(code.length!==6)return showLoginError('Masukkan kod pengesahan 6 digit daripada emel DELIMa.');
   if(pin.length!==6||confirm!==pin)
     return showLoginError('Masukkan PIN baharu 6 digit yang sama pada kedua-dua ruangan.');
   hideLoginError();
   const btn=document.getElementById('recoveryConfirmBtn');
   setButtonBusy(btn,true,'Menyimpan PIN…');
   try{
-    const result=await runServer('completePinRecovery',email,pin,confirm);
+    const result=await runServer('completePinRecovery',email,code,pin,confirm);
     applySessionResult(result);
     state.recoveryEmail='';
-    ['recoveryPin','recoveryPinConfirm'].forEach(id=>{
+    ['recoveryPin','recoveryPinConfirm','recoveryCode'].forEach(id=>{
       const el=document.getElementById(id);if(el)el.value='';
     });
     enterApp();

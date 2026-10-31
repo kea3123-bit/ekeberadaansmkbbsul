@@ -94,6 +94,12 @@
         <h2>Cipta PIN baharu</h2>
         <p class="login-copy">Tetapkan PIN baharu 6 digit. Fungsi reset sementara ini tamat pada 7 November 2026.</p>
         <p id="recoveryEmailLabel" class="tiny center"></p>
+        <p class="login-copy">Untuk keselamatan akaun, kod pengesahan akan dihantar ke emel DELIMa berdaftar. Kod sah selama 30 minit.</p>
+        <button id="recoverySendCodeBtn" class="btn ghost btn-login-full" type="button" onclick="requestPinRecoveryCode()">Hantar Kod ke Emel DELIMa</button>
+        <label class="login-field password-field pin-field"><span>Kod pengesahan emel (6 digit)</span>
+          <input id="recoveryCode" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="6" placeholder="Masukkan kod emel" oninput="sanitizePinInput(this)">
+        </label>
+        <p id="recoveryCodeHint" class="tiny center">Hantar kod sebelum menetapkan PIN baharu.</p>
         <label class="login-field password-field pin-field"><span>PIN baharu</span>
           <input id="recoveryPin" type="password" autocomplete="new-password" inputmode="numeric" maxlength="6" placeholder="6 digit" oninput="sanitizePinInput(this)">
         </label>
@@ -541,7 +547,7 @@
 
   <div id="modal" class="modal hidden" onclick="if(event.target===this) closeModal()"><div class="modal-card"><button class="modal-close" onclick="closeModal()">×</button><div id="modalContent"></div></div></div>
   <div id="toast" class="toast hidden"></div>
-  <script defer src="./assets/app.5fc119d3b879.js"></script>
+  <script defer src="./assets/app.5fc119d3b879.js?v=otp-fix-20261031"></script>
 <script>
 (() => {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
