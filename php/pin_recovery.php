@@ -79,7 +79,7 @@ function pin_recovery_confirm($rawEmail,$rawCode,$rawPin,$rawConfirm): array {
     $pin=(string)$rawPin;
     $confirm=(string)$rawConfirm;
     if(!preg_match('/^[0-9]{6}$/D',$code))
-        throw new InvalidArgumentException('Masukkan kod 8 digit daripada emel.');
+        throw new InvalidArgumentException('Masukkan kod pengesahan 6 digit daripada emel.');
     if(!preg_match('/^[0-9]{6}$/D',$pin) || !hash_equals($pin,$confirm))
         throw new InvalidArgumentException('PIN baharu mesti 6 digit dan kedua-duanya sepadan.');
     $u=user_by_email($email);
