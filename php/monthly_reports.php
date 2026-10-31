@@ -45,10 +45,16 @@ function mysql_monthly_report_sections(array $admin,string $from,string $to):arr
             $rec=attendance_public($r,$sch);
             $in=$rec['inTime']??'';$out=$rec['outTime']??'';
             $in2=$rec['inTime2']??'';$out2=$rec['outTime2']??'';
-            $absent=false;
+            $absent=false;$absenceReason='';
             if(!$in && !$in2){
                 foreach($absentByUser[$email]??[] as $a)
-                    if($a['startDate']<=$day && $a['endDate']>=$day){$absent=true;break;}
+                    if($a['startDate']<=$day && $a['endDate']>=$day){
+                        $absent=true;
+                        $absenceReason=trim((string)($a['type']??''));
+                        $note=trim((string)($a['note']??''));
+                        if($note!=='')$absenceReason.=' — '.substr($note,0,75);
+                        break;
+                    }
             }
             $status=trim((string)($rec['status']??''));
             if(!$in && !$in2) $status=$absent?'TIDAK HADIR':'BELUM HADIR';
@@ -71,7 +77,7 @@ function mysql_monthly_report_sections(array $admin,string $from,string $to):arr
             if($in2!==''||$out2!=='')$cell.=';'.($in2?:'--').'/'.($out2?:'--');
             if(!$in && !$in2){
                 $dayOfWeek=strtoupper(date('D',strtotime($day)));
-                $cell=$absent?'TIDAK HADIR':(isset($holidayDates[$day])?'CUTI UMUM':
+                $cell=$absent?('TIDAK HADIR'.($absenceReason!==''?'|'.$absenceReason:'')):(isset($holidayDates[$day])?'CUTI UMUM':
                     (!in_array($dayOfWeek,$workDays,true)?'HUJUNG MINGGU':'BELUM HADIR'));
             }elseif($late||$early) {
                 $cell.=($late&&$early?'|LEWAT / BALIK AWAL':($late?'|LEWAT':'|BALIK AWAL'));
