@@ -194,6 +194,39 @@ assert.equal(tooBig.ok,false,'over 2.5 MB PDF must not be returned');
 assert.match(tooBig.error,/2.5 MB/);
 assert.equal(trashed.length,2,'oversized temporary document must still be deleted');
 
+// Monthly MySQL exports can include independent report tabs with more than
+// 250 combined rows. Verify sections and spreadsheet formula escaping.
+const monthlySections=ctx.workspaceReportSections_({sections:[
+  {name:'RINGKASAN',headers:['Tarikh','Jumlah'],rows:[['2026-10-01',90]]},
+  {name:'PERAKAM 01-07',headers:['Nama','Masuk'],rows:[['Staf','08:00'],['=HYPERLINK(1)','09:00']]}
+]});
+assert.equal(monthlySections.length,2);
+assert.equal(monthlySections[1].rows.length,2);
+const sheetValues=[];
+function fakeSheet(){
+  return {
+    setName(name){this.name=name;return this;},
+    getRange(row,col,count,cols){return {
+      setValues(rows){sheetValues.push({row,rows});return this;},
+      setFontWeight(){return this;},setBackground(){return this;}
+    };},
+    setFrozenRows(){return this;},autoResizeColumns(){return this;}
+  };
+}
+const sheetState={sheets:[fakeSheet()]};
+ctx.SpreadsheetApp={
+  create(title){return {
+    getSheets:()=>sheetState.sheets,
+    insertSheet(){const s=fakeSheet();sheetState.sheets.push(s);return s;},
+    getUrl:()=> 'https://docs.google.com/spreadsheets/d/test-spreadsheet'
+  };}
+};
+const sheetResult=ctx.workspaceExportSheet_({title:'Laporan Bulanan',sections:monthlySections});
+assert.equal(sheetResult.ok,true);
+assert.equal(sheetResult.sheetNames.length,2);
+assert.equal(sheetValues.length,2);
+assert.match(sheetValues[1].rows[2][0],/^'=HYPERLINK/,'Untrusted report formulas must be escaped');
+
 const emailData={
   to:'staff@example.test',
   subject:'Keputusan eKeberadaan',
@@ -215,4 +248,4 @@ assert.equal(delivered.length,1);
 const invalidRecipient=jsonResponse(signedCall('sendEmail','0123456789abcdef0123456789abcdec',Math.floor(Date.now()/1000),{...emailData,to:'not-an-address'}));
 assert.equal(invalidRecipient.ok,false);
 assert.equal(delivered.length,1);
-console.log('PASS Workspace JSON route, HMAC, replay, expiry, legacy HTML, signed photo lookup and folder diagnostics, bounded PDF Blob export, signed email and deduplication');
+console.log('PASS Workspace JSON route, HMAC, replay, expiry, legacy HTML, signed photo lookup and folder diagnostics, bounded PDF Blob export, multi-sheet export and formula escaping, signed email and deduplication');
