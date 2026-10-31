@@ -342,27 +342,67 @@ function workspaceExportPdf_(data){
 }
 function workspaceExportSheet_(data){
   const sections=workspaceReportSections_(data);
+  const colors=workspaceReportColors_();
+  const monthly=sections.some(s=>s.name==='RINGKASAN')&&sections.some(s=>s.name==='INDIVIDU');
+  const all=sections.slice();
+  if(monthly){
+    const individual=workspaceReportIndividualRows_(sections);
+    const detail=[];
+    individual.forEach(person=>{
+      (person.days||[]).forEach(d=>detail.push([
+        String(person.bil),person.name,person.category
+      ].concat(d)));
+    });
+    if(detail.length)
+      all.push({name:'INDIVIDU HARIAN',
+        headers:['Bil.','Nama','Kategori','Tarikh','Hari','Masuk','Keluar','Masuk 2','Keluar 2','Status','Catatan'],
+        rows:detail});
+  }
   const title=workspaceSanitizeName_(data.title);
   const ss=SpreadsheetApp.create(title);
   const names=[];
-  // Escape formula-style imported cells and use batched setValues.
   const safe=value=>/^[=+\-@]/.test(value)?"'"+value:value;
-  sections.forEach((section,index)=>{
+  all.forEach((section,index)=>{
     const sh=index===0?ss.getSheets()[0]:ss.insertSheet();
     const name=section.name.slice(0,31);
     sh.setName(name);names.push(name);
-    const header=section.headers;
-    const rows=[header].concat(section.rows).map(r=>r.map(safe));
-    for(let at=0;at<rows.length;at+=250){
-      const chunk=rows.slice(at,at+250);
-      sh.getRange(at+1,1,chunk.length,header.length).setValues(chunk);
+    const header=section.headers,cols=header.length;
+    const titleRow=[name].concat(Array(cols-1).fill(''));
+    const values=[titleRow,header].concat(section.rows).map(r=>r.map(safe));
+    for(let at=0;at<values.length;at+=250){
+      const chunk=values.slice(at,at+250);
+      const range=sh.getRange(at+1,1,chunk.length,cols);
+      range.setValues(chunk);
+      if(range.setBackgrounds){
+        const backgrounds=chunk.map((row,k)=>row.map((val,j)=>{
+          const i=at+k;
+          if(i===0)return colors.aqua;
+          if(i===1)return colors.blue;
+          if(name==='RINGKASAN'&&j===cols-1)return colors.amber;
+          return workspaceReportCellColor_(val,name,false);
+        }));
+        range.setBackgrounds(backgrounds);
+      }
+      if(range.setBorder)
+        range.setBorder(true,true,true,true,true,true,colors.green,
+            SpreadsheetApp.BorderStyle?SpreadsheetApp.BorderStyle.SOLID:null);
     }
-    sh.getRange(1,1,1,header.length).setFontWeight('bold').setBackground('#dce8ff');
-    sh.setFrozenRows(1);sh.autoResizeColumns(1,Math.min(header.length,12));
+    const titleRange=sh.getRange(1,1,1,cols);
+    if(titleRange.setBackground)titleRange.setBackground(colors.aqua);
+    if(titleRange.setFontWeight)titleRange.setFontWeight('bold');
+    const headerRange=sh.getRange(2,1,1,cols);
+    headerRange.setFontWeight('bold').setBackground(colors.blue);
+    if(headerRange.setFontColor)headerRange.setFontColor(colors.ink);
+    sh.setFrozenRows(2);
+    sh.autoResizeColumns(1,Math.min(cols,12));
+    if(sh.getRange&&values.length>2){
+      const dataRange=sh.getRange(3,1,values.length-2,cols);
+      if(dataRange.setWrap)dataRange.setWrap(true);
+      if(dataRange.setFontSize)dataRange.setFontSize(cols>11?9:10);
+    }
   });
   return {ok:true,url:ss.getUrl(),sheetName:names[0],sheetNames:names};
 }
-
 /**
  * Isolated MailApp adapter. Input is signed by PHP's HMAC bridge and comes
  * only from its server-side MySQL outbox worker, never from a browser.
