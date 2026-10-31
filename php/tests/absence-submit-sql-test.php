@@ -17,7 +17,7 @@ function absence_types():array {return ['CUTI'];}
 function now_myt():string {return '2026-10-31 14:00:00';}
 function excel_number($date):float {return 46326.58;}
 function one(string $query,array $args=[]):?array {
-    if(strpos($query,'MAX(_source_row)')!==false)return ['n'=>466];
+    throw new RuntimeException('New inserts must not compute MAX(_source_row).');
     throw new RuntimeException('Unexpected SELECT');
 }
 $queries=[];$audits=[];
