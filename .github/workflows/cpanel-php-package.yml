@@ -34,11 +34,13 @@ jobs:
           php -l php/workspace_services.php
           php -l php/email_queue.php
           php -l php/mail_schedule.php
+          php -l php/pin_recovery.php
           php -l php/cli/workspace_mail_worker.php
           php php/tests/admin-report-settings-test.php
           php php/tests/public-users-bulk-test.php
           php php/tests/profile-photo-lookup-test.php
           php php/tests/email-outbox-test.php
+          php php/tests/pin-recovery-test.php
           node --check < Scripts.html
           node --check < apps-script/Bridges.gs
           node --check < apps-script/97_WorkspaceBridge.gs
@@ -54,7 +56,7 @@ jobs:
           install -m 0644 php/api.php /tmp/eke-fix/php/api.php
           install -m 0644 api.php .htaccess /tmp/eke-backend/
           install -m 0644 php/api.php php/_lib.php php/workspace_bridge.php \
-             php/workspace_services.php php/email_queue.php php/mail_schedule.php php/.htaccess /tmp/eke-backend/php/
+             php/workspace_services.php php/email_queue.php php/mail_schedule.php php/pin_recovery.php php/.htaccess /tmp/eke-backend/php/
           install -m 0644 php/cli/workspace_mail_worker.php php/cli/.htaccess /tmp/eke-backend/php/cli/
           chmod 0755 /tmp/eke-backend/php /tmp/eke-backend/php/cli
           (cd /tmp/eke-fix && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-report-hotfix.zip" php)
@@ -65,7 +67,7 @@ jobs:
               files=set(zipf.namelist())
               expected={'api.php','.htaccess','php/api.php','php/_lib.php',
                         'php/workspace_bridge.php','php/workspace_services.php',
-                        'php/email_queue.php','php/mail_schedule.php','php/.htaccess',
+                        'php/email_queue.php','php/mail_schedule.php','php/pin_recovery.php','php/.htaccess',
                         'php/cli/.htaccess','php/cli/workspace_mail_worker.php'}
               assert expected.issubset(files),expected-files
               for item in zipf.infolist():
@@ -74,6 +76,19 @@ jobs:
                   assert 'config.local' not in item.filename
               print('COMPLETE_MYSQL_BACKEND_SAFE_ZIP_OK')
           PY
+
+      - name: Package additive one-week PIN recovery migration
+        run: |
+          set -euo pipefail
+          cp php/migrations/20261031_pin_recovery.sql ekeberadaansmkbbsul-pin-recovery.sql
+          grep -Fq 'CREATE TABLE IF NOT EXISTS ek_pin_recovery' ekeberadaansmkbbsul-pin-recovery.sql
+          ! grep -Eiq '(^|[[:space:]])(DROP|TRUNCATE)[[:space:]]' ekeberadaansmkbbsul-pin-recovery.sql
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ekeberadaansmkbbsul-pin-recovery-sql
+          path: ekeberadaansmkbbsul-pin-recovery.sql
+          retention-days: 14
 
       - name: Package 403 permission recovery with safe ZIP modes
         shell: bash
