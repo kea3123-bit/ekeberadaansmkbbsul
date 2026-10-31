@@ -324,6 +324,10 @@ const state = {
       const school=d?.schoolName||'e-Keberadaan';
       text('loginSchoolName',school);
       safeLocalSet('ek_school_name',school);
+      state.pinRecoveryAvailable=!!d?.pinRecovery?.enabled;
+      ['forgotPinEmailBtn','forgotPinPinBtn','forgotPinReturnBtn'].forEach(id=>{
+        document.getElementById(id)?.classList.toggle('hidden',!state.pinRecoveryAvailable);
+      });
     }).catch(()=>{});
     const last=readLastAccount();
     if(last){
