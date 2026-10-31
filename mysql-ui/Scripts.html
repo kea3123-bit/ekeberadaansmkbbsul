@@ -1803,7 +1803,16 @@ function ensureAbsenceManageTableLayout(){
     return {type:'MONTHLY',month,fromDate,toDate:`${month}-${String(lastDay).padStart(2,'0')}`};
   }
   async function generateAttendancePresenceReportPdfClient(){try{const p=getAttendanceReportPeriod();const r=await runServer('generateAttendancePresenceReportPdf',state.token,p);downloadPdfResult(r);toast(`Laporan ${p.fromDate===p.toDate?p.fromDate:`${p.fromDate} hingga ${p.toDate}`} dijana.`);}catch(e){handleServerError(e);}}
-  async function generateAttendancePresenceReportSheetClient(){try{const p=getAttendanceReportPeriod();const r=await runServer('generateAttendancePresenceReportSheet',state.token,p);const names=Array.isArray(r.sheetNames)&&r.sheetNames.length?r.sheetNames.join(', '):(r.sheetName||'LAP RINGKASAN');toast(`Pakej template dijana: ${names}.`,6500);}catch(e){handleServerError(e);}}
+  async function generateAttendancePresenceReportSheetClient(){
+    try{
+      const p=getAttendanceReportPeriod(),r=await runServer('generateAttendancePresenceReportSheet',state.token,p);
+      const url=String(r?.url||'');
+      if(!/^https:\/\/docs\.google\.com\/spreadsheets\/d\//.test(url))
+        throw new Error('Google Workspace tidak memberikan pautan Google Sheets yang sah.');
+      const names=Array.isArray(r.sheetNames)?r.sheetNames.join(', '):(r.sheetName||'LAPORAN');
+      showModal('<h3>Laporan berjaya dijana</h3><p>Bahagian: '+esc(names)+'</p><p><a class="btn primary" target="_blank" rel="noopener noreferrer" href="'+attr(url)+'">Buka Google Sheets</a></p><p><button class="btn ghost" onclick="closeModal()">Tutup</button></p>');
+    }catch(e){handleServerError(e);}
+  }
 
   async function repairDuplicateAttendance(){if(!confirm('Sistem akan menggabungkan rekod KEHADIRAN yang mempunyai tarikh dan emel yang sama. Teruskan?'))return;try{const r=await runServer('adminRepairAttendanceDuplicates',state.token);toast(r.groupsMerged?`${r.groupsMerged} kumpulan duplikat digabungkan; ${r.rowsRemoved} baris dibuang.`:'Tiada rekod duplikat dijumpai.',4500);await refreshAdmin();}catch(e){handleServerError(e);}}
   async function generateReportSheet(){try{const r=await runServer('generateReportSheet',state.token,document.getElementById('reportDate').value);toast(`Laporan dijana di ${r.sheetName}.`);}catch(e){handleServerError(e);}}
