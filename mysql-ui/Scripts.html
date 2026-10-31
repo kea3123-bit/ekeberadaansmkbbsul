@@ -1809,7 +1809,18 @@ function ensureAbsenceManageTableLayout(){
     const fromDate=month+'-01'<systemStart?systemStart:month+'-01';
     return {type:'MONTHLY',month,fromDate,toDate:`${month}-${String(lastDay).padStart(2,'0')}`};
   }
-  async function generateAttendancePresenceReportPdfClient(){try{const p=getAttendanceReportPeriod();const r=await runServer('generateAttendancePresenceReportPdf',state.token,p);downloadPdfResult(r);toast(`Laporan ${p.fromDate===p.toDate?p.fromDate:`${p.fromDate} hingga ${p.toDate}`} dijana.`);}catch(e){handleServerError(e);}}
+  async function generateAttendancePresenceReportPdfClient(){
+    const btn=document.getElementById('monthlyPrintReportButton');
+    if(btn)btn.disabled=true;
+    try{
+      const period=getAttendanceReportPeriod();
+      const report=await runServer('generateAttendancePresenceReportHtml',state.token,period);
+      if(typeof window.showMonthlyReportPreview!=='function')
+        throw new Error('Modul laporan HTML belum dimuatkan. Segar semula aplikasi.');
+      window.showMonthlyReportPreview(report);
+    }catch(e){handleServerError(e);}
+    finally{if(btn)btn.disabled=false;}
+  }
   async function generateAttendancePresenceReportSheetClient(){
     try{
       const p=getAttendanceReportPeriod(),r=await runServer('generateAttendancePresenceReportSheet',state.token,p);
