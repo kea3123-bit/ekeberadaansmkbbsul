@@ -7,7 +7,8 @@ $styles = file_get_contents($root.'/Styles.html');
 $logo = file_get_contents($root.'/Logo.html');
 $scripts = file_get_contents($root.'/Scripts.html');
 $pinUi = file_get_contents(__DIR__.'/pin-ui.js');
-if ($styles === false || $logo === false || $scripts === false || $pinUi === false) { http_response_code(500); exit('App assets missing'); }
+$pinRecoveryUi = file_get_contents(__DIR__.'/pin-recovery-ui.js');
+if ($styles === false || $logo === false || $scripts === false || $pinUi === false || $pinRecoveryUi === false) { http_response_code(500); exit('App assets missing'); }
 // The refactor/performance-v2 frontend uses runServerRaw(), while older
 // frontend revisions used runServer(). Adapt either version without modifying
 // the canonical source scripts from the upstream branch.
@@ -88,7 +89,7 @@ foreach($hooks as $hook) {
     }
 }
 if (!$hookFound) {http_response_code(500);exit('Frontend first-login hook mismatch');}
-$scripts .= "\n".$pinUi;
+$scripts .= "\n".$pinUi."\n".$pinRecoveryUi;
 $index = str_replace('<button class="btn ghost small" onclick="logout()">Keluar</button>',
   '<button class="btn ghost small" type="button" onclick="openChangePin()">Tukar PIN</button><button class="btn ghost small" onclick="logout()">Keluar</button>', $index);
 $index = str_replace("<?!= include('Styles'); ?>",$styles,$index);
