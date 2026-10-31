@@ -148,6 +148,20 @@ function rpc(string $fn,array $a) {
         return punch_mysql(require_user($a[0]??''),(string)($a[1]??''),$a[2]??null);
       case 'adminSyncProfilePhotos':
         return workspace_sync_photos(require_user($a[0]??'',true));
+      case 'generateAttendancePresenceReportHtml':
+        // Render a printable report directly in the browser. No Google Docs,
+        // GAS, Google Drive, or HMAC transport in this PHP/MySQL request.
+        $admin=require_user($a[0]??'',true);
+        $period=is_array($a[1]??null)?$a[1]:[];
+        $from=valid_day((string)($period['fromDate']??today()));
+        $to=valid_day((string)($period['toDate']??$from));
+        if($from>$to||(strtotime($to)-strtotime($from))>31*86400)
+            throw new InvalidArgumentException('Pilih tempoh laporan maksimum 31 hari.');
+        require_once __DIR__.'/monthly_reports.php';
+        return ['ok'=>true,'kind'=>'MONTHLY_HTML',
+          'schoolName'=>'SMK Bandar Baru Sungai Lalang',
+          'fromDate'=>$from,'toDate'=>$to,
+          'sections'=>mysql_monthly_report_sections($admin,$from,$to)];
       case 'generatePublicAbsencePresencePdf':
       case 'generateAbsencePresencePdf':
       case 'generateTimeReviewPdf':
