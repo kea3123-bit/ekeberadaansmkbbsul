@@ -1,0 +1,36 @@
+name: Safe trigger cutover validation (no deployment)
+on:
+  push:
+    branches:
+      - fix/2026-11-01-trigger-cutover-safe
+  pull_request:
+    branches:
+      - refactor/performance-v2
+permissions:
+  contents: read
+jobs:
+  safe-cutover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax and integration contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l php/mail_schedule.php
+          php -l php/attendance_jobs.php
+          php -l php/email_queue.php
+          php -l php/cli/workspace_mail_worker.php
+          php -l php/api.php
+          php -l php/_lib.php
+          php php/tests/trigger-cutover-test.php
+          node --check < apps-script/00_Core.gs
+          node --check < apps-script/50_Notifications.gs
+          node --check < apps-script/61_Absence.gs
+          node --check < apps-script/97_WorkspaceBridge.gs
+          ! grep -q 'MailApp\.sendEmail(' apps-script/50_Notifications.gs
+          ! grep -q 'ScriptApp\.newTrigger(' apps-script/50_Notifications.gs
+          grep -q 'workspaceSendEmail_' apps-script/97_WorkspaceBridge.gs
+          grep -q "'sendEmail'" php/workspace_bridge.php
+          grep -q 'run_mysql_attendance_jobs()' php/cli/workspace_mail_worker.php
+          echo "Safe MySQL-only cron and signed Workspace bridge wiring OK"
