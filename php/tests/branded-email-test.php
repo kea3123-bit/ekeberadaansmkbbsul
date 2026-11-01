@@ -24,4 +24,21 @@ foreach(['#0b57d0','Keputusan permohonan','DILULUSKAN','A-123','Buka e-Keberadaa
 $pin=ek_mail_html_from_text('eKeberadaan: PIN', "PIN anda: <test>&\nSila semak.");
 ck(str_contains($pin,'&lt;test&gt;&amp;'),'PIN body not escaped');
 ck(!str_contains($pin,'<test>'),'Unescaped PIN body markup');
+// Existing outbox table already has body_html; preserve stable event dedupe
+// and allow old code paths to enqueue text without a fifth argument.
+require dirname(__DIR__).'/email_queue.php';
+$GLOBALS['queueCalls']=[];
+function execute_sql(string $query,array $args=[]):int {
+    $GLOBALS['queueCalls'][]=[$query,$args];
+    return 1;
+}
+ck(enqueue_workspace_email('event-html','person@example.test','Reminder','Plain text',$html),'HTML enqueue failed');
+$entry=$GLOBALS['queueCalls'][0];
+ck(str_contains($entry[0],'body_html'),'Outbox SQL omitted body_html');
+ck($entry[1][4]===$html,'Outbox did not store HTML content');
+ck($entry[1][0]===hash('sha256','event-html|person@example.test'),'Dedupe event changed');
+ck(enqueue_workspace_email('event-text','person@example.test','Report','Plain text'),'Text-only path should still work');
+ck($GLOBALS['queueCalls'][1][1][4]===null,'Text-only legacy queue did not retain null HTML fallback');
+ck(!enqueue_workspace_email('event-bad','person@example.test','Report','Text',str_repeat('x',45001)),
+    'Oversized HTML must be rejected');
 echo "BRANDED_EMAIL_HTML_TESTS_OK\n";
