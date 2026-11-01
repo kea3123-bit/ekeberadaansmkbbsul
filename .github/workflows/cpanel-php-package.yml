@@ -51,7 +51,7 @@ jobs:
           php php/tests/profile-photo-lookup-test.php
           php php/tests/email-outbox-test.php
           php php/tests/branded-email-test.php
-          node mysql-ui/tests/email-bridge-html.test.js
+          node apps-script/tests/email-bridge-html.test.js
           php php/tests/pin-recovery-test.php
           node --check < Scripts.html
           node --check < apps-script/Bridges.gs
