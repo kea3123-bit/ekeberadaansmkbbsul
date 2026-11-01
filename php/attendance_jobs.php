@@ -47,6 +47,7 @@ function run_mysql_attendance_jobs():array {
                     if($time>$end)$end=$time;
                 }
                 if(!$allApproved||$clock<$end){$result['waiting']++;continue;}
+                if(strtoupper((string)($s['EMAIL_NOTIFICATIONS_ENABLED']??'TRUE'))==='FALSE'){$result['waiting']++;continue;}
                 if(!$adminEmails){$result['waiting']++;continue;}
                 $event='presence-no-punch:'.$date.':'.$email;
                 $complete=true;
