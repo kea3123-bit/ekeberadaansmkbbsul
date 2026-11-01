@@ -65,7 +65,7 @@ const EK = Object.freeze({
     THURSDAY_WBF_OUT_TO: '16:30',
     THURSDAY_WBF_DURATION_MINUTES: '450',
     ABSENT_AFTER: '10:00',
-    PUNCH_REMINDER_ENABLED: 'TRUE',
+    PUNCH_REMINDER_ENABLED: 'FALSE',
     PUNCH_REMINDER_TIME: '09:00',
     WORKING_DAYS: 'SUN,MON,TUE,WED,THU',
     SYSTEM_MODE: 'REAL',
@@ -216,11 +216,7 @@ function onOpen() {
     .addItem('Reset pengguna dipilih (fresh)', 'resetSelectedUserFreshFromMenu')
     .addItem('Sync gambar profil dari Drive', 'syncProfilePhotosFromMenu')
     .addSeparator()
-    .addItem('Benarkan akses emel pemilik', 'authorizeEmailPermissionOwner')
-    .addItem('Aktifkan / baiki notifikasi emel', 'installEmailNotificationsFromMenu')
-    .addItem('Hantar emel ujian kepada saya', 'sendNotificationTestFromMenu')
-    .addItem('Hantar peringatan rekod waktu sekarang', 'sendPunchReminderFromMenu')
-    .addItem('Hantar laporan semalam sekarang', 'sendYesterdayAttendanceReportFromMenu')
+    .addItem('Matikan trigger Google Sheets lama', 'disableLegacySheetTriggersAfterMySqlCutover')
     .addSeparator()
     .addItem('Baiki rekod duplikat', 'repairAttendanceDuplicatesFromMenu')
     .addItem('Baiki status waktu tersimpan', 'repairAttendanceTimingStatusesFromMenu')
@@ -252,8 +248,7 @@ function setupSystem() {
   ensurePublicHolidaySheet_();
   getSessionSecret_();
   getPasswordPepper_();
-  PropertiesService.getScriptProperties().setProperty(EK.EMAIL.ENABLED_PROPERTY, 'TRUE');
-  installEmailNotifications_({silent: true});
+  PropertiesService.getScriptProperties().setProperty(EK.EMAIL.ENABLED_PROPERTY, 'FALSE');
 
   // Bersihkan rekod punch duplikat lama secara selamat.
   repairAttendanceDuplicates_({audit: false});
