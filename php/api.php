@@ -603,6 +603,11 @@ function public_absences(string $from,string $to): array {
     if ($from>$to || (strtotime($to)-strtotime($from))>366*86400) throw new InvalidArgumentException('Tempoh tidak sah.');
     $data=array_values(array_filter(all_absence_rows(),fn($r)=>$r['endDate']>=$from&&$r['startDate']<=$to&&in_array($r['status'],['MENUNGGU','DILULUSKAN'],true)));
     foreach($data as &$r){$r['startDate']=max($r['startDate'],$from);$r['endDate']=min($r['endDate'],$to);}unset($r);
+    // One authoritative dataset for the public table AND its Google Workspace PDF.
+    // Original requests stay unchanged; only physically persisted MySQL
+    // AUTO_TIDAK_HADIR events are appended as TIDAK MOHON / TIADA PENJELASAN.
+    require_once __DIR__.'/absence_auto_report.php';
+    $data=array_merge($data,mysql_auto_unexplained_absence_rows($from,$to,$data));
     return ['fromDate'=>$from,'toDate'=>$to,'today'=>today(),'systemStartDate'=>settings_raw()['SYSTEM_START_DATE']??'2026-01-01','rows'=>$data];
 }
 function management_absences(array $u,string $from,string $to): array {

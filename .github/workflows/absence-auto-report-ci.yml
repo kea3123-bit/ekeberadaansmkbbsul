@@ -1,0 +1,41 @@
+name: Absence PDF auto-no-show regression (no deployment)
+on:
+  push:
+    branches:
+      - fix/20261101-absence-pdf-auto-records
+  pull_request:
+    branches:
+      - refactor/performance-v2
+permissions:
+  contents: read
+jobs:
+  absence-auto-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax, reporting integration, and no-show regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l php/absence_auto_report.php
+          php -l php/api.php
+          php -l php/workspace_services.php
+          php php/tests/public-auto-absence-report-test.php
+          php php/tests/absence-submit-sql-test.php
+          php php/tests/email-outbox-test.php
+          php -r '$api=file_get_contents("php/api.php"); $pdf=file_get_contents("php/workspace_services.php"); if(strpos($api,"mysql_auto_unexplained_absence_rows")===false||strpos($pdf,"mysql_auto_unexplained_absence_rows")===false)exit(1); echo "PUBLIC_LIST_AND_PDF_SHARE_MYSQL_AUTO_ROWS_OK\n";'
+          test ! -f php/config.local.php
+      - name: Package only the two backend report files (no deployment)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/eke-auto-fix/ekeberadaansmkbbsul/php
+          install -m 0644 php/api.php php/workspace_services.php \
+            php/absence_auto_report.php /tmp/eke-auto-fix/ekeberadaansmkbbsul/php/
+          (cd /tmp/eke-auto-fix && zip -qr "$GITHUB_WORKSPACE/eKeberadaan-AUTO-TIDAK-HADIR-PDF.zip" ekeberadaansmkbbsul)
+          unzip -l eKeberadaan-AUTO-TIDAK-HADIR-PDF.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eke-absence-auto-report-hotfix
+          path: eKeberadaan-AUTO-TIDAK-HADIR-PDF.zip
+          retention-days: 30

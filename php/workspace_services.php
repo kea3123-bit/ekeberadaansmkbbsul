@@ -92,7 +92,16 @@ function workspace_report(array $user,string $method,$arg) {
         if($from>$to || (strtotime($to)-strtotime($from))>31*86400)
             throw new InvalidArgumentException('Eksport PDF: pilih julat maksimum 31 hari.');
         $info=$public?public_absences($from,$to):management_absences($user,$from,$to);
-        $list=$public?($info['rows']??[]):($info['requests']??[]);
+        // Public view already merges actual AUTO_TIDAK_HADIR records. The
+        // administrator's PDF must do the same without adding read-only auto
+        // rows to the management approval/action table.
+        if($public) {
+            $list=$info['rows']??[];
+        } else {
+            $requests=$info['requests']??[];
+            require_once __DIR__.'/absence_auto_report.php';
+            $list=array_merge($requests,mysql_auto_unexplained_absence_rows($from,$to,$requests));
+        }
         $title='Laporan Tidak Hadir dan Keberadaan';
         $headers=['Nama','Kategori','Mod','Jenis','Tarikh mula','Tarikh akhir','Masa mula','Masa akhir','Status'];
         foreach($list as $x){
