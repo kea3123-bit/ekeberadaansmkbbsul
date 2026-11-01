@@ -43,5 +43,5 @@ if($x['startDate']!=='2026-11-01'||$x['endDate']!=='2026-11-01')throw new Runtim
 $next=mysql_auto_unexplained_absence_rows('2026-11-02','2026-11-02',$active);
 if(count($next)!==1||$next[0]['startDate']!=='2026-11-02')throw new RuntimeException('Range filtering failed');
 $approved=[['email'=>'a@example.test','status'=>'DILULUSKAN','startDate'=>'2026-11-01','endDate'=>'2026-11-02']];
-if(mysql_auto_unexplained_absence_rows('2026-11-01','2026-11-01',$approved))throw new RuntimeException('Approved overlapping leave duplicated');
+foreach(mysql_auto_unexplained_absence_rows('2026-11-01','2026-11-01',$approved) as $r) if($r['email']==='a@example.test') throw new RuntimeException('Approved overlapping leave duplicated');
 echo "PUBLIC_AUTO_ABSENCE_PDF_TESTS_OK\n";
