@@ -1179,9 +1179,11 @@
     const mode=document.getElementById('absenceMode')?.value||'TIDAK_HADIR',d=state.absence||{};
     const typeSel=document.getElementById('absenceType');
     const requiredExternalOfficialTypes=[
+      'BENGKEL/KURSUS/SEMINAR (SEK)',
       'BENGKEL/KURSUS/SEMINAR (PPD)',
       'BENGKEL/KURSUS/SEMINAR (JPN)',
       'BENGKEL/KURSUS/SEMINAR (KPM)',
+      'MESYUARAT/TAKLIMAT (SEK)',
       'MESYUARAT/TAKLIMAT (PPD)',
       'MESYUARAT/TAKLIMAT (JPN)',
       'MESYUARAT/TAKLIMAT (KPM)'
