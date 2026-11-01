@@ -33,6 +33,7 @@ jobs:
           php -l php/workspace_bridge.php
           php -l php/workspace_services.php
           php -l php/email_queue.php
+          php -l php/email_templates.php
           php -l php/mail_schedule.php
           php -l php/attendance_jobs.php
           php -l php/cron_notifications.php
@@ -49,6 +50,8 @@ jobs:
           php php/tests/public-users-bulk-test.php
           php php/tests/profile-photo-lookup-test.php
           php php/tests/email-outbox-test.php
+          php php/tests/branded-email-test.php
+          node mysql-ui/tests/email-bridge-html.test.js
           php php/tests/pin-recovery-test.php
           node --check < Scripts.html
           node --check < apps-script/Bridges.gs
@@ -65,7 +68,7 @@ jobs:
           install -m 0644 php/api.php /tmp/eke-fix/php/api.php
           install -m 0644 api.php .htaccess index.php /tmp/eke-backend/
           install -m 0644 php/api.php php/_lib.php php/workspace_bridge.php \
-             php/workspace_services.php php/email_queue.php php/mail_schedule.php php/attendance_jobs.php php/cron_notifications.php php/pin_recovery.php php/admin_maintenance.php php/monthly_reports.php php/index.php php/.htaccess /tmp/eke-backend/php/
+             php/workspace_services.php php/email_queue.php php/email_templates.php php/mail_schedule.php php/attendance_jobs.php php/cron_notifications.php php/pin_recovery.php php/admin_maintenance.php php/monthly_reports.php php/index.php php/.htaccess /tmp/eke-backend/php/
           install -m 0644 php/cli/workspace_mail_worker.php php/cli/.htaccess /tmp/eke-backend/php/cli/
           chmod 0755 /tmp/eke-backend/php /tmp/eke-backend/php/cli
           (cd /tmp/eke-fix && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-report-hotfix.zip" php)
@@ -76,7 +79,7 @@ jobs:
               files=set(zipf.namelist())
               expected={'api.php','.htaccess','index.php','php/api.php','php/_lib.php',
                         'php/workspace_bridge.php','php/workspace_services.php',
-                        'php/email_queue.php','php/mail_schedule.php','php/attendance_jobs.php','php/cron_notifications.php','php/pin_recovery.php','php/admin_maintenance.php','php/monthly_reports.php','php/index.php','php/.htaccess',
+                        'php/email_queue.php','php/email_templates.php','php/mail_schedule.php','php/attendance_jobs.php','php/cron_notifications.php','php/pin_recovery.php','php/admin_maintenance.php','php/monthly_reports.php','php/index.php','php/.htaccess',
                         'php/cli/.htaccess','php/cli/workspace_mail_worker.php'}
               assert expected.issubset(files),expected-files
               for item in zipf.infolist():
