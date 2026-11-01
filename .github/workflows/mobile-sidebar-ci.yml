@@ -1,0 +1,18 @@
+name: Mobile sidebar and logout regression (no deployment)
+on:
+  push:
+    branches: [fix/ios-mobile-sidebar-scroll-20261101]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  sidebar-layout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify iPhone/Android sidebar scrolling and logout
+        run: |
+          node mysql-ui/tests/mobile-sidebar.test.js
+          php -l mysql-ui/index.php
+          node --check < mysql-ui/Scripts.html
