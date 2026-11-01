@@ -19,12 +19,14 @@ jobs:
           set -euo pipefail
           php -l php/mail_schedule.php
           php -l php/attendance_jobs.php
+          php -l php/cron_notifications.php
           php -l php/email_queue.php
           php -l php/cli/workspace_mail_worker.php
           php -l php/api.php
           php -l php/_lib.php
           php php/tests/trigger-cutover-test.php
           php php/tests/attendance-automation-test.php
+          php php/tests/cron-notifications-test.php
           node --check < apps-script/00_Core.gs
           node --check < apps-script/50_Notifications.gs
           node --check < apps-script/61_Absence.gs
@@ -43,7 +45,7 @@ jobs:
           mkdir -p /tmp/eke-safe-staging/ekeberadaansmkbbsul/php/cli
           install -m 0644 api.php index.php .htaccess /tmp/eke-safe-staging/ekeberadaansmkbbsul/
           install -m 0644 php/api.php php/_lib.php php/email_queue.php php/mail_schedule.php \
-             php/attendance_jobs.php php/pin_recovery.php php/admin_maintenance.php \
+             php/attendance_jobs.php php/cron_notifications.php php/pin_recovery.php php/admin_maintenance.php \
              php/workspace_bridge.php php/workspace_services.php php/monthly_reports.php \
              php/index.php php/.htaccess /tmp/eke-safe-staging/ekeberadaansmkbbsul/php/
           install -m 0644 php/cli/workspace_mail_worker.php php/cli/.htaccess \
