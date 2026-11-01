@@ -14,7 +14,7 @@ function enqueue_workspace_email(string $eventKey,string $recipient,string $subj
     try {
         // Both the data operation and the notification remain MySQL-only.
         // The actual MailApp call happens in an independent scheduled worker.
-        execute_sql('INSERT IGNORE INTO ek_email_outbox (dedupe_key,recipient,subject,body_text) VALUES (?,?,?,?)',[
+        execute_sql('INSERT IGNORE INTO ek_email_outbox (dedupe_key,recipient,subject,body_text,next_attempt_at) VALUES (?,?,?,?,UTC_TIMESTAMP())',[
             hash('sha256',$eventKey.'|'.$recipient),$recipient,$subject,$text
         ]);
         return true;
