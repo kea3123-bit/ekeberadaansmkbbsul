@@ -93,7 +93,7 @@ function getNotificationAdminEmails_() {
 }
 
 const EK_RETIRED_TRIGGERS_ = ['sendPunchReminderTrigger','sendYesterdayAttendanceReportTrigger','checkExpiredPresenceWithoutPunchTrigger'];
-function disableLegacySheetTriggersAfterMySqlCutover() {
+function disableLegacySheetEmailAutomation_() {
   const props=PropertiesService.getScriptProperties();
   props.setProperty(EK.EMAIL.ENABLED_PROPERTY,'FALSE');
   props.setProperty(EK.EMAIL.PRESENCE_TRIGGER_READY_PROPERTY,'FALSE');
@@ -106,9 +106,9 @@ function disableLegacySheetTriggersAfterMySqlCutover() {
   return {ok:true,removed:removed.length,handlers:removed};
 }
 function ensurePresenceDeadlineTrigger_(force){return null;}
-function installEmailNotifications_(options){return disableLegacySheetTriggersAfterMySqlCutover();}
+function installEmailNotifications_(options){return disableLegacySheetEmailAutomation_();}
 function installEmailNotificationsFromMenu(){
-  const result=disableLegacySheetTriggersAfterMySqlCutover();
+  const result=disableLegacySheetEmailAutomation_();
   try{SpreadsheetApp.getUi().alert('Trigger Google Sheets lama dibuang: '+result.removed);}
   catch(e){}
   return result;
