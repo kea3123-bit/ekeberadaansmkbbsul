@@ -12,7 +12,7 @@ function today():string{return '2026-11-01';}
 function now_myt():string{return '2026-11-01 15:01:00';}
 function time_text($v):string{return strlen((string)$v)>5?substr((string)$v,11,5):(string)$v;}
 function excel_number($v):float{return 55555.1234;}
-function schedule(array $u,array $s):array{return ['s1In'=>'07:30','s1Out'=>'16:30'];}
+function schedule(array $u,array $s):array{return ['s1In'=>'07:30','s1Out'=>'16:30','s2In'=>'11:30','s2Out'=>'15:00'];}
 function rows(string $sql,array $args=[]):array {
   if(str_contains($sql,'FROM pengguna') && str_contains($sql,'pentadbir=1'))return [['emel'=>'admin@example.com']];
   if(str_contains($sql,'FROM pengguna'))return [
@@ -55,6 +55,19 @@ check($r['created']===0&&count($GLOBALS['mail'])===2,'Repeated cron duplicated r
 $GLOBALS['attendance'][0]['sumber']='ADMIN_MANUAL';
 $r=mysql_time_review_jobs();
 check($r['created']===0,'Manual correction must be excluded');
+// Check the optional second session independently of first-session flags.
+$GLOBALS['attendance'][0]['sumber']='PHP_MYSQL';
+$GLOBALS['attendance'][0]['status']='HADIR';
+$GLOBALS['attendance'][0]['statuswaktu']='';
+$GLOBALS['attendance'][0]['masuk2']='11:45';
+$GLOBALS['attendance'][0]['balik2']='14:45';
+$GLOBALS['savedReviews']=[];$GLOBALS['mail']=[];
+$r=mysql_time_review_jobs();
+check($r['created']===2,'Session 2 with configured references should create two reviews');
+check(count($GLOBALS['mail'])===2,'Session 2 should notify admins once for each exception');
+$r=mysql_time_review_jobs();
+check($r['created']===0,'Session 2 retry created duplicates');
+$GLOBALS['attendance'][0]['masuk2']='';$GLOBALS['attendance'][0]['balik2']='';
 $GLOBALS['dead']=0;$GLOBALS['backlog']=10;$GLOBALS['mail']=[];
 $r=mysql_dead_mail_monitor();
 check($r['queued']===0,'No alert for a small backlog');
