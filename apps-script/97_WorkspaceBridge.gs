@@ -481,17 +481,5 @@ function workspaceSendEmail_(data){
  * This does not remove the signed Workspace Web App or MailApp adapter.
  */
 function disableLegacySheetTriggersAfterMySqlCutover() {
-  const legacy=[
-    'sendPunchReminderTrigger',
-    'sendYesterdayAttendanceReportTrigger',
-    'checkExpiredPresenceWithoutPunchTrigger'
-  ];
-  let removed=0;
-  ScriptApp.getProjectTriggers().forEach(function(trigger) {
-    if(legacy.indexOf(trigger.getHandlerFunction())!==-1) {
-      ScriptApp.deleteTrigger(trigger);
-      removed++;
-    }
-  });
-  return {removed:removed,workspaceBridgeUnchanged:true};
+  return disableLegacySheetEmailAutomation_();
 }
