@@ -967,4 +967,41 @@
 @media(max-width:700px){.holiday-add-grid{grid-template-columns:1fr}.public-holiday-item{grid-template-columns:1fr auto}.public-holiday-date{grid-column:1/-1}}
 
 .absence-public-number-col,.absence-public-number{width:58px;min-width:58px;text-align:center!important;white-space:nowrap}.absence-public-number{font-weight:800;color:#475467}
+
+  /* iPhone / Android: allow the navigation itself to scroll while the
+     profile + sign-out control remain inside the visible safe-area. */
+  @media(max-width:760px){
+    .sidebar{
+      height:100vh;
+      height:100dvh;
+      max-height:100dvh;
+      overflow:hidden;
+      padding-bottom:max(14px,env(safe-area-inset-bottom,0px));
+    }
+    .sidebar .brand{flex:0 0 auto}
+    .sidebar .menu{
+      display:flex;
+      flex-direction:column;
+      align-items:stretch;
+      flex:1 1 auto;
+      min-height:0;
+      overflow-y:auto;
+      overflow-x:hidden;
+      overscroll-behavior-y:contain;
+      -webkit-overflow-scrolling:touch;
+      scrollbar-width:thin;
+      padding:14px 2px 14px 0;
+    }
+    .sidebar .menu-item{flex:0 0 auto;min-height:48px}
+    .sidebar .sidebar-user{
+      flex:0 0 auto;
+      grid-template-columns:38px minmax(0,1fr) 44px;
+      padding-bottom:4px;
+    }
+    .sidebar .sidebar-user .icon-btn{
+      width:44px;
+      height:44px;
+      touch-action:manipulation;
+    }
+  }
 </style>
