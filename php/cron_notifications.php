@@ -39,25 +39,33 @@ function mysql_time_review_jobs():array {
                 // Admin manual corrections and automated absences aren't new staff punch events.
                 if(str_contains($source,'ADMIN')||str_contains($source,'AUTO_'))continue;
                 $flags=strtoupper(trim((string)($r['statuswaktu']??'').'|'.(string)($r['status']??'')));
-                $events=[];
-                if(str_contains($flags,'LEWAT'))$events['LEWAT']='masuk';
-                if(str_contains($flags,'BALIK AWAL'))$events['BALIK AWAL']='balik';
-                if(!$events)continue;
                 $person=$employees[$email];
                 $sch=schedule($person,$s);
-                foreach($events as $type=>$column){
+                $events=[];
+                if(str_contains($flags,'LEWAT'))$events[]=['LEWAT','masuk','s1In',1];
+                if(str_contains($flags,'BALIK AWAL'))$events[]=['BALIK AWAL','balik','s1Out',1];
+                // Session 2 is optional: never infer a violation when its reference is unset.
+                $secondIn=time_text($r['masuk2']??'');
+                $secondOut=time_text($r['balik2']??'');
+                $refIn2=time_text($sch['s2In']??'');
+                $refOut2=time_text($sch['s2Out']??'');
+                if($secondIn!==''&&$refIn2!==''&&$secondIn>$refIn2)
+                    $events[]=['LEWAT','masuk2','s2In',2];
+                if($secondOut!==''&&$refOut2!==''&&$secondOut<$refOut2)
+                    $events[]=['BALIK AWAL','balik2','s2Out',2];
+                foreach($events as [$type,$column,$referenceKey,$session]){
                     $clock=time_text($r[$column]??'');
-                    $reference=time_text($sch[$type==='LEWAT'?'s1In':'s1Out']??'');
+                    $reference=time_text($sch[$referenceKey]??'');
                     if(!$clock||!$reference)continue;
-                    $id=mysql_review_event_id($email,$day,$type,1);
-                    $found=one('SELECT id,statussemakan FROM semakan_waktu WHERE emel=? AND tarikh=? AND jenis=? AND sesi=1 ORDER BY _row_id DESC LIMIT 1',
-                        [$email,$day,$type]);
+                    $id=mysql_review_event_id($email,$day,$type,$session);
+                    $found=one('SELECT id,statussemakan FROM semakan_waktu WHERE emel=? AND tarikh=? AND jenis=? AND sesi=? ORDER BY _row_id DESC LIMIT 1',
+                        [$email,$day,$type,$session]);
                     if(!$found) {
                         // GET_LOCK serializes this job with parallel cron instances.
                         execute_sql('INSERT INTO semakan_waktu (_source_row,id,diciptapada,tarikh,emel,nama,jawatan,kategori,jenis,sesi,wakturekod,wakturujukan,statussemakan)
                             VALUES (0,?,?,?,?,?,?,?,?,?,?,?,?)',
                             [$id,excel_number(now_myt()),$day,$email,(string)$person['nama'],(string)($person['jawatan']??''),
-                             (string)($person['kategori']??''),$type,1,
+                             (string)($person['kategori']??''),$type,$session,
                              excel_number($day.' '.$clock.':00'),excel_number($day.' '.$reference.':00'),
                              'BELUM DIAMBIL MAKLUM']);
                         $result['created']++;
@@ -76,7 +84,7 @@ function mysql_time_review_jobs():array {
                             'Nama: '.(string)$person['nama']."\n".
                             'Tarikh: '.$day."\n".
                             'Jenis: '.$type."\n".
-                            'Sesi: 1'."\n".
+                            'Sesi: '.$session."\n".
                             'Masa direkod: '.$clock."\n".
                             'Masa rujukan: '.$reference."\n".
                             'Semak di https://kea3123-bit.github.io/ekeberadaansmkbbsul/'))
@@ -105,6 +113,9 @@ function mysql_dead_mail_monitor():array {
         $backlog=one("SELECT COUNT(*) AS n FROM ek_email_outbox WHERE status IN ('pending','retry')");
         $r['dead']=(int)($dead['n']??0);$r['backlog']=(int)($backlog['n']??0);
         if(!$r['dead']&&$r['backlog']<100)return $r;
+        // Independent server-side signal even if the email bridge is unavailable.
+        if((int)date('i')===0)
+            error_log('[eKeberadaan cron] Outbox health: dead='.$r['dead'].' backlog='.$r['backlog']);
         // Monitoring respects the same notification off switch as the mail worker.
         if(strtoupper((string)($s['EMAIL_NOTIFICATIONS_ENABLED']??'TRUE'))==='FALSE')return $r;
         $today=today();
