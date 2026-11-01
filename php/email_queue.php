@@ -5,17 +5,18 @@ declare(strict_types=1);
  * The separate PHP CLI worker delivers emails through the signed Apps Script
  * Workspace bridge. Never import the legacy Apps Script Sheets database.
  */
-function enqueue_workspace_email(string $eventKey,string $recipient,string $subject,string $text): bool {
+function enqueue_workspace_email(string $eventKey,string $recipient,string $subject,string $text,?string $html=null): bool {
     $recipient=strtolower(trim($recipient));
     $subject=trim($subject);
     if(!filter_var($recipient,FILTER_VALIDATE_EMAIL) || strlen($recipient)>254) return false;
     if($subject==='' || strlen($subject)>180 || $text==='' || strlen($text)>12000) return false;
     if(strpbrk($subject,"\r\n")!==false) return false;
+    if($html!==null && (trim($html)==='' || strlen($html)>45000))return false;
     try {
         // Both the data operation and the notification remain MySQL-only.
         // The actual MailApp call happens in an independent scheduled worker.
-        execute_sql('INSERT IGNORE INTO ek_email_outbox (dedupe_key,recipient,subject,body_text,next_attempt_at) VALUES (?,?,?,?,UTC_TIMESTAMP())',[
-            hash('sha256',$eventKey.'|'.$recipient),$recipient,$subject,$text
+        execute_sql('INSERT IGNORE INTO ek_email_outbox (dedupe_key,recipient,subject,body_text,body_html,next_attempt_at) VALUES (?,?,?,?,?,UTC_TIMESTAMP())',[
+            hash('sha256',$eventKey.'|'.$recipient),$recipient,$subject,$text,$html
         ]);
         return true;
     }catch(Throwable $e){

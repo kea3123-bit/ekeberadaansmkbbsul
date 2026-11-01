@@ -452,12 +452,15 @@ function workspaceSendEmail_(data){
   const recipient=String(data.to||'').trim().toLowerCase();
   const subject=String(data.subject||'').trim();
   const body=String(data.body||'');
+  const htmlBody=String(data.htmlBody||'');
   const deliveryKey=String(data.deliveryKey||'').trim();
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)||recipient.length>254)
     throw new Error('Workspace recipient invalid.');
   if(!subject||subject.length>180||/[\r\n]/.test(subject))
     throw new Error('Workspace email subject invalid.');
   if(!body||body.length>12000)throw new Error('Workspace email body invalid.');
+  if(htmlBody.length>45000 || /<(?:script|iframe|object|embed|form)\b/i.test(htmlBody) || /javascript\s*:/i.test(htmlBody))
+    throw new Error('Workspace email HTML invalid.');
   if(!/^[a-f0-9]{64}$/.test(deliveryKey))
     throw new Error('Workspace email delivery key invalid.');
   const key='EK_MAIL_SENT_'+deliveryKey;
@@ -466,7 +469,9 @@ function workspaceSendEmail_(data){
   lock.waitLock(15000);
   try{
     if(cache.get(key))return {sent:true,duplicate:true};
-    MailApp.sendEmail({to:recipient,subject:subject,body:body,name:'eKeberadaan'});
+    const message={to:recipient,subject:subject,body:body,name:'eKeberadaan'};
+    if(htmlBody)message.htmlBody=htmlBody;
+    MailApp.sendEmail(message);
     // Within six hours repeated worker retries will not duplicate an email.
     cache.put(key,'1',21600);
     return {sent:true,duplicate:false};

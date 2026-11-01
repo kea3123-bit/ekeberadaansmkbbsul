@@ -1,0 +1,50 @@
+name: Branded MySQL email templates (safe staging only)
+on:
+  push:
+    branches:
+      - feature/mysql-branded-email-templates-20261101
+  pull_request:
+    branches:
+      - refactor/performance-v2
+permissions:
+  contents: read
+jobs:
+  validate-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate PHP, MySQL queue and signed Workspace adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l php/email_templates.php
+          php -l php/email_queue.php
+          php -l php/mail_schedule.php
+          php -l php/cli/workspace_mail_worker.php
+          node --check < apps-script/97_WorkspaceBridge.gs
+          php php/tests/branded-email-test.php
+          php php/tests/email-outbox-test.php
+          php php/tests/trigger-cutover-test.php
+          node apps-script/tests/email-bridge-html.test.js
+          ! grep -q 'MailApp.sendEmail(' apps-script/50_Notifications.gs
+          grep -q 'htmlBody' apps-script/97_WorkspaceBridge.gs
+          grep -q 'body_html' php/cli/workspace_mail_worker.php
+          echo BRANDED_MAIL_COMPATIBILITY_OK
+      - name: Package only changed cron PHP files and synthetic preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staging/ekeberadaansmkbbsul/php/cli
+          install -m 0644 php/email_templates.php php/email_queue.php php/mail_schedule.php staging/ekeberadaansmkbbsul/php/
+          install -m 0644 php/cli/workspace_mail_worker.php staging/ekeberadaansmkbbsul/php/cli/
+          (cd staging && zip -qr "$GITHUB_WORKSPACE/eKeberadaan_BRANDED_EMAIL_PHP_ONLY.zip" ekeberadaansmkbbsul)
+          unzip -l eKeberadaan_BRANDED_EMAIL_PHP_ONLY.zip
+          php -r 'require "php/email_templates.php"; echo ek_mail_punch_reminder_html(["nama"=>"CONTOH PEGAWAI","emel"=>"contoh@example.test"],"2026-11-01","07:38","07:40");' > eKeberadaan_PREVIEW_EMAIL.html
+          ! unzip -Z1 eKeberadaan_BRANDED_EMAIL_PHP_ONLY.zip | grep -Eq 'config\.local|error_log|/api\.php|workspace_bridge\.php'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eke-branded-html-email-php-only
+          path: |
+            eKeberadaan_BRANDED_EMAIL_PHP_ONLY.zip
+            eKeberadaan_PREVIEW_EMAIL.html
+          retention-days: 30
