@@ -84,7 +84,10 @@ function queue_punch_reminders_mysql(string $date,string $clock='09:00'):void {
         $exempt=false;
         foreach($requests[$email]??[] as $req)if(mysql_request_exempts_punch($req,$clock)){$exempt=true;break;}
         if($exempt)continue;
-        $schedule=schedule($u,$s);
+        // Rows normally carry these MySQL columns; defaults also keep test
+        // fixtures and older user rows compatible without undefined-key notices.
+        $schedule=schedule($u+['sesi1masuk'=>'','waktulewat'=>'','sesi1keluar'=>'',
+            'waktubalik'=>'','sesi2masuk'=>'','sesi2keluar'=>'','maksmasuk'=>''],$s);
         $reference=time_text($schedule['s1In']??($s['DEFAULT_S1_IN']??'07:30'))?:'07:30';
         $plain="Assalamualaikum / Salam sejahtera ".trim((string)($u['nama']??'')).",\n".
             "Sistem masih belum mengesan rekod waktu masuk anda untuk ".ek_mail_date_malay($date).".\n".
