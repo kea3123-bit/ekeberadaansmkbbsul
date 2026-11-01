@@ -14,6 +14,7 @@ function time_text($v):string{return strlen((string)$v)>5?substr((string)$v,11,5
 function excel_number($v):float{return 55555.1234;}
 function schedule(array $u,array $s):array{return ['s1In'=>'07:30','s1Out'=>'16:30'];}
 function rows(string $sql,array $args=[]):array {
+  if(str_contains($sql,'FROM pengguna') && str_contains($sql,'pentadbir=1'))return [['emel'=>'admin@example.com']];
   if(str_contains($sql,'FROM pengguna'))return [
    ['emel'=>'staff@example.com','nama'=>'STAFF','jawatan'=>'GURU','kategori'=>'PPP','pentadbir'=>0,'aktif'=>1],
    ['emel'=>'admin@example.com','nama'=>'ADMIN','kategori'=>'Pengurusan','pentadbir'=>1,'aktif'=>1]];
