@@ -17,7 +17,9 @@ for(const list of [absence,presence]){
   for(const label of labels){
     const sek=label+' (SEK)',ppd=label+' (PPD)';
     assert.equal(list.filter(x=>x===sek).length,1,'Missing/duplicate SEK '+sek);
-    if(list.includes(ppd))assert(list.indexOf(sek)<list.indexOf(ppd),'SEK must appear before PPD: '+label);
+    assert(list.includes(ppd),'Existing PPD type must remain available: '+label);
+    assert(list.indexOf(sek)<list.indexOf(ppd),'SEK must appear before PPD: '+label);
+    for(const suffix of ['JPN','KPM'])assert(list.includes(label+' ('+suffix+')'),'Existing '+suffix+' type must remain: '+label);
   }
 }
 const m=js.match(/const requiredExternalOfficialTypes=\[([\s\S]*?)\];/);
