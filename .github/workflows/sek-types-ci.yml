@@ -1,0 +1,18 @@
+name: Verify SEK absence and presence options (no deployment)
+on:
+  push:
+    branches: [fix/absence-sek-type-options-20261101]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  test-sek-types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PHP and JavaScript syntax
+        run: |
+          php -l php/api.php
+          node --check < mysql-ui/Scripts.html
+          node mysql-ui/tests/sek-options.test.js
