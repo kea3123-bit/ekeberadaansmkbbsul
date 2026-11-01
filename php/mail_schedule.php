@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 /** MySQL-only scheduled mail generation; invoked by the existing cPanel CLI worker. */
+require_once __DIR__.'/email_templates.php';
 function mysql_school_day(string $date,array $s,?array $holidays=null):bool {
     $date=valid_day($date);
     if($date<date_key($s['SYSTEM_START_DATE']??'2026-01-01'))return false;
@@ -77,17 +78,23 @@ function queue_punch_reminders_mysql(string $date,string $clock='09:00'):void {
             $recorded[strtolower(trim((string)$r['emel']))]=true;
     }
     $requests=mysql_active_requests_on($date);
-    foreach(rows('SELECT emel,nama FROM pengguna WHERE aktif=1') as $u) {
+    foreach(rows('SELECT * FROM pengguna WHERE aktif=1') as $u) {
         $email=strtolower(trim((string)($u['emel']??'')));
         if(isset($recorded[$email]))continue;
         $exempt=false;
         foreach($requests[$email]??[] as $req)if(mysql_request_exempts_punch($req,$clock)){$exempt=true;break;}
         if($exempt)continue;
+        $schedule=schedule($u,$s);
+        $reference=time_text($schedule['s1In']??($s['DEFAULT_S1_IN']??'07:30'))?:'07:30';
+        $plain="Assalamualaikum / Salam sejahtera ".trim((string)($u['nama']??'')).",\n".
+            "Sistem masih belum mengesan rekod waktu masuk anda untuk ".ek_mail_date_malay($date).".\n".
+            "Akaun: ".$email."\n".
+            "Waktu peringatan: ".$clock."\n".
+            "Waktu rujukan masuk (Sesi 1): ".$reference."\n".
+            "Jika sedang bertugas, sila rekod waktu masuk. Jika tidak hadir, gunakan menu Tidak Hadir.\n".
+            "https://kea3123-bit.github.io/ekeberadaansmkbbsul/";
         enqueue_workspace_email('punch-reminder:'.$date,$email,
             'eKeberadaan: Peringatan rekod waktu masuk',
-            "Salam ".trim((string)($u['nama']??'')).
-            ",\n\nRekod waktu masuk anda pada ".$date.
-            " belum direkod dalam MySQL. Jika anda hadir, sila buka eKeberadaan dan semak rekod anda.\n".
-            "https://kea3123-bit.github.io/ekeberadaansmkbbsul/");
+            $plain,ek_mail_punch_reminder_html($u,$date,$clock,$reference));
     }
 }
