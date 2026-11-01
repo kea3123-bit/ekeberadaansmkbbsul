@@ -57,8 +57,8 @@ function run_mysql_attendance_jobs():array {
                         "\nSemak dalam eKeberadaan: https://kea3123-bit.github.io/ekeberadaansmkbbsul/";
                     enqueue_workspace_email($event,$recipient,'eKeberadaan: Tamat Keberadaan tanpa Punch Masuk',$body);
                     $key=hash('sha256',$event.'|'.$recipient);
-                    $sent=one('SELECT status FROM ek_email_outbox WHERE dedupe_key=? LIMIT 1',[$key]);
-                    if(strtolower((string)($sent['status']??''))!=='sent')$complete=false;
+                    $sent=one('SELECT status,attempts,sent_at FROM ek_email_outbox WHERE dedupe_key=? LIMIT 1',[$key]);
+                    if(strtolower((string)($sent['status']??''))!=='sent' || (int)($sent['attempts']??0)<1 || empty($sent['sent_at']))$complete=false;
                     $result['presenceAlerts']++;
                 }
                 if(!$complete){$result['waiting']++;continue;}
