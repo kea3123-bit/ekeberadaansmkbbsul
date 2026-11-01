@@ -10,8 +10,10 @@ require_once dirname(__DIR__).'/_lib.php';
 require_once dirname(__DIR__).'/workspace_bridge.php';
 require_once dirname(__DIR__).'/mail_schedule.php';
 require_once dirname(__DIR__).'/attendance_jobs.php';
+require_once dirname(__DIR__).'/cron_notifications.php';
 schedule_mysql_mail_events();
 run_mysql_attendance_jobs();
+mysql_time_review_jobs();
 $sent=0;$failed=0;$limit=10;
 // Recover crashed workers after 10 minutes. Delivery is at-least-once;
 // the Workspace adapter caches successful delivery keys for six hours.
@@ -46,4 +48,5 @@ for($i=0;$i<$limit;$i++){
         $failed++;
     }
 }
+mysql_dead_mail_monitor();
 echo "eKeberadaan MySQL outbox: sent=$sent failed=$failed\n";
