@@ -4,6 +4,7 @@ date_default_timezone_set('Asia/Kuala_Lumpur');
 function valid_day(string $d):string{return $d;}
 function date_key($d):string{return is_numeric($d)?gmdate('Y-m-d',(int)round(((float)$d-25569)*86400)):substr((string)$d,0,10);}
 function time_text($v):string{return (string)$v;}
+function schedule(array $u,array $s):array{return ['s1In'=>$s['DEFAULT_S1_IN']??'07:30'];}
 function settings_raw():array{return ['WORKING_DAYS'=>'SUN,MON,TUE,WED,THU','SYSTEM_START_DATE'=>'2026-09-01'];}
 function public_holidays_safe(?string $a=null,?string $b=null):array{return [['tarikh'=>'2026-11-02']];}
 $GLOBALS['calls']=[];$GLOBALS['queued']=[];
