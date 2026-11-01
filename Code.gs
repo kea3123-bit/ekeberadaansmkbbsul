@@ -42,7 +42,7 @@ const EK = Object.freeze({
     THURSDAY_WBF_OUT_TO: '16:30',
     THURSDAY_WBF_DURATION_MINUTES: '450',
     ABSENT_AFTER: '10:00',
-    PUNCH_REMINDER_ENABLED: 'TRUE',
+    PUNCH_REMINDER_ENABLED: 'FALSE', // Legacy Sheets reminders retired; MySQL cron is authoritative.
     PUNCH_REMINDER_TIME: '09:00',
     WORKING_DAYS: 'SUN,MON,TUE,WED,THU',
     IP_TRACKING_ENABLED: 'TRUE',
@@ -144,11 +144,7 @@ function onOpen() {
     .addItem('Reset pengguna dipilih (fresh)', 'resetSelectedUserFreshFromMenu')
     .addItem('Sync gambar profil dari Drive', 'syncProfilePhotosFromMenu')
     .addSeparator()
-    .addItem('Benarkan akses emel pemilik', 'authorizeEmailPermissionOwner')
-    .addItem('Aktifkan / baiki notifikasi emel', 'installEmailNotificationsFromMenu')
-    .addItem('Hantar emel ujian kepada saya', 'sendNotificationTestFromMenu')
-    .addItem('Hantar peringatan rekod waktu sekarang', 'sendPunchReminderFromMenu')
-    .addItem('Hantar laporan semalam sekarang', 'sendYesterdayAttendanceReportFromMenu')
+    .addItem('Matikan trigger emel lama (MySQL)', 'disableLegacyEmailTriggers')
     .addSeparator()
     .addItem('Baiki rekod duplikat', 'repairAttendanceDuplicatesFromMenu')
     .addItem('Jana laporan hari ini', 'generateTodayReportFromMenu')
@@ -174,8 +170,8 @@ function setupSystem() {
   setupTrustedDevicesSheet_(ss);
   getSessionSecret_();
   getPasswordPepper_();
-  PropertiesService.getScriptProperties().setProperty(EK.EMAIL.ENABLED_PROPERTY, 'TRUE');
-  installEmailNotifications_({silent: true});
+  // Google Sheets is retired as the attendance database. Never reinstall legacy mail triggers.
+  PropertiesService.getScriptProperties().setProperty(EK.EMAIL.ENABLED_PROPERTY, 'FALSE');
 
   // Bersihkan rekod punch duplikat lama secara selamat.
   repairAttendanceDuplicates_({audit: false});
@@ -197,7 +193,7 @@ function setupSystem() {
   try {
     SpreadsheetApp.getUi().alert(
       'eKeberadaan siap',
-      'Struktur sistem telah disediakan. Notifikasi emel juga diaktifkan jika setup dijalankan oleh pemilik sistem kea3123@moe.gov.my. Isi koordinat sekolah di TETAPAN dan senarai emel di PENGGUNA, kemudian deploy Web App sebagai akses awam dan Execute as Me. Login menggunakan PIN 6 digit dan sesi peranti 30 hari.',
+      'Struktur Google Sheets lama disediakan. Emel Apps Script telah dinyahaktifkan; notifikasi production hanya melalui MySQL/cPanel cron. Jangan guna Google Sheets sebagai pangkalan data attendance.',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } catch (e) {}
@@ -1659,7 +1655,7 @@ function adminSaveSettings(token, payload) {
     THURSDAY_WBF_OUT_TO: normalizeTime_(payload.thursdayWbfOutTo || currentSettings.THURSDAY_WBF_OUT_TO || '16:30'),
     THURSDAY_WBF_DURATION_MINUTES: String(Math.max(1, Math.min(1440, Number(payload.thursdayWbfDurationMinutes || currentSettings.THURSDAY_WBF_DURATION_MINUTES || 450)))),
     ABSENT_AFTER: normalizeTime_(payload.absentAfter),
-    PUNCH_REMINDER_ENABLED: String(payload.punchReminderEnabled || 'TRUE').toUpperCase() === 'FALSE' ? 'FALSE' : 'TRUE',
+    PUNCH_REMINDER_ENABLED: 'FALSE', // Never restart the retired Google Sheets email workflow.
     PUNCH_REMINDER_TIME: normalizeTime_(payload.punchReminderTime || '09:00'),
     WORKING_DAYS: normalizeWorkingDays_(payload.workingDays || EK.DEFAULT_SETTINGS.WORKING_DAYS),
     IP_TRACKING_ENABLED: String(payload.ipTrackingEnabled || 'TRUE').toUpperCase() === 'FALSE' ? 'FALSE' : 'TRUE',
@@ -1690,10 +1686,7 @@ function adminSaveSettings(token, payload) {
   });
   if (existingRows.length) sh.getRange(2, 1, existingRows.length, 3).setValues(existingRows);
   invalidateSettingsCache_();
-  // Cuba pasang semula trigger jika masa/aktif reminder berubah. Kegagalan trigger
-  // tidak membatalkan simpanan tetapan; pemilik boleh guna menu Aktifkan / baiki notifikasi emel.
-  try { installEmailNotifications_({silent: true}); }
-  catch (e) { audit_('TRIGGER_NOTIFIKASI_GAGAL', EK.SHEETS.SETTINGS, String(e && e.message ? e.message : e), admin.email); }
+  // Do not recreate the old reminder/report/presence triggers when saving Sheets settings.
   audit_('SIMPAN_TETAPAN', EK.SHEETS.SETTINGS, `Oleh ${admin.email}; mode=${next.SYSTEM_MODE}; S1=${next.DEFAULT_S1_IN}-${next.DEFAULT_S1_OUT}; S2=${next.DEFAULT_S2_IN || '-'}-${next.DEFAULT_S2_OUT || '-'}; radius=${next.RADIUS_M}m; reminder=${next.PUNCH_REMINDER_ENABLED}@${next.PUNCH_REMINDER_TIME}; hari=${next.WORKING_DAYS}; IP=${next.IP_TRACKING_ENABLED}/${next.IP_PUNCH_POLICY}`, admin.email);
   return {ok: true, settings: publicSettings_(getSettings_())};
 }
@@ -2991,49 +2984,7 @@ function styleReportSheet_(sh, count) {
  * kemudian jalankan fungsi ini semula.
  */
 function authorizeEmailPermissionOwner() {
-  const MAIL_SCOPE = 'https://www.googleapis.com/auth/script.send_mail';
-
-  // Memaksa prompt kebenaran khusus untuk scope emel apabila dijalankan dari IDE.
-  ScriptApp.requireScopes(ScriptApp.AuthMode.FULL, [MAIL_SCOPE]);
-
-  const authInfo = ScriptApp.getAuthorizationInfo(
-    ScriptApp.AuthMode.FULL,
-    [MAIL_SCOPE]
-  );
-  const authorized = authInfo.getAuthorizedScopes() || [];
-  if (!authorized.includes(MAIL_SCOPE)) {
-    throw new Error(
-      'Scope penghantaran emel masih belum diberikan. ' +
-      'Buka Google Account → Security → Connections to third-party apps & services, ' +
-      'padam akses untuk projek e-Keberadaan, kemudian run authorizeEmailPermissionOwner() semula dan benarkan semua permission.'
-    );
-  }
-
-  MailApp.sendEmail({
-    to: EK.EMAIL.OWNER_EMAIL,
-    subject: 'e-Keberadaan — Pengesahan Akses Emel',
-    body:
-      'Akses MailApp untuk e-Keberadaan telah berjaya diberikan.\n\n' +
-      'Akaun pelaksana: ' + (getMailExecutionEmail_() || '(tidak dipaparkan)') + '\n' +
-      'Masa: ' + formatDateTime_(new Date()),
-    name: EK.EMAIL.SENDER_NAME,
-    replyTo: EK.EMAIL.OWNER_EMAIL
-  });
-
-  try {
-    SpreadsheetApp.getUi().alert(
-      'Akses emel berjaya',
-      'Scope script.send_mail telah dibenarkan dan emel pengesahan dihantar ke ' + EK.EMAIL.OWNER_EMAIL + '.',
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-  } catch (e) {}
-
-  return {
-    ok: true,
-    scope: MAIL_SCOPE,
-    authorizedScopes: authorized,
-    effectiveEmail: getMailExecutionEmail_()
-  };
+  return {ok:false,disabled:true,message:'Emel Apps Script lama telah dihentikan. Emel production dihantar daripada MySQL cron.'};
 }
 
 function getEmailAuthorizationDiagnostic() {
@@ -3049,74 +3000,25 @@ function getEmailAuthorizationDiagnostic() {
   };
 }
 
-function emailNotificationsEnabled_() {
-  const value = PropertiesService.getScriptProperties().getProperty(EK.EMAIL.ENABLED_PROPERTY);
-  return String(value == null ? 'TRUE' : value).toUpperCase() !== 'FALSE';
-}
+// Email notifications sourced from old Google Sheets are permanently disabled.
+// The separate signed Workspace Bridge (mysql-ui/workspace) is NOT affected.
+function emailNotificationsEnabled_() { return false; }
 
 function assertEmailNotificationsEnabled_() {
-  if (!emailNotificationsEnabled_()) throw new Error('Notifikasi emel e-Keberadaan sedang dinyahaktifkan.');
+  throw new Error('Emel Google Sheets lama telah dimatikan; gunakan MySQL outbox dan cron cPanel.');
 }
 
 function getMailExecutionEmail_() {
   return normalizeEmail_(
     (Session.getEffectiveUser && Session.getEffectiveUser().getEmail()) ||
-    (Session.getActiveUser && Session.getActiveUser().getEmail()) ||
-    ''
+    (Session.getActiveUser && Session.getActiveUser().getEmail()) || ''
   );
 }
-
-function assertMailRunsAsSystemOwner_() {
-  // Jangan hard-block berdasarkan Session.getEffectiveUser()/getActiveUser().
-  // Untuk akaun Google Workspace, alamat yang dipulangkan boleh menjadi primary
-  // address atau alias yang berbeza daripada alamat sistem kea3123@moe.gov.my.
-  // Pengirim sebenar MailApp tetap ditentukan oleh akaun yang meng-authorize
-  // script / mencipta trigger / deploy Web App.
-  return {
-    effectiveEmail: getMailExecutionEmail_(),
-    configuredOwner: normalizeEmail_(EK.EMAIL.OWNER_EMAIL)
-  };
-}
-
-function assertMailQuotaAvailable_(required) {
-  // v10.2: jangan panggil MailApp.getRemainingDailyQuota() dalam aliran login.
-  // Panggilan quota itu sendiri memerlukan scope script.send_mail dan sebelum ini
-  // menyebabkan semakan akaun pengguna gagal sebelum sendEmail sempat dijalankan.
-  // MailApp.sendEmail() di bawah akan menjadi sumber kebenaran sebenar; jika kuota
-  // atau authorization bermasalah, Google akan pulangkan exception yang tepat.
-  return true;
-}
-
+function assertMailRunsAsSystemOwner_() { return {disabled:true}; }
+function assertMailQuotaAvailable_(required) { return false; }
 function sendSystemEmail_(to, subject, htmlBody, textBody) {
+  // No MailApp/GmailApp calls can originate from the retired Sheets backend.
   assertEmailNotificationsEnabled_();
-  assertMailRunsAsSystemOwner_();
-  const recipients = Array.isArray(to) ? to : String(to || '').split(',');
-  const clean = [...new Set(recipients.map(normalizeEmail_).filter(isValidEmail_))];
-  if (!clean.length) throw new Error('Tiada penerima emel yang sah.');
-  assertMailQuotaAvailable_(clean.length);
-
-  try {
-    MailApp.sendEmail({
-      to: clean.join(','),
-      subject: String(subject || 'e-Keberadaan'),
-      body: String(textBody || stripHtml_(htmlBody || '')),
-      htmlBody: String(htmlBody || ''),
-      name: EK.EMAIL.SENDER_NAME,
-      replyTo: EK.EMAIL.OWNER_EMAIL
-    });
-  } catch (err) {
-    const message = String(err && err.message ? err.message : err);
-    if (message.includes('script.send_mail') || message.includes('MailApp')) {
-      throw new Error(
-        'MailApp belum diberi kebenaran pada deployment/trigger ini. ' +
-        'Buka Apps Script menggunakan akaun pemilik, run sendNotificationTestFromMenu() sekali dan benarkan akses emel, ' +
-        'kemudian Deploy → Manage deployments → Edit → New version → Deploy. ' +
-        'Jika Web App mempunyai pilihan Execute as, pilih Me.'
-      );
-    }
-    throw err;
-  }
-  return clean;
 }
 
 function safeSendSystemEmail_(to, subject, htmlBody, textBody, auditTarget) {
@@ -3175,92 +3077,42 @@ function getNotificationAdminEmails_() {
   return unique.length ? unique : [EK.EMAIL.OWNER_EMAIL];
 }
 
-function ensurePresenceDeadlineTrigger_(force) {
-  const handler = 'checkExpiredPresenceWithoutPunchTrigger';
+const EK_LEGACY_EMAIL_TRIGGER_HANDLERS_ = [
+  'sendPunchReminderTrigger',
+  'sendYesterdayAttendanceReportTrigger',
+  'checkExpiredPresenceWithoutPunchTrigger'
+];
+
+/**
+ * RUN ONCE from the ORIGINAL Apps Script editor (executing as the trigger owner).
+ * Removes only the legacy Google Sheets notification triggers, without touching
+ * MySQL cron or any Google Workspace bridge / Drive integration.
+ */
+function disableLegacyEmailTriggers() {
   const props = PropertiesService.getScriptProperties();
-  if (!force && props.getProperty(EK.EMAIL.PRESENCE_TRIGGER_READY_PROPERTY) === 'TRUE') {
-    return null;
-  }
-  const existing = ScriptApp.getProjectTriggers().find(t => t.getHandlerFunction() === handler) || null;
-  if (existing && !force) {
-    props.setProperty(EK.EMAIL.PRESENCE_TRIGGER_READY_PROPERTY, 'TRUE');
-    return existing;
-  }
-  if (existing && force) ScriptApp.deleteTrigger(existing);
-  const trigger = ScriptApp.newTrigger(handler).timeBased().everyMinutes(5).create();
-  props.setProperty(EK.EMAIL.PRESENCE_TRIGGER_READY_PROPERTY, 'TRUE');
-  return trigger;
+  props.setProperty(EK.EMAIL.ENABLED_PROPERTY, 'FALSE');
+  props.setProperty(EK.EMAIL.PRESENCE_TRIGGER_READY_PROPERTY, 'FALSE');
+  const removed=[];
+  ScriptApp.getProjectTriggers().forEach(t=>{
+    const handler=t.getHandlerFunction();
+    if(EK_LEGACY_EMAIL_TRIGGER_HANDLERS_.includes(handler)){
+      ScriptApp.deleteTrigger(t);
+      removed.push(handler);
+    }
+  });
+  return {ok:true,disabled:true,deleted:removed,count:removed.length,
+    message:'Emel Google Sheets dihentikan. Hanya MySQL cron mengurus notifikasi production.'};
 }
 
-function installEmailNotifications_(options) {
-  options = options || {};
-  PropertiesService.getScriptProperties().setProperty(EK.EMAIL.ENABLED_PROPERTY, 'TRUE');
-
-  const effective = getMailExecutionEmail_();
-  // Tidak lagi menyekat berdasarkan alamat Session kerana Workspace alias /
-  // primary email boleh berbeza. Trigger akan berjalan sebagai akaun yang
-  // menciptanya dan authorization MailApp disahkan melalui ujian emel.
-
-  const reportHandler = 'sendYesterdayAttendanceReportTrigger';
-  const reminderHandler = 'sendPunchReminderTrigger';
-  const presenceHandler = 'checkExpiredPresenceWithoutPunchTrigger';
-  ScriptApp.getProjectTriggers()
-    .filter(t => [reportHandler, reminderHandler, presenceHandler].includes(t.getHandlerFunction()))
-    .forEach(t => ScriptApp.deleteTrigger(t));
-
-  const reportTrigger = ScriptApp.newTrigger(reportHandler)
-    .timeBased()
-    .atHour(EK.EMAIL.DAILY_REPORT_HOUR)
-    .everyDays(1)
-    .create();
-
-  const settings = getSettings_();
-  const reminderTotalMins = timeToMinutes_(settings.PUNCH_REMINDER_TIME || '09:00');
-  const reminderHour = Math.max(0, Math.min(23, Math.floor(reminderTotalMins / 60)));
-  const reminderMinute = Math.max(0, Math.min(59, reminderTotalMins % 60));
-  let reminderTrigger = null;
-  if (String(settings.PUNCH_REMINDER_ENABLED || 'TRUE').toUpperCase() !== 'FALSE') {
-    reminderTrigger = ScriptApp.newTrigger(reminderHandler)
-      .timeBased()
-      .atHour(reminderHour)
-      .nearMinute(reminderMinute)
-      .everyDays(1)
-      .create();
-  }
-
-  // Semak waktu akhir Keberadaan dengan kekerapan 5 minit. Trigger Apps Script
-  // tidak menjamin saat tepat, jadi alert lazimnya dihantar dalam beberapa minit
-  // selepas MasaAkhir yang direkodkan.
-  const presenceTrigger = ensurePresenceDeadlineTrigger_(true);
-
-  audit_('AKTIF_NOTIFIKASI_EMEL', `${reportHandler},${reminderHandler},${presenceHandler}`, `Laporan semalam ~${String(EK.EMAIL.DAILY_REPORT_HOUR).padStart(2,'0')}:00; peringatan rekod waktu=${settings.PUNCH_REMINDER_ENABLED}@${settings.PUNCH_REMINDER_TIME}; semakan tamat Keberadaan=5 minit; owner=${EK.EMAIL.OWNER_EMAIL}`, effective || EK.EMAIL.OWNER_EMAIL);
-  return {
-    ok: true,
-    triggerId: reportTrigger.getUniqueId(),
-    reminderTriggerId: reminderTrigger ? reminderTrigger.getUniqueId() : '',
-    presenceTriggerId: presenceTrigger.getUniqueId(),
-    hour: EK.EMAIL.DAILY_REPORT_HOUR,
-    reminderTime: settings.PUNCH_REMINDER_TIME,
-    reminderEnabled: String(settings.PUNCH_REMINDER_ENABLED || 'TRUE').toUpperCase() !== 'FALSE'
-  };
-}
-
+// Preserve historical call sites but never install new time-based triggers.
+function ensurePresenceDeadlineTrigger_(force) { return null; }
+function installEmailNotifications_(options) { return disableLegacyEmailTriggers(); }
 function installEmailNotificationsFromMenu() {
-  const ui = SpreadsheetApp.getUi();
-  try {
-    const result = installEmailNotifications_({silent: false});
-    ui.alert(
-      'Notifikasi emel aktif',
-      `Penghantaran menggunakan akaun pemilik ${EK.EMAIL.OWNER_EMAIL}.\n\n` +
-      `Laporan kehadiran hari semalam akan dihantar kepada Pentadbir setiap hari sekitar ${String(result.hour).padStart(2,'0')}:00 (Asia/Kuala_Lumpur).\n\n` +
-      (result.reminderEnabled ? `Peringatan Rekod Waktu Masuk juga aktif sekitar ${result.reminderTime} pada hari bekerja.\n\n` : 'Peringatan Rekod Waktu Masuk sedang dinyahaktifkan dalam Tetapan.\n\n') +
-      'Semakan tamat Keberadaan tanpa Punch Masuk berjalan setiap 5 minit dan akan memaklumkan Pengurusan sebelum status TIDAK HADIR ditulis.\n\n' +
-      'Notifikasi permohonan Tidak Hadir dan aliran reset/tetapan PIN juga telah diaktifkan.',
-      ui.ButtonSet.OK
-    );
-  } catch (err) {
-    ui.alert('Notifikasi emel', String(err && err.message ? err.message : err), ui.ButtonSet.OK);
-  }
+  const result=disableLegacyEmailTriggers();
+  try { SpreadsheetApp.getUi().alert('Emel Apps Script lama dimatikan',
+    'Trigger lama dibuang: '+result.count+'. Notifikasi sebenar menggunakan MySQL cron cPanel.',
+    SpreadsheetApp.getUi().ButtonSet.OK); } catch(e) {}
+  return result;
 }
 
 function sendNotificationTestFromMenu() {
@@ -3282,7 +3134,7 @@ function sendNotificationTestFromMenu() {
 }
 
 function sendPunchReminderTrigger() {
-  return sendPunchReminder_(false);
+  return {ok:true,skipped:true,reason:'Peringatan Google Sheets lama dimatikan; gunakan MySQL cron.'};
 }
 
 function sendPunchReminderFromMenu() {
@@ -3394,7 +3246,7 @@ function cleanupPunchReminderProperties_(keepDateKey) {
 }
 
 function sendYesterdayAttendanceReportTrigger() {
-  return sendYesterdayAttendanceReport_(false);
+  return {ok:true,skipped:true,reason:'Laporan emel Google Sheets lama dimatikan; gunakan MySQL cron.'};
 }
 
 function sendYesterdayAttendanceReportFromMenu() {
@@ -4625,16 +4477,8 @@ function finalizeExpiredPresenceWithoutPunchForDate_(dateKey, settings, options)
 }
 
 function checkExpiredPresenceWithoutPunchTrigger() {
-  try {
-    const settings = getSettings_();
-    if (String(settings.SYSTEM_MODE || 'REAL').toUpperCase() === 'TEST') {
-      return {ok:true,skipped:true,reason:'MOD TEST'};
-    }
-    return finalizeExpiredPresenceWithoutPunchForDate_(todayKey_(), settings);
-  } catch (err) {
-    audit_('TRIGGER_KEBERADAAN_TAMAT_GAGAL', todayKey_(), String(err && err.message ? err.message : err), 'SISTEM');
-    return {ok:false,error:String(err && err.message ? err.message : err)};
-  }
+  // Disable legacy timer before any call that could read or write Google Sheets.
+  return {ok:true,skipped:true,reason:'Legacy Keberadaan timer stopped; MySQL is authoritative.'};
 }
 
 /**
