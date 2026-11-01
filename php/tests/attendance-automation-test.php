@@ -19,7 +19,7 @@ function rows(string $sql,array $args=[]):array {
 }
 function one(string $sql,array $args=[]):?array {
   if(str_contains($sql,'GET_LOCK'))return ['locked'=>1];
-  if(str_contains($sql,'FROM ek_email_outbox'))return ['status'=>$GLOBALS['emailStatus']];
+  if(str_contains($sql,'FROM ek_email_outbox'))return ['status'=>$GLOBALS['emailStatus'],'attempts'=>$GLOBALS['emailStatus']==='sent'?1:0,'sent_at'=>$GLOBALS['emailStatus']==='sent'?'2026-11-01 03:20:00':null];
   return ['released'=>1];
 }
 class MockDb {private bool $tx=false;
