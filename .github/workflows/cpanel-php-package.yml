@@ -35,6 +35,7 @@ jobs:
           php -l php/email_queue.php
           php -l php/mail_schedule.php
           php -l php/attendance_jobs.php
+          php -l php/cron_notifications.php
           php php/tests/trigger-cutover-test.php
           php -l php/pin_recovery.php
           php -l php/admin_maintenance.php
@@ -64,7 +65,7 @@ jobs:
           install -m 0644 php/api.php /tmp/eke-fix/php/api.php
           install -m 0644 api.php .htaccess index.php /tmp/eke-backend/
           install -m 0644 php/api.php php/_lib.php php/workspace_bridge.php \
-             php/workspace_services.php php/email_queue.php php/mail_schedule.php php/attendance_jobs.php php/pin_recovery.php php/admin_maintenance.php php/monthly_reports.php php/index.php php/.htaccess /tmp/eke-backend/php/
+             php/workspace_services.php php/email_queue.php php/mail_schedule.php php/attendance_jobs.php php/cron_notifications.php php/pin_recovery.php php/admin_maintenance.php php/monthly_reports.php php/index.php php/.htaccess /tmp/eke-backend/php/
           install -m 0644 php/cli/workspace_mail_worker.php php/cli/.htaccess /tmp/eke-backend/php/cli/
           chmod 0755 /tmp/eke-backend/php /tmp/eke-backend/php/cli
           (cd /tmp/eke-fix && zip -qr "$GITHUB_WORKSPACE/ekeberadaansmkbbsul-report-hotfix.zip" php)
@@ -75,7 +76,7 @@ jobs:
               files=set(zipf.namelist())
               expected={'api.php','.htaccess','index.php','php/api.php','php/_lib.php',
                         'php/workspace_bridge.php','php/workspace_services.php',
-                        'php/email_queue.php','php/mail_schedule.php','php/attendance_jobs.php','php/pin_recovery.php','php/admin_maintenance.php','php/monthly_reports.php','php/index.php','php/.htaccess',
+                        'php/email_queue.php','php/mail_schedule.php','php/attendance_jobs.php','php/cron_notifications.php','php/pin_recovery.php','php/admin_maintenance.php','php/monthly_reports.php','php/index.php','php/.htaccess',
                         'php/cli/.htaccess','php/cli/workspace_mail_worker.php'}
               assert expected.issubset(files),expected-files
               for item in zipf.infolist():
