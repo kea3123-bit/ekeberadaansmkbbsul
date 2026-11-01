@@ -9,7 +9,9 @@ if(PHP_SAPI!=='cli'){http_response_code(404);exit;}
 require_once dirname(__DIR__).'/_lib.php';
 require_once dirname(__DIR__).'/workspace_bridge.php';
 require_once dirname(__DIR__).'/mail_schedule.php';
+require_once dirname(__DIR__).'/attendance_jobs.php';
 schedule_mysql_mail_events();
+run_mysql_attendance_jobs();
 $sent=0;$failed=0;$limit=10;
 // Recover crashed workers after 10 minutes. Delivery is at-least-once;
 // the Workspace adapter caches successful delivery keys for six hours.
