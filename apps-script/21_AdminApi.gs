@@ -218,7 +218,7 @@ function adminSaveSettings(token, payload) {
     THURSDAY_WBF_OUT_TO: normalizeTime_(payload.thursdayWbfOutTo || currentSettings.THURSDAY_WBF_OUT_TO || '16:30'),
     THURSDAY_WBF_DURATION_MINUTES: String(Math.max(1,Math.min(1440,Number(payload.thursdayWbfDurationMinutes || currentSettings.THURSDAY_WBF_DURATION_MINUTES || 450)))),
     ABSENT_AFTER: normalizeTime_(payload.absentAfter),
-    PUNCH_REMINDER_ENABLED: String(payload.punchReminderEnabled || 'TRUE').toUpperCase() === 'FALSE' ? 'FALSE' : 'TRUE',
+    PUNCH_REMINDER_ENABLED: 'FALSE',
     PUNCH_REMINDER_TIME: normalizeTime_(payload.punchReminderTime || '09:00'),
     WORKING_DAYS: normalizeWorkingDays_(payload.workingDays || EK.DEFAULT_SETTINGS.WORKING_DAYS),
     SYSTEM_MODE: String(payload.systemMode || 'REAL').toUpperCase() === 'TEST' ? 'TEST' : 'REAL',
@@ -250,10 +250,7 @@ function adminSaveSettings(token, payload) {
   const updatedSettings = getSettings_();
   try { recordScheduleSettingsTransitions_(scheduleSettingsBefore, updatedSettings, scheduleSettingsChangedAt, admin.email, 'ADMIN_TETAPAN'); }
   catch (e) { audit_('SEJARAH_JADUAL_GAGAL', EK.SHEETS.SETTINGS, String(e && e.message ? e.message : e), admin.email); }
-  // Cuba pasang semula trigger jika masa/aktif reminder berubah. Kegagalan trigger
-  // tidak membatalkan simpanan tetapan; pemilik boleh guna menu Aktifkan / baiki notifikasi emel.
-  try { installEmailNotifications_({silent: true}); }
-  catch (e) { audit_('TRIGGER_NOTIFIKASI_GAGAL', EK.SHEETS.SETTINGS, String(e && e.message ? e.message : e), admin.email); }
+  // Google Sheets trigger installers retired after cutover to MySQL.
   audit_('SIMPAN_TETAPAN', EK.SHEETS.SETTINGS, `Oleh ${admin.email}; mode=${next.SYSTEM_MODE}; S1=${next.DEFAULT_S1_IN}-${next.DEFAULT_S1_OUT}; S2=${next.DEFAULT_S2_IN || '-'}-${next.DEFAULT_S2_OUT || '-'}; radius=${next.RADIUS_M}m; reminder=${next.PUNCH_REMINDER_ENABLED}@${next.PUNCH_REMINDER_TIME}; hari=${next.WORKING_DAYS}`, admin.email);
   return {ok: true, settings: publicSettings_(updatedSettings)};
 }
