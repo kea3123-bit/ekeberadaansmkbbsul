@@ -1,0 +1,38 @@
+name: Time exception owner reason regression (safe, no deploy)
+on:
+  push:
+    branches: [feature/self-time-exception-reason-popup-20261102]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  test-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PHP and JS changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l php/api.php
+          php -l php/time_exception_reasons.php
+          php php/tests/time-exception-reasons-test.php
+          node --check < mysql-ui/Scripts.html
+          node mysql-ui/tests/time-exception-reasons.test.js
+          php php/tests/monthly-wbf-explanation-test.php
+          node mysql-ui/tests/absence-reviewer-dates.test.js
+      - name: Package scoped PHP backend patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staging/ekeberadaansmkbbsul/php/sql
+          cp php/api.php php/time_exception_reasons.php staging/ekeberadaansmkbbsul/php/
+          cp php/sql/002_SELF_TIME_EXCEPTION_REASON.sql staging/ekeberadaansmkbbsul/php/sql/
+          (cd staging && zip -qr "$GITHUB_WORKSPACE/eKeberadaan_REASON_SCOPED_PHP.zip" ekeberadaansmkbbsul)
+          unzip -t eKeberadaan_REASON_SCOPED_PHP.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eKeberadaan-owner-reason-php-and-migration
+          path: eKeberadaan_REASON_SCOPED_PHP.zip
+          retention-days: 30
