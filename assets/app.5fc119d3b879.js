@@ -576,7 +576,6 @@
     // after the dashboard is already usable.
     setTimeout(()=>loadOwnProfilePhoto(),180);
     setTimeout(()=>syncClientTelemetry().catch(()=>{}),0);
-    setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),450);
     if (state.boot?.user?.mustChangePassword) setTimeout(()=>openChangePin(true),250);
   }
 
@@ -684,7 +683,6 @@
     state.currentScreen=name;
     const titles={home:'Utama',mycard:'Kad Perakam Waktu Saya',absence:'Tidak Hadir / Keberadaan',absencepublic:'Senarai Tidak Hadir / Keberadaan',absencemanage:'Semakan Tidak Hadir / Keberadaan',timereview:'Semakan Lewat / Balik Awal',admin:'Pentadbir Sistem',admincard:'Kad Perakam Waktu Pegawai'};
     text('pageTitle',titles[name]||'e-Keberadaan'); closeMobileMenu();
-    if(name==='home')setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),350);
     if(name==='mycard')loadMyCard();
     if(name==='absence')loadAbsenceData();
     if(name==='absencepublic')loadAbsencePublic();
@@ -1001,8 +999,10 @@
       gps('ok',test?'Rekod MOD TEST diterima.':`Rekod waktu diterima · GPS ±${Number(res.accuracyM)||Math.round(loc?.accuracy||0)}m · jarak ${res.distanceM}m / ${Number(res.radiusM)||Math.round(gpsPolicy.radiusM)}m.`);
       toast(res.message,4500);
       invalidateClientCache('myCard','adminCard');
-      if(res.timeException)invalidateClientCache('timeReview');
-      setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),200);
+      if(res.timeException){
+        invalidateClientCache('timeReview');
+        setTimeout(()=>loadMyTimeExceptionReasons(res.timeException).catch(()=>{}),200);
+      }
     }catch(e){gps('',e.message);handleServerError(e,false);}finally{setPunchBusy(false);}
   }
 
@@ -1023,16 +1023,17 @@
   function setPunchBusy(b){const step=state.boot?.attendance?.nextRecord||{type:'IN',session:1,complete:false},i=document.getElementById('btnIn'),o=document.getElementById('btnOut');if(i)i.disabled=b||step.complete||step.type!=='IN';if(o)o.disabled=b||step.complete||step.type!=='OUT';}
 
   // ---------- Sebab Lewat / Balik Awal (pemohon sendiri) ----------
-  async function loadMyTimeExceptionReasons(){
+  async function loadMyTimeExceptionReasons(justPunched){
+    if(!justPunched||justPunched.date!==state.boot?.today)return;
     if(!state.token||!state.boot||state.currentScreen!=='home'||state.timeReasonFetching||state.timeReasonCurrent)return;
     if(String(state.boot.settings?.systemMode||'REAL')==='TEST')return;
     const modal=document.getElementById('modal');
     if(modal&&!modal.classList.contains('hidden'))return;
     state.timeReasonFetching=true;
     try{
-      const response=await runServer('getMyTimeExceptionReasons',state.token);
+      const response=await runServer('getMyTimeExceptionReasons',state.token,justPunched);
       if(state.currentScreen!=='home'||!state.token)return;
-      const row=(response?.rows||[]).find(r=>r?.id&&!state.timeReasonPromptShown.has(r.id));
+      const row=(response?.rows||[]).find(r=>r?.id&&r.date===justPunched.date&&r.type===justPunched.type&&Number(r.session)===Number(justPunched.session)&&r.recordTime===justPunched.recordTime&&!state.timeReasonPromptShown.has(r.id));
       if(!row)return;
       state.timeReasonPromptShown.add(row.id);
       state.timeReasonCurrent=row;
@@ -1067,7 +1068,6 @@
       state.timeReasonCurrent=null;closeModal();
       toast('Sebab berjaya dihantar kepada pentadbir.',4500);
       invalidateClientCache('timeReview');
-      setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),200);
     }catch(error){handleServerError(error);}finally{setButtonBusy(submit,false,'');}
   }
   // ---------- Own Kad Perakam Waktu ----------
@@ -1982,7 +1982,7 @@ function ensureAbsenceManageTableLayout(){
   function toggleMobileMenu(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('sidebarBackdrop').classList.toggle('hidden');}
   function closeMobileMenu(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebarBackdrop').classList.add('hidden');}
   function showModal(html){document.getElementById('modalContent').innerHTML=html;document.getElementById('modal').classList.remove('hidden');}
-  function closeModal(){document.getElementById('modal').classList.add('hidden');}
+  function closeModal(){state.timeReasonCurrent=null;document.getElementById('modal').classList.add('hidden');}
   function setBadge(id,status){const b=document.getElementById(id);if(!b)return;b.textContent=status;b.className='badge '+badgeClass(status);}
   function badgeClass(s){s=String(s||'');return s==='HADIR'?'hadir':s==='TIDAK HADIR'?'absent':s.includes('BALIK AWAL')?'awal':s.includes('LEWAT')?'lewat':'neutral';}
   function text(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
