@@ -12,7 +12,7 @@ function ek_reason_minutes(string $time):?int {
     return (int)$m[1]*60+(int)$m[2];
 }
 function ek_reason_thursday_out(array $user,array $settings,string $date,string $in,string $normal):string {
-    if(date('N',strtotime($date))!==4)return $normal;
+    if((int)date('N',strtotime($date))!==4)return $normal;
     if(strtoupper((string)($settings['THURSDAY_WBF_ENABLED']??'TRUE'))==='FALSE')return $normal;
     $category=strtoupper(trim((string)($user['kategori']??'')));
     if($category!=='AKP'&&!preg_match('/\bPENGETUA\b/iu',(string)($user['jawatan']??'')))return $normal;
@@ -59,7 +59,7 @@ function ek_reason_incidents(array $attendance,array $user,array $settings):arra
         $events[]=['type'=>'LEWAT','session'=>1,'recordTime'=>$in,'referenceTime'=>$refIn];
     // Once session 2 exists, a session-1 OUT was a break, not final departure.
     $finalOut=$out2?:($in2?'':$out);
-    $normalOut=time_text($out2?($sch['s2Out']?:$sch['s1Out']):$sch['s1Out']);
+    $normalOut=time_text($out2?(($sch['s2Out']??'')?:($sch['s1Out']??'16:30')):($sch['s1Out']??'16:30'));
     $effectiveOut=ek_reason_thursday_out($user,$settings,$date,$in,$normalOut);
     if($finalOut!==''&&ek_reason_minutes($effectiveOut)!==null&&$finalOut<$effectiveOut)
         $events[]=['type'=>'BALIK AWAL','session'=>$out2?2:1,'recordTime'=>$finalOut,'referenceTime'=>$effectiveOut];
@@ -90,8 +90,9 @@ function ek_reason_my_pending(array $user):array {
                 [$email,$date,$type,$session]);
             if(!$found) {
                 $id='SW-MYSQL-'.str_replace('-','',$date).'-'.substr(hash('sha256',$email.'|'.$date.'|'.$type.'|'.$session),0,18);
-                // The existing cron might insert at the same time; the scoped GET_LOCK
-                // ensures the reader and cron do not create duplicate user records.
+                // Guard duplicate requests from multiple simultaneous user sessions.
+                // The existing cron can also create a matching event; recheck
+                // under the lock and reuse any matching row.
                 $lock='eke_reason_'.substr(hash('sha256',$key.'|'.$email),0,40);
                 $locked=one('SELECT GET_LOCK(?,3) AS locked',[$lock]);
                 if((int)($locked['locked']??0)!==1)continue;
