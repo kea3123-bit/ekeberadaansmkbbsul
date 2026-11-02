@@ -1375,7 +1375,7 @@ const state = {
     const summary=document.getElementById('absencePublicSummary');
     if(summary){const th=list.filter(r=>r.mode==='TIDAK_HADIR').length,kb=list.filter(r=>r.mode==='KEBERADAAN').length,nm=list.filter(r=>r.status==='TIDAK MOHON').length;summary.innerHTML=[['Jumlah',list.length],['Tidak Hadir',th],['Keberadaan',kb],['Tiada Penjelasan',nm]].map(x=>`<div class="summary-card"><span>${esc(x[0])}</span><strong>${x[1]}</strong></div>`).join('');}
     const body=document.getElementById('absencePublicRows');if(!body)return;
-    body.innerHTML=list.length?list.map((r,index)=>`<tr><td class="absence-public-number">${index+1}</td><td><b>${esc(r.name||'—')}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.category||'—')}</small></td><td><b>${esc(r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir')}</b></td><td>${esc(r.type||'—')}</td><td>${esc(formatDateRange(r.startDate,r.endDate))}${r.mode==='KEBERADAAN'?`<small class="table-sub">${esc(r.startTime||'—')} – ${esc(r.endTime||'—')}</small>`:''}</td><td><span class="request-status ${absenceStatusClass(r.status)}">${esc(r.status)}</span></td></tr>`).join(''):'<tr><td colspan="6" class="empty-cell">Tiada rekod sepadan untuk tempoh dan tapisan dipilih.</td></tr>';
+    body.innerHTML=list.length?list.map((r,index)=>`<tr><td class="absence-public-number">${index+1}</td><td><b>${esc(r.name||'—')}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.category||'—')}</small></td><td><b>${esc(r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir')}</b></td><td>${esc(r.type||'—')}</td><td>${esc(formatDateRange(r.originalStartDate||r.startDate,r.originalEndDate||r.endDate))}${r.mode==='KEBERADAAN'?`<small class="table-sub">${esc(r.startTime||'—')} – ${esc(r.endTime||'—')}</small>`:''}</td><td><span class="request-status ${absenceStatusClass(r.status)}">${esc(r.status)}</span></td></tr>`).join(''):'<tr><td colspan="6" class="empty-cell">Tiada rekod sepadan untuk tempoh dan tapisan dipilih.</td></tr>';
   }
   async function generatePublicAbsencePresencePdfClient(){
     try{const filters=currentAbsencePublicFilters();const r=await runServer('generatePublicAbsencePresencePdf',state.token,filters);downloadPdfResult(r);toast('Laporan PDF Senarai Tidak Hadir / Keberadaan dijana.');}
@@ -1451,10 +1451,16 @@ function ensureAbsenceManageTableLayout(){
         `<div><b>Catatan:</b> ${esc(r.note||'—')}</div>`+
         (!r.synthetic&&r.comment?`<div><b>Ulasan:</b> ${esc(r.comment)}</div>`:'')+
         `</details>`;
+      const reviewerTitle=String(r.reviewerJobTitle||'').trim();
+      const reviewerEmail=String(r.reviewedBy||'').trim();
+      const approvalLabel=r.status==='DILULUSKAN'?'Diluluskan oleh':r.status==='DITOLAK'?'Ditolak oleh':'Disemak oleh';
       const reviewer=r.status==='MENUNGGU'
         ?`<div class="row-actions"><button class="action-link approve-link" onclick='openReviewAbsence(${attr(JSON.stringify(r.id))},"DILULUSKAN")'>Lulus</button><button class="action-link warn-link" onclick='openReviewAbsence(${attr(JSON.stringify(r.id))},"DITOLAK")'>Tolak</button></div>`
         :r.synthetic?'<span class="muted">Tiada permohonan</span>'
-        :`<span class="review-role-tag">${esc(r.reviewerJobTitle||'Pengurusan')}</span><small class="table-sub">${esc(r.reviewedAt||'—')}</small>`;
+        :r.status==='DIBATALKAN'?'<span class="muted">Dibatalkan</span>'
+        :reviewerEmail
+          ?`<small class="table-sub">${esc(approvalLabel)}</small><span class="review-role-tag">${esc(reviewerTitle||'Jawatan tidak direkodkan')}</span><small class="table-sub">${esc(r.reviewedAt||'—')}</small>`
+          :`<small class="table-sub">Pelulus tidak direkodkan</small><small class="table-sub">${esc(r.reviewedAt||'—')}</small>`;
       return `<tr>`+
         `<td class="absence-public-number">${index+1}</td>`+
         `<td><b>${esc(r.name||'—')}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.category||'—')}</small></td>`+
