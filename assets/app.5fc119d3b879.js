@@ -7,6 +7,7 @@
     selectedAccount:null, changeTicket:'', setupPurpose:'', recoveryEmail:'', pinRecoveryAvailable:false,
     selectedUserEmails:new Set(), filteredUsers:[], filteredReport:[], tableSorts:{},
     absence:null, absencePublic:null, absenceManagement:null, timeReview:null,
+    timeReasonPromptShown:new Set(),timeReasonCurrent:null,timeReasonFetching:false,
     cacheTimes:{},
     lastSessionCheck:0, sessionCheckBusy:false, sessionRecoveryPromise:null,
     locationMap:null, locationMarker:null, locationCircle:null,
@@ -575,6 +576,7 @@
     // after the dashboard is already usable.
     setTimeout(()=>loadOwnProfilePhoto(),180);
     setTimeout(()=>syncClientTelemetry().catch(()=>{}),0);
+    setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),450);
     if (state.boot?.user?.mustChangePassword) setTimeout(()=>openChangePin(true),250);
   }
 
@@ -682,6 +684,7 @@
     state.currentScreen=name;
     const titles={home:'Utama',mycard:'Kad Perakam Waktu Saya',absence:'Tidak Hadir / Keberadaan',absencepublic:'Senarai Tidak Hadir / Keberadaan',absencemanage:'Semakan Tidak Hadir / Keberadaan',timereview:'Semakan Lewat / Balik Awal',admin:'Pentadbir Sistem',admincard:'Kad Perakam Waktu Pegawai'};
     text('pageTitle',titles[name]||'e-Keberadaan'); closeMobileMenu();
+    if(name==='home')setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),350);
     if(name==='mycard')loadMyCard();
     if(name==='absence')loadAbsenceData();
     if(name==='absencepublic')loadAbsencePublic();
@@ -999,6 +1002,7 @@
       toast(res.message,4500);
       invalidateClientCache('myCard','adminCard');
       if(res.timeException)invalidateClientCache('timeReview');
+      setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),200);
     }catch(e){gps('',e.message);handleServerError(e,false);}finally{setPunchBusy(false);}
   }
 
@@ -1018,6 +1022,54 @@
   function gps(cls,msg){const d=document.getElementById('gpsDot');if(d)d.className='gps-dot '+cls;text('locationText',msg);}
   function setPunchBusy(b){const step=state.boot?.attendance?.nextRecord||{type:'IN',session:1,complete:false},i=document.getElementById('btnIn'),o=document.getElementById('btnOut');if(i)i.disabled=b||step.complete||step.type!=='IN';if(o)o.disabled=b||step.complete||step.type!=='OUT';}
 
+  // ---------- Sebab Lewat / Balik Awal (pemohon sendiri) ----------
+  async function loadMyTimeExceptionReasons(){
+    if(!state.token||!state.boot||state.currentScreen!=='home'||state.timeReasonFetching||state.timeReasonCurrent)return;
+    if(String(state.boot.settings?.systemMode||'REAL')==='TEST')return;
+    const modal=document.getElementById('modal');
+    if(modal&&!modal.classList.contains('hidden'))return;
+    state.timeReasonFetching=true;
+    try{
+      const response=await runServer('getMyTimeExceptionReasons',state.token);
+      if(state.currentScreen!=='home'||!state.token)return;
+      const row=(response?.rows||[]).find(r=>r?.id&&!state.timeReasonPromptShown.has(r.id));
+      if(!row)return;
+      state.timeReasonPromptShown.add(row.id);
+      state.timeReasonCurrent=row;
+      const heading=row.type==='LEWAT'?'Lewat':'Balik Awal';
+      const html='<div class="review-request"><div class="first-login-badge">PERINGATAN PERAKAM WAKTU</div>'
+        +'<h3>Nyatakan Sebab '+esc(heading)+'</h3><p>Rekod <b>'+esc(row.date)+'</b> · Sesi '+esc(row.session)+'</p>'
+        +'<div class="review-summary"><div><span>Waktu rekod</span><b>'+esc(row.recordTime||'—')+'</b></div>'
+        +'<div><span>Waktu rujukan</span><b>'+esc(row.referenceTime||'—')+'</b></div></div>'
+        +'<p class="muted">Tiada permohonan Tidak Hadir / Keberadaan meliputi waktu ini. '
+        +'Nyatakan sebab untuk semakan pentadbir. Rekod punch dan status semakan tidak berubah.</p>'
+        +'<form onsubmit="saveMyTimeExceptionReason(event)"><label>Sebab '+esc(heading)
+        +'<textarea name="reason" minlength="10" maxlength="800" rows="4" required '
+        +'placeholder="Terangkan sebab sebenar (minimum 10 aksara)"></textarea></label>'
+        +'<p class="button-row"><button type="submit" class="btn primary">Hantar Sebab</button>'
+        +'<button type="button" class="btn ghost" onclick="dismissMyTimeExceptionReason()">Kemudian</button></p></form></div>';
+      showModal(html);
+    }catch(error){
+      if(!/tidak disokong|unknown|unrecognized|unknown column/i.test(String(error?.message||'')))
+        console.warn('Semakan sebab waktu tidak dapat dimuatkan.',error?.message||error);
+    }finally{state.timeReasonFetching=false;}
+  }
+  function dismissMyTimeExceptionReason(){state.timeReasonCurrent=null;closeModal();}
+  async function saveMyTimeExceptionReason(ev){
+    ev.preventDefault();
+    const item=state.timeReasonCurrent;if(!item)return;
+    const form=ev.target,reason=String(new FormData(form).get('reason')||'').trim();
+    if(reason.length<10||reason.length>800){toast('Sebab mesti 10 hingga 800 aksara.');return;}
+    const submit=form.querySelector('[type="submit"]');
+    setButtonBusy(submit,true,'Menghantar…');
+    try{
+      await runServer('saveMyTimeExceptionReason',state.token,item.id,reason);
+      state.timeReasonCurrent=null;closeModal();
+      toast('Sebab berjaya dihantar kepada pentadbir.',4500);
+      invalidateClientCache('timeReview');
+      setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),200);
+    }catch(error){handleServerError(error);}finally{setButtonBusy(submit,false,'');}
+  }
   // ---------- Own Kad Perakam Waktu ----------
   async function loadMyCard(force=false){
     const monthInput=document.getElementById('myCardMonth');if(!monthInput.value)monthInput.value=(state.boot?.today||'').slice(0,7);const monthKey=monthInput.value;
@@ -1525,7 +1577,7 @@ function ensureAbsenceManageTableLayout(){
     try{state.timeReview=await runServer('getTimeReviewData',state.token,from,to);state.timeReview._key=key;markClientCache('timeReview');applyTimeReviewFilters();}catch(e){handleServerError(e);}
   }
   function setTimeReviewPreset(kind){const [f,t]=presetRange(kind);document.getElementById('timeReviewFrom').value=f;document.getElementById('timeReviewTo').value=t;loadTimeReview(true);}
-  function applyTimeReviewFilters(){const data=state.timeReview?.rows||[],q=norm(document.getElementById('timeReviewSearch')?.value),type=document.getElementById('timeReviewType')?.value||'',st=document.getElementById('timeReviewStatus')?.value||'',sort=getTableSort('timeReview');const list=sortRecords(data.filter(r=>{const hay=norm([r.name,r.jobTitle,r.email,r.category,r.date,r.type,r.session,r.recordTime,r.referenceTime,r.reviewStatus,r.reviewerJobTitle,r.comment].join(' '));return(!q||hay.includes(q))&&(!type||r.type===type)&&(!st||r.reviewStatus===st);}),sort);text('timeReviewCount',`${list.length} / ${data.length} rekod`);const body=document.getElementById('timeReviewRows');if(!body)return;body.innerHTML=list.length?list.map(r=>`<tr><td><b>${esc(r.name)}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.email)}</small></td><td>${esc(r.date)}</td><td><span class="badge ${r.type==='LEWAT'?'lewat':'awal'}">${esc(r.type)}</span></td><td>${esc(r.session)}</td><td><b>${esc(r.recordTime)}</b></td><td>${esc(r.referenceTime||'—')}</td><td><span class="request-status ${r.reviewStatus==='DIAMBIL MAKLUM'?'approved':r.reviewStatus==='DITOLAK'?'rejected':'pending'}">${esc(r.reviewStatus)}</span></td><td>${r.reviewStatus==='BELUM DIAMBIL MAKLUM'?`<div class="row-actions"><button class="action-link approve-link" onclick='openTimeReview(${attr(JSON.stringify(r.id))},"DIAMBIL MAKLUM")'>Diambil Maklum</button><button class="action-link warn-link" onclick='openTimeReview(${attr(JSON.stringify(r.id))},"DITOLAK")'>Ditolak</button></div>`:`<span class="review-role-tag">${esc(r.reviewerJobTitle||'Pentadbir Sistem')}</span><small class="table-sub">Catatan: ${esc(r.comment||'—')}</small><small class="table-sub">${esc(r.reviewedAt||'—')}</small>`}</td></tr>`).join(''):'<tr><td colspan="8" class="empty-cell">Tiada rekod sepadan.</td></tr>';
+  function applyTimeReviewFilters(){const data=state.timeReview?.rows||[],q=norm(document.getElementById('timeReviewSearch')?.value),type=document.getElementById('timeReviewType')?.value||'',st=document.getElementById('timeReviewStatus')?.value||'',sort=getTableSort('timeReview');const list=sortRecords(data.filter(r=>{const hay=norm([r.name,r.jobTitle,r.email,r.category,r.date,r.type,r.session,r.recordTime,r.referenceTime,r.reviewStatus,r.reviewerJobTitle,r.comment,r.userReason].join(' '));return(!q||hay.includes(q))&&(!type||r.type===type)&&(!st||r.reviewStatus===st);}),sort);text('timeReviewCount',`${list.length} / ${data.length} rekod`);const body=document.getElementById('timeReviewRows');if(!body)return;body.innerHTML=list.length?list.map(r=>`<tr><td><b>${esc(r.name)}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.email)}</small></td><td>${esc(r.date)}</td><td><span class="badge ${r.type==='LEWAT'?'lewat':'awal'}">${esc(r.type)}</span></td><td>${esc(r.session)}</td><td><b>${esc(r.recordTime)}</b></td><td>${esc(r.referenceTime||'—')}</td><td>${r.userReason?`<div class="time-user-reason">${esc(r.userReason)}</div><small class="table-sub">Dihantar: ${esc(r.userReasonAt||'—')}</small>`:'<small class="muted">Belum diberikan</small>'}</td><td><span class="request-status ${r.reviewStatus==='DIAMBIL MAKLUM'?'approved':r.reviewStatus==='DITOLAK'?'rejected':'pending'}">${esc(r.reviewStatus)}</span></td><td>${r.reviewStatus==='BELUM DIAMBIL MAKLUM'?`<div class="row-actions"><button class="action-link approve-link" onclick='openTimeReview(${attr(JSON.stringify(r.id))},"DIAMBIL MAKLUM")'>Diambil Maklum</button><button class="action-link warn-link" onclick='openTimeReview(${attr(JSON.stringify(r.id))},"DITOLAK")'>Ditolak</button></div>`:`<span class="review-role-tag">${esc(r.reviewerJobTitle||'Pentadbir Sistem')}</span><small class="table-sub">Catatan: ${esc(r.comment||'—')}</small><small class="table-sub">${esc(r.reviewedAt||'—')}</small>`}</td></tr>`).join(''):'<tr><td colspan="9" class="empty-cell">Tiada rekod sepadan.</td></tr>';
   }
   function openTimeReview(id,decision){const r=state.timeReview?.rows?.find(x=>x.id===id);if(!r)return;showModal(`<h3>${esc(decision==='DIAMBIL MAKLUM'?'Diambil Maklum':'Tolak')} Rekod Waktu</h3><p><b>${esc(r.name)}</b><br><span class="muted">${esc(r.jobTitle||'')} · ${esc(r.email)}</span></p><div class="review-summary"><div><span>Jenis</span><b>${esc(r.type)}</b></div><div><span>Sesi</span><b>${esc(r.session)}</b></div><div><span>Waktu</span><b>${esc(r.recordTime)}</b></div><div><span>Rujukan</span><b>${esc(r.referenceTime||'—')}</b></div></div><form onsubmit='submitTimeReview(event,${attr(JSON.stringify(id))},${attr(JSON.stringify(decision))})'><label>Ulasan<textarea name="comment" rows="3" placeholder="Catatan (opsyenal)"></textarea></label><p><button class="btn ${decision==='DIAMBIL MAKLUM'?'primary':'dark'}" type="submit">Simpan Keputusan</button></p></form>`);}
   async function submitTimeReview(ev,id,decision){ev.preventDefault();const comment=new FormData(ev.target).get('comment')||'';try{const r=await runServer('reviewTimeException',state.token,id,decision,comment);closeModal();toast(`${r.status}.`,4500);invalidateClientCache('timeReview','myCard','adminCard');await loadTimeReview(true);}catch(e){handleServerError(e);}}
