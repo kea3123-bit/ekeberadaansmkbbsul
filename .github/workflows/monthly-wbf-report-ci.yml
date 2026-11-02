@@ -1,0 +1,34 @@
+name: Thursday WBF and unexplained report regression
+on:
+  push:
+    branches: [fix/monthly-thursday-wbf-unexplained-highlights-20261102]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  report-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate PHP report and browser report renderer
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l php/monthly_reports.php
+          node --check mysql-ui/php/monthly-print.js
+          php php/tests/monthly-report-test.php
+          php php/tests/monthly-wbf-explanation-test.php
+          node mysql-ui/tests/monthly-unexplained-render.test.js
+          node mysql-ui/tests/monthly-print.test.js
+      - name: Package only report PHP module (no deployment)
+        run: |
+          set -euo pipefail
+          mkdir -p staging/ekeberadaansmkbbsul/php
+          install -m 0644 php/monthly_reports.php staging/ekeberadaansmkbbsul/php/
+          (cd staging && zip -qr "$GITHUB_WORKSPACE/eKeberadaan_THURSDAY_WBF_REPORT_ONLY.zip" ekeberadaansmkbbsul)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eKeberadaan-Thursday-WBF-report-only
+          path: eKeberadaan_THURSDAY_WBF_REPORT_ONLY.zip
+          retention-days: 30
