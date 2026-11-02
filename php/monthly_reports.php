@@ -120,7 +120,7 @@ function mysql_monthly_report_sections(array $admin,string $from,string $to):arr
             // Only the FINAL actual departure is compared, including optional
             // second-session punch. Thursday WBF overrides the ordinary OUT.
             $finalOut=$out2!==''?$out2:$out;
-            $ordinaryOut=(string)($out2!==''?($sch['s2Out']?:($sch['s1Out']??'16:30')):($sch['s1Out']??'16:30'));
+            $ordinaryOut=(string)($out2!==''?(($sch['s2Out']??'')?:($sch['s1Out']??'16:30')):($sch['s1Out']??'16:30'));
             $outReference=mysql_monthly_wbf_out_reference($user,$s,$day,$in,$ordinaryOut);
             $late=$in!=='' && $in>$inReference;
             $early=$finalOut!=='' && $finalOut<$outReference;
