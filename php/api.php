@@ -608,7 +608,15 @@ function public_absences(string $from,string $to): array {
     $from=valid_day($from);$to=valid_day($to);
     if ($from>$to || (strtotime($to)-strtotime($from))>366*86400) throw new InvalidArgumentException('Tempoh tidak sah.');
     $data=array_values(array_filter(all_absence_rows(),fn($r)=>$r['endDate']>=$from&&$r['startDate']<=$to&&in_array($r['status'],['MENUNGGU','DILULUSKAN'],true)));
-    foreach($data as &$r){$r['startDate']=max($r['startDate'],$from);$r['endDate']=min($r['endDate'],$to);}unset($r);
+    // Filter the visible/PDF period without losing the original request dates
+    // needed by the public list. Keep startDate/endDate clipped for consumers
+    // that calculate statistics only within the selected period.
+    foreach($data as &$r){
+        $r['originalStartDate']=$r['startDate'];
+        $r['originalEndDate']=$r['endDate'];
+        $r['startDate']=max($r['startDate'],$from);
+        $r['endDate']=min($r['endDate'],$to);
+    }unset($r);
     // One authoritative dataset for the public table AND its Google Workspace PDF.
     // Original requests stay unchanged; only physically persisted MySQL
     // AUTO_TIDAK_HADIR events are appended as TIDAK MOHON / TIADA PENJELASAN.
@@ -619,6 +627,24 @@ function public_absences(string $from,string $to): array {
 function management_absences(array $u,string $from,string $to): array {
     $from=valid_day($from);$to=valid_day($to);if ($from>$to)throw new InvalidArgumentException('Tempoh tidak sah.');
     $data=array_values(array_filter(all_absence_rows(),fn($r)=>$r['endDate']>=$from&&$r['startDate']<=$to));
+    // Fetch reviewers' current job titles once, rather than performing one
+    // database lookup per approval or replacing an unknown title with a
+    // generic "Pengurusan" category.
+    $needsReviewer=false;
+    foreach($data as $request) {
+        if(trim((string)($request['reviewedBy']??''))!==''){$needsReviewer=true;break;}
+    }
+    if($needsReviewer){
+        $titles=[];
+        foreach(rows('SELECT emel,jawatan FROM pengguna WHERE emel IS NOT NULL') as $reviewer) {
+            $email=strtolower(trim((string)($reviewer['emel']??'')));
+            if($email!=='')$titles[$email]=trim((string)($reviewer['jawatan']??''));
+        }
+        foreach($data as &$request){
+            $reviewerEmail=strtolower(trim((string)($request['reviewedBy']??'')));
+            $request['reviewerJobTitle']=$reviewerEmail!==''?($titles[$reviewerEmail]??''):'';
+        }unset($request);
+    }
     return ['manager'=>public_user($u),'types'=>absence_types(),'presenceTypes'=>presence_types(),
       'fromDate'=>$from,'toDate'=>$to,'requests'=>$data];
 }
