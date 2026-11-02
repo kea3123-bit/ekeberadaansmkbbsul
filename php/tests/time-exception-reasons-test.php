@@ -70,7 +70,17 @@ function execute_sql(string $query,array $args=[]):int{
   }
   return 1;
 }
-$results=ek_reason_my_pending($ppp);
+$trigger=ek_reason_current_punch_event($event,$ppp,settings_raw(),'IN',1);
+check_case(is_array($trigger)&&$trigger['date']==='2026-11-02'&&$trigger['type']==='LEWAT',
+ 'Only the newly clicked punch may supply a trigger');
+check_case(ek_reason_current_punch_event($event,$ppp,settings_raw(),'OUT',1)===null,
+ 'A timely OUT must not prompt about an older morning late record');
+check_case(ek_reason_my_pending($ppp)===[],'No trigger means no popups on login or navigate');
+check_case(ek_reason_my_pending($ppp,['date'=>'2026-10-26','type'=>'BALIK AWAL','session'=>1,'recordTime'=>'15:03'])===[],
+ 'Historical record must not trigger after login');
+check_case(ek_reason_my_pending($ppp,['date'=>'2026-11-02','type'=>'LEWAT','session'=>1,'recordTime'=>'09:15'])===[],
+ 'Event time must match the punch just recorded');
+$results=ek_reason_my_pending($ppp,$trigger);
 check_case(count($results)===1,'Owner pending list should create a single late incident');
 check_case(str_starts_with($results[0]['id'],'SW-MYSQL-'),'Inserted incident must use deterministic MySQL ID');
 $id=$results[0]['id'];
@@ -78,6 +88,6 @@ try{ek_reason_save($akp,$id,'Terlewat kerana banjir kilat');throw new RuntimeExc
 catch(InvalidArgumentException $ok){}
 $save=ek_reason_save($ppp,$id,'Terlewat kerana banjir kilat');
 check_case($save['ok']===true,'User reason did not persist');
-check_case(ek_reason_my_pending($ppp)===[],'Submitted reason should not show again');
+check_case(ek_reason_my_pending($ppp,$trigger)===[],'Submitted reason should not show again');
 check_case(count(array_filter($GLOBALS['writes'],fn($e)=>str_contains($e[0],'UPDATE semakan_waktu')))==1,'Reason write must occur only once');
 echo "SELF_SERVICE_TIME_REASON_TESTS_OK\n";

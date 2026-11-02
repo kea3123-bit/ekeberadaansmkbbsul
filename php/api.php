@@ -215,7 +215,7 @@ function rpc(string $fn,array $a) {
       case 'getMyTimeExceptionReasons':
         $u=require_user($a[0]??'');
         require_once __DIR__.'/time_exception_reasons.php';
-        return ['rows'=>ek_reason_my_pending($u)];
+        return ['rows'=>ek_reason_my_pending($u,is_array($a[1]??null)?$a[1]:[])];
       case 'saveMyTimeExceptionReason':
         $u=require_user($a[0]??'');
         require_once __DIR__.'/time_exception_reasons.php';
@@ -377,8 +377,21 @@ function punch_mysql(array $u,string $type,$location): array {
           [$status,implode('|',$flags),$updated['_row_id']]);
         db()->commit();
         audit_event($email,'RAKAM_WAKTU',$date,$type.' sesi '.$n);
-        return ['ok'=>true,'attendance'=>attendance_public(attendance_row($email,$date),$sch),
+        $saved=attendance_row($email,$date);
+        $response=['ok'=>true,'attendance'=>attendance_public($saved,$sch),
            'ip'=>$ip,'distanceM'=>$distance,'ipWarning'=>'','message'=>'Rekod waktu berjaya disimpan.'];
+        // Never let the optional reason-popup feature break a successful punch.
+        // Report only the incident created by THIS button press (date/session).
+        if(!$test){
+            try {
+                require_once __DIR__.'/time_exception_reasons.php';
+                $exception=ek_reason_current_punch_event($saved,$u,$s,$type,$n);
+                if($exception)$response['timeException']=$exception;
+            } catch(Throwable $reasonError) {
+                error_log('Time reason event detection failed: '.get_class($reasonError));
+            }
+        }
+        return $response;
     } catch(Throwable $e) { if(db()->inTransaction())db()->rollBack(); throw $e; }
     finally { one('SELECT RELEASE_LOCK(?) AS released',[$lock]); }
 }
