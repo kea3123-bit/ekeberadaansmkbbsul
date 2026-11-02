@@ -5,10 +5,15 @@ const js=fs.readFileSync('mysql-ui/Scripts.html','utf8');
 const html=fs.readFileSync('mysql-ui/Index.html','utf8');
 new Function(js);
 for(const needle of [
- 'getMyTimeExceptionReasons','saveMyTimeExceptionReason','loadMyTimeExceptionReasons()',
+ 'getMyTimeExceptionReasons','saveMyTimeExceptionReason','loadMyTimeExceptionReasons(res.timeException)',
  "state.timeReasonPromptShown.add(row.id)","r.userReason","esc(r.userReason)",
- "state.timeReasonCurrent=null","if(name==='home')","setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),200)"
+ "state.timeReasonCurrent=null","if(res.timeException)","runServer('getMyTimeExceptionReasons',state.token,justPunched)"
 ])assert(js.includes(needle),'Missing UI behavior: '+needle);
+assert(!js.includes("setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),450)"),'Login must never open the popup');
+assert(!js.includes("if(name==='home')setTimeout(()=>loadMyTimeExceptionReasons"),'Opening Home must never open the popup');
+assert(!js.includes("setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),200)"),'Submitting a reason must not reopen old prompts');
+assert(js.includes("justPunched.date!==state.boot?.today"),'Only today's incident may trigger');
+assert(js.includes("r.recordTime===justPunched.recordTime"),'Only current punch time may trigger');
 assert(html.includes('<th>Sebab pengguna</th>'),'Admin review needs separate user reason column');
 assert(js.includes('colspan="9"'),'Empty admin rows need 9 columns');
 assert(js.includes('Tiada permohonan Tidak Hadir / Keberadaan'),'Popup must explain the absence check');
