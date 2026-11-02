@@ -212,6 +212,14 @@ function rpc(string $fn,array $a) {
         require_once __DIR__.'/email_queue.php';
         notify_absence_reviewed_mysql($id,$d);
         return ['ok'=>true,'status'=>$d];
+      case 'getMyTimeExceptionReasons':
+        $u=require_user($a[0]??'');
+        require_once __DIR__.'/time_exception_reasons.php';
+        return ['rows'=>ek_reason_my_pending($u)];
+      case 'saveMyTimeExceptionReason':
+        $u=require_user($a[0]??'');
+        require_once __DIR__.'/time_exception_reasons.php';
+        return ek_reason_save($u,(string)($a[1]??''),(string)($a[2]??''));
       case 'getTimeReviewData':
         require_user($a[0]??'',true);return time_reviews((string)($a[1]??today()),(string)($a[2]??today()));
       case 'reviewTimeException':
@@ -672,7 +680,9 @@ function time_reviews(string $from,string $to): array {
       'recordTime'=>time_text($x['wakturekod']),'referenceTime'=>time_text($x['wakturujukan']),
       'reviewStatus'=>$x['statussemakan']??'BELUM DIAMBIL MAKLUM','reviewerJobTitle'=>'',
       'reviewedAt'=>$x['disemakpada']?date_key($x['disemakpada']):'',
-      'comment'=>$x['ulasan']??'','createdAt'=>$x['diciptapada']?date_key($x['diciptapada']):''],$r);
+      'comment'=>$x['ulasan']??'','userReason'=>$x['sebabpengguna']??'',
+      'userReasonAt'=>$x['sebabdihantarpada']??null,
+      'createdAt'=>$x['diciptapada']?date_key($x['diciptapada']):''],$r);
     return ['fromDate'=>$from,'toDate'=>$to,'rows'=>$data];
 }
 function admin_save_attendance(array $admin,array $p): array {
