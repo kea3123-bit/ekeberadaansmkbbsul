@@ -12,7 +12,7 @@ for(const needle of [
 assert(!js.includes("setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),450)"),'Login must never open the popup');
 assert(!js.includes("if(name==='home')setTimeout(()=>loadMyTimeExceptionReasons"),'Opening Home must never open the popup');
 assert(!js.includes("setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),200)"),'Submitting a reason must not reopen old prompts');
-assert(js.includes("justPunched.date!==state.boot?.today"),'Only today's incident may trigger');
+assert(js.includes("justPunched.date!==state.boot?.today"),'Only same-day incidents may trigger');
 assert(js.includes("r.recordTime===justPunched.recordTime"),'Only current punch time may trigger');
 assert(html.includes('<th>Sebab pengguna</th>'),'Admin review needs separate user reason column');
 assert(js.includes('colspan="9"'),'Empty admin rows need 9 columns');
