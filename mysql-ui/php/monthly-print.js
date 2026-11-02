@@ -24,6 +24,8 @@ const CSS=[
   '.ek-report-table tr:nth-child(even) td:not(.ek-red):not(.ek-amber){background:#f5faff;}',
   '.ek-report-table .ek-red{background:#FF2A20!important;color:#fff;font-weight:bold;}',
   '.ek-report-table .ek-amber{background:#FFD09B!important;color:#473522;}',
+  '.ek-report-table .ek-explained{background:#dcfce7!important;color:#166534;font-weight:bold;}',
+  '.ek-report-table.ek-time-exceptions{font-size:8px;}',
   '.ek-report-table .ek-aqua{background:#C9F5F5!important;font-weight:bold;}',
   '.ek-report-section-label{font-size:11px;font-weight:bold;background:#C9F5F5;padding:5px 9px;margin:6px 0 3px;border-left:3px solid #2D9D68;}',
   '.ek-report-person{margin:8px 0 14px;break-inside:avoid;page-break-inside:avoid;}',
@@ -67,13 +69,21 @@ function table(headers,rows,kind){
     const cells=(headers||[]).map((_,j)=>{
       const v=Array.isArray(r)?r[j]:'';
       let color=isColored(v);
+      if(kind==='LEWAT BALIK AWAL'){
+        // Highlight only anomalies without a relevant leave/presence request.
+        // The final two columns hold the per-event explanation, not one global
+        // flag for both events.
+        const reason=String(r[j===3?9:j===4?10:j]||'').toUpperCase();
+        if(j===3||j===4)color=!v?'':reason==='TIADA PENJELASAN'?'ek-red':'ek-explained';
+        if(j===9||j===10)color=!v?'':reason==='TIADA PENJELASAN'?'ek-red':'ek-explained';
+      }
       if(kind==='RINGKASAN'&&((j===5||j===7)&&Number(v)>0))color='ek-red';
       if(kind==='RINGKASAN'&&((j===9||j===10)&&Number(v)>0||j===headers.length-1))color='ek-amber';
       return '<td class="'+[j===1?'ek-left':'',color].filter(Boolean).join(' ')+'">'+h(v)+'</td>';
     }).join('');
     return '<tr>'+cells+'</tr>';
   }).join('');
-  return '<table class="ek-report-table"><thead><tr>'+titles+'</tr></thead><tbody>'+body+'</tbody></table>';
+  return '<table class="ek-report-table'+(kind==='LEWAT BALIK AWAL'?' ek-time-exceptions':'')+'"><thead><tr>'+titles+'</tr></thead><tbody>'+body+'</tbody></table>';
 }
 function title(name,period,school){
   return '<div class="ek-report-title">'+h(school)+' — '+h(name)+'</div>'+
