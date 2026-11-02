@@ -1,7 +1,7 @@
 name: Time exception owner reason regression (safe, no deploy)
 on:
   push:
-    branches: [feature/self-time-exception-reason-popup-20261102]
+    branches: [feature/self-time-exception-reason-popup-20261102, fix/punch-only-time-reason-popup-20261102]
   pull_request:
     branches: [refactor/performance-v2]
 permissions:
@@ -20,6 +20,8 @@ jobs:
           php php/tests/time-exception-reasons-test.php
           node --check < mysql-ui/Scripts.html
           node mysql-ui/tests/time-exception-reasons.test.js
+          grep -q 'ek_reason_current_punch_event' php/api.php
+          grep -q 'res.timeException' mysql-ui/Scripts.html
           php php/tests/monthly-wbf-explanation-test.php
           node mysql-ui/tests/absence-reviewer-dates.test.js
       - name: Package scoped PHP backend patch
