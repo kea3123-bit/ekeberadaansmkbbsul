@@ -23,6 +23,8 @@ function valid_day($value):string {return (string)$value;}
 function today():string{return '2026-11-02';}
 function settings_raw():array{return ['SYSTEM_START_DATE'=>'2026-09-01'];}
 function public_user(array $user):array{return ['name'=>$user['nama']??''];}
+function absence_types():array{return ['CUTI REHAT KHAS'];}
+function presence_types():array{return ['KURSUS'];}
 function all_absence_rows():array{return [
   ['id'=>'r1','email'=>'teacher@example.test','name'=>'Teacher','status'=>'DILULUSKAN',
    'reviewedBy'=>'admin@example.test','startDate'=>'2026-11-02','endDate'=>'2026-11-05',
