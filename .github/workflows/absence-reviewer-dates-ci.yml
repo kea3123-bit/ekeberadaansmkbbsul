@@ -1,0 +1,34 @@
+name: Absence reviewer role and full date regression (no deploy)
+on:
+  push:
+    branches: [fix/absence-reviewer-job-full-date-20261102]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  check-absence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate PHP, MySQL projection, JavaScript and public UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l php/api.php
+          php php/tests/absence-reviewer-dates-test.php
+          php php/tests/public-auto-absence-report-test.php
+          node --check < mysql-ui/Scripts.html
+          node mysql-ui/tests/absence-reviewer-dates.test.js
+          echo "Absence reviewer and dates regression PASS"
+      - name: Package only changed backend API for manual cPanel sync
+        shell: bash
+        run: |
+          mkdir -p staging/ekeberadaansmkbbsul/php
+          install -m 0644 php/api.php staging/ekeberadaansmkbbsul/php/
+          (cd staging && zip -qr "$GITHUB_WORKSPACE/eKeberadaan_ABSENCE_REVIEWER_DATES_SOURCE_API.zip" ekeberadaansmkbbsul)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eke-absence-reviewer-dates-source-api
+          path: eKeberadaan_ABSENCE_REVIEWER_DATES_SOURCE_API.zip
+          retention-days: 30
