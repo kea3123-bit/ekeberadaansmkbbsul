@@ -68,13 +68,41 @@ function ek_reason_incidents(array $attendance,array $user,array $settings):arra
         $events[]=['type'=>'LEWAT','session'=>2,'recordTime'=>$in2,'referenceTime'=>$refIn2];
     return $events;
 }
-function ek_reason_my_pending(array $user):array {
-    $today=today();$from=date('Y-m-d',strtotime($today.' -7 days'));
+/**
+ * Only the exact button click which just saved a punch can initiate a
+ * user-reason modal. No login, navigation, refresh or historical scan.
+ */
+function ek_reason_current_punch_event(array $attendance,array $user,array $settings,string $type,int $session):?array {
+    // A configured second shift makes first-session OUT an intermediate break.
+    if($type==='OUT'&&$session===1){
+        $sch=schedule($user,$settings);
+        if(trim((string)($sch['s2In']??''))!=='')return null;
+    }
+    $wanted=$type==='IN'?'LEWAT':'BALIK AWAL';
+    foreach(ek_reason_incidents($attendance,$user,$settings) as $event){
+        if($event['type']!==$wanted||(int)$event['session']!==$session)continue;
+        return ['date'=>date_key($attendance['tarikh']??''),
+          'type'=>$wanted,'session'=>$session,'recordTime'=>$event['recordTime'],
+          'referenceTime'=>$event['referenceTime']];
+    }
+    return null;
+}
+function ek_reason_my_pending(array $user,array $trigger=[]):array {
+    $today=today();
     $settings=settings_raw();
     if(strtoupper((string)($settings['SYSTEM_MODE']??'REAL'))==='TEST')return [];
+    // A button press is required. Ignore requests without an exact
+    // same-day event supplied by the punch response.
+    $targetDate=(string)($trigger['date']??'');
+    $targetType=(string)($trigger['type']??'');
+    $targetSession=(int)($trigger['session']??0);
+    $targetTime=(string)($trigger['recordTime']??'');
+    if($targetDate!==$today||
+      !in_array($targetType,['LEWAT','BALIK AWAL'],true)||
+      !in_array($targetSession,[1,2],true)||ek_reason_minutes($targetTime)===null)return [];
     $email=strtolower(trim((string)($user['emel']??'')));
-    // Date-limited query prevents repeated historical prompts on every login.
-    $records=rows('SELECT * FROM kehadiran WHERE LOWER(emel)=? AND tarikh BETWEEN ? AND ? ORDER BY tarikh DESC,_row_id DESC',[$email,$from,$today]);
+    $latest=attendance_row($email,$today);
+    $records=$latest?[$latest]:[];
     $applications=array_values(array_filter(all_absence_rows(),static fn($r)=>
         strtolower(trim((string)($r['email']??'')))===$email));
     $results=[];$seen=[];
@@ -82,6 +110,8 @@ function ek_reason_my_pending(array $user):array {
         $date=date_key($record['tarikh']??'');
         foreach(ek_reason_incidents($record,$user,$settings) as $event) {
             $type=$event['type'];$session=$event['session'];
+            if($date!==$targetDate||$type!==$targetType||
+               (int)$session!==$targetSession||$event['recordTime']!==$targetTime)continue;
             $key=$date.'|'.$type.'|'.$session;
             if(isset($seen[$key]))continue;
             $seen[$key]=true;
@@ -111,7 +141,7 @@ function ek_reason_my_pending(array $user):array {
                 'recordTime'=>$event['recordTime'],'referenceTime'=>$event['referenceTime']];
         }
     }
-    return array_slice($results,0,10);
+    return array_slice($results,0,1);
 }
 function ek_reason_save(array $user,string $id,string $reason):array {
     $id=trim($id);$reason=trim(preg_replace('/\s+/u',' ',$reason)??'');
