@@ -42,6 +42,7 @@ $applications=[
 function all_absence_rows():array{return $GLOBALS['applications'];}
 function rows(string $sql,array $args=[]):array{
     global $attendance,$reviews;
+    if(str_contains($sql,'FROM sejarah_jadual'))return [];
     if(str_contains($sql,'FROM kehadiran'))return array_values(array_filter($attendance,static fn($r)=>
       strtolower($r['emel'])===$args[0]&&$r['tarikh']>=$args[1]&&$r['tarikh']<=$args[2]));
     if(str_contains($sql,'FROM semakan_waktu'))return array_values(array_filter($reviews,static fn($r)=>
