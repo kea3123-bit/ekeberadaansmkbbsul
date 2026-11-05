@@ -1,0 +1,44 @@
+name: Reason backlog and mandatory OUT gate (safe staging)
+on:
+  push:
+    branches: [feature/20261105-time-reason-backlog-gate]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  self-reason:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax, backend eligibility and OUT gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l php/api.php
+          php -l php/time_exception_reasons.php
+          php php/tests/time-exception-reasons-test.php
+          php php/tests/time-reason-backlog-test.php
+          php php/tests/thursday-wbf-home-test.php
+          php php/tests/cron-notifications-test.php
+      - name: JavaScript popup, backlog and page regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check < mysql-ui/Scripts.html
+          node mysql-ui/tests/time-reason-backlog.test.js
+          node mysql-ui/tests/time-exception-reasons.test.js
+          node mysql-ui/tests/thursday-wbf-home.test.js
+      - name: Stage only changed backend reason and API (no deploy)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staging/ekeberadaansmkbbsul/php
+          cp php/api.php php/time_exception_reasons.php staging/ekeberadaansmkbbsul/php/
+          (cd staging && zip -qr "$GITHUB_WORKSPACE/eKeberadaan_REASON_BACKLOG_SOURCE_ONLY.zip" ekeberadaansmkbbsul)
+          unzip -t eKeberadaan_REASON_BACKLOG_SOURCE_ONLY.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eke-reason-backlog-source-only
+          path: eKeberadaan_REASON_BACKLOG_SOURCE_ONLY.zip
+          retention-days: 30
