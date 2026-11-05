@@ -48,8 +48,8 @@ function ek_reason_incidents(array $attendance,array $user,array $settings):arra
     $events=[];$sch=schedule($user,$settings);
     $date=date_key($attendance['tarikh']??'');
     if(!preg_match('/^20\d\d-\d\d-\d\d$/',$date))return [];
-    $source=strtoupper(trim((string)($attendance['sumber']??'')));
-    if(str_contains($source,'AUTO_')||str_contains($source,'ADMIN'))return [];
+    // Source/status (including AUTO_TIDAK_HADIR) must never suppress a real
+    // late/early time. Only actual punch timestamps determine an incident.
     $in=time_text($attendance['masuk']??'');
     $out=time_text($attendance['balik']??'');
     $in2=time_text($attendance['masuk2']??'');
@@ -58,7 +58,8 @@ function ek_reason_incidents(array $attendance,array $user,array $settings):arra
     if(ek_reason_minutes($in)!==null&&ek_reason_minutes($refIn)!==null&&$in>$refIn)
         $events[]=['type'=>'LEWAT','session'=>1,'recordTime'=>$in,'referenceTime'=>$refIn];
     // Once session 2 exists, a session-1 OUT was a break, not final departure.
-    $finalOut=$out2?:($in2?'':$out);
+    $secondConfigured=trim((string)($sch['s2In']??''))!==''||trim((string)($sch['s2Out']??''))!=='';
+    $finalOut=$out2?:($in2||$secondConfigured?'':$out);
     $normalOut=time_text($out2?(($sch['s2Out']??'')?:($sch['s1Out']??'16:30')):($sch['s1Out']??'16:30'));
     $effectiveOut=ek_reason_thursday_out($user,$settings,$date,$in,$normalOut);
     if($finalOut!==''&&ek_reason_minutes($effectiveOut)!==null&&$finalOut<$effectiveOut)
@@ -87,6 +88,81 @@ function ek_reason_current_punch_event(array $attendance,array $user,array $sett
     }
     return null;
 }
+/**
+ * Read-only owner-scoped unresolved events. No automatic creation of a
+ * semakan_waktu row while checking the home notification or before punch.
+ * Supports historic records since SYSTEM_START_DATE, including records whose
+ * source/status was AUTO_TIDAK_HADIR but later received a real punch.
+ */
+function ek_reason_unresolved_for_user(array $user,string $from,string $to,?array $onlyAttendance=null):array {
+    $email=strtolower(trim((string)($user['emel']??'')));
+    if($email===''||$from>$to)return [];
+    $settings=settings_raw();
+    $attendanceRows=$onlyAttendance!==null?[$onlyAttendance]:
+        rows('SELECT * FROM kehadiran WHERE LOWER(emel)=? AND tarikh BETWEEN ? AND ? ORDER BY tarikh DESC,_row_id DESC',
+            [$email,$from,$to]);
+    $reviews=rows('SELECT * FROM semakan_waktu WHERE LOWER(emel)=? AND tarikh BETWEEN ? AND ? ORDER BY _row_id DESC',
+        [$email,$from,$to]);
+    $reviewByEvent=[];
+    foreach($reviews as $review){
+        $day=date_key($review['tarikh']??'');
+        $key=$day.'|'.strtoupper(trim((string)($review['jenis']??''))).'|'.(int)($review['sesi']??1);
+        if(!isset($reviewByEvent[$key]))$reviewByEvent[$key]=['id'=>(string)($review['id']??''),'reason'=>''];
+        if(trim((string)($review['sebabpengguna']??''))!=='')$reviewByEvent[$key]['reason']='SUBMITTED';
+    }
+    $applications=array_values(array_filter(all_absence_rows(),static fn($r)=>
+        strtolower(trim((string)($r['email']??'')))===$email));
+    $result=[];$seen=[];
+    foreach($attendanceRows as $attendance){
+        $day=date_key($attendance['tarikh']??'');
+        if($day<$from||$day>$to)continue;
+        foreach(ek_reason_incidents($attendance,$user,$settings) as $event){
+            $key=$day.'|'.$event['type'].'|'.$event['session'];
+            if(isset($seen[$key]))continue;
+            $seen[$key]=true;
+            if(ek_reason_request_covers($applications,$day,$event['referenceTime'],$event['recordTime']))continue;
+            $existing=$reviewByEvent[$key]??null;
+            if(($existing['reason']??'')==='SUBMITTED')continue;
+            $result[]=[
+                'id'=>(string)($existing['id']??''),
+                'date'=>$day,'type'=>$event['type'],'session'=>(int)$event['session'],
+                'recordTime'=>$event['recordTime'],'referenceTime'=>$event['referenceTime']
+            ];
+        }
+    }
+    usort($result,static fn($a,$b)=>strcmp($b['date'].'|'.$b['recordTime'],$a['date'].'|'.$a['recordTime']));
+    return $result;
+}
+function ek_reason_my_summary(array $user):array {
+    $today=today();$settings=settings_raw();
+    if(strtoupper((string)($settings['SYSTEM_MODE']??'REAL'))==='TEST')
+        return ['rows'=>[],'pendingCount'=>0,'pendingDays'=>0,'pastDays'=>0,'todayCount'=>0];
+    $from=date_key($settings['SYSTEM_START_DATE']??'2026-01-01');
+    if(!preg_match('/^20\d\d-\d\d-\d\d$/',$from)||$from>$today)$from=$today;
+    $events=ek_reason_unresolved_for_user($user,$from,$today);
+    $distinct=[];$oldDates=[];$todayCount=0;
+    foreach($events as $e){
+        $distinct[$e['date']]=true;
+        if($e['date']<$today)$oldDates[$e['date']]=true;
+        else $todayCount++;
+    }
+    return [
+        'rows'=>$events,
+        'pendingCount'=>count($events),
+        'pendingDays'=>count($distinct),
+        'pastDays'=>count($oldDates),
+        'todayCount'=>$todayCount,
+        'today'=>$today
+    ];
+}
+/** Server-side guard: force an explanation of today's open incidents before OUT. */
+function ek_reason_requires_before_out(array $user,string $date,?array $attendance):array {
+    if(!$attendance)return [];
+    $settings=settings_raw();
+    if(strtoupper((string)($settings['SYSTEM_MODE']??'REAL'))==='TEST')return [];
+    return ek_reason_unresolved_for_user($user,$date,$date,$attendance);
+}
+
 function ek_reason_my_pending(array $user,array $trigger=[]):array {
     $today=today();
     $settings=settings_raw();
@@ -97,11 +173,13 @@ function ek_reason_my_pending(array $user,array $trigger=[]):array {
     $targetType=(string)($trigger['type']??'');
     $targetSession=(int)($trigger['session']??0);
     $targetTime=(string)($trigger['recordTime']??'');
-    if($targetDate!==$today||
+    $systemStart=date_key($settings['SYSTEM_START_DATE']??'2026-01-01');
+    if(!preg_match('/^20\d\d-\d\d-\d\d$/',$targetDate)||$targetDate>$today||
+      $targetDate<$systemStart||
       !in_array($targetType,['LEWAT','BALIK AWAL'],true)||
       !in_array($targetSession,[1,2],true)||ek_reason_minutes($targetTime)===null)return [];
     $email=strtolower(trim((string)($user['emel']??'')));
-    $latest=attendance_row($email,$today);
+    $latest=attendance_row($email,$targetDate);
     $records=$latest?[$latest]:[];
     $applications=array_values(array_filter(all_absence_rows(),static fn($r)=>
         strtolower(trim((string)($r['email']??'')))===$email));
