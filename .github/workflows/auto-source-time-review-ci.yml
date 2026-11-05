@@ -1,0 +1,33 @@
+name: AUTO source punch to pending time review regression (safe, no deploy)
+on:
+  push:
+    branches: [fix/20261105-auto-source-time-review-v2]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  review-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax validation
+        run: |
+          set -euo pipefail
+          php -l php/cron_notifications.php
+          php -l php/time_exception_reasons.php
+          php -l php/cli/workspace_mail_worker.php
+          php -l php/api.php
+      - name: Real punch versus AUTO_TIDAK_HADIR source
+        run: |
+          set -euo pipefail
+          php php/tests/auto-source-time-review-test.php
+          php php/tests/cron-notifications-test.php
+      - name: Preserve historical schedules, WBF and manual admin review
+        run: |
+          set -euo pipefail
+          php php/tests/time-reason-backlog-test.php
+          php php/tests/time-exception-reasons-test.php
+          php php/tests/admin-pending-actions-test.php
+          php php/tests/thursday-wbf-home-test.php
+          php php/tests/monthly-wbf-explanation-test.php
