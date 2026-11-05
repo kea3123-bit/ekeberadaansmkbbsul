@@ -6,7 +6,7 @@ const state = {
     selectedUserEmails:new Set(), filteredUsers:[], filteredReport:[], tableSorts:{},
     absence:null, absencePublic:null, absenceManagement:null, timeReview:null,
     timeReasonPromptShown:new Set(),timeReasonCurrent:null,timeReasonFetching:false,
-    timeReasonSummary:null,timeReasonSummaryBusy:false,timeReasonItems:[],
+    timeReasonSummary:null,timeReasonSummaryBusy:false,timeReasonItems:[],timeReasonRequestSeq:0,
     cacheTimes:{},
     lastSessionCheck:0, sessionCheckBusy:false, sessionRecoveryPromise:null,
     locationMap:null, locationMarker:null, locationCircle:null,
@@ -535,6 +535,7 @@ const state = {
     rememberLastAccount(state.boot?.user);
     document.getElementById('loginPage').classList.add('hidden'); document.getElementById('appShell').classList.remove('hidden');
     state.timeReasonSummary=null;state.timeReasonItems=[];
+    state.timeReasonPromptShown.clear();
     renderBoot(); navigate('home');
     // Fetch reminder counts only; NEVER auto-open an old-record popup.
     setTimeout(()=>refreshMyTimeReasonNotice().catch(()=>{}),600);
@@ -1048,13 +1049,14 @@ const state = {
       :('Terdapat '+today+' rekod Lewat/Balik Awal hari ini yang belum diberi sebab. Lengkapkan sebelum Rakam Balik.'));
   }
   async function refreshMyTimeReasonNotice(force=false){
-    if(!state.token||!state.boot||state.timeReasonSummaryBusy)return state.timeReasonSummary;
+    if(!state.token||!state.boot)return null;
     if(String(state.boot.settings?.systemMode||'REAL')==='TEST')return null;
     const token=state.token;
+    const requestSeq=++state.timeReasonRequestSeq;
     state.timeReasonSummaryBusy=true;
     try{
       const data=await runServer('getMyTimeReasonSummary',token);
-      if(state.token!==token)return null;
+      if(state.token!==token||requestSeq!==state.timeReasonRequestSeq)return state.timeReasonSummary;
       state.timeReasonSummary=data;
       renderMyTimeReasonNotice();
       return data;
@@ -1064,7 +1066,7 @@ const state = {
       if(force)throw error;
       console.warn('Notifikasi sebab waktu belum dapat dimuatkan.',error?.message||error);
       return null;
-    }finally{state.timeReasonSummaryBusy=false;}
+    }finally{if(requestSeq===state.timeReasonRequestSeq)state.timeReasonSummaryBusy=false;}
   }
   function showMyTimeReasonTable(rows){
     state.timeReasonItems=Array.isArray(rows)?rows:[];
