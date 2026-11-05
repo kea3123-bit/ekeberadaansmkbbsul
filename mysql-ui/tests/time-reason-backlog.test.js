@@ -12,7 +12,7 @@ assert(html.includes('onclick="openMyTimeReasonTable()"'),'Historic reminder act
 assert(reason.includes("'Anda telah LEWAT/BALIK AWAL sebanyak '"),'Past-day summary must count dates');
 assert(reason.includes("state.timeReasonSummary"),'Home reminder state must be populated');
 assert(reason.includes('showMyTimeReasonTable(rows)'),'Multiple cases must appear as table');
-assert(reason.includes('openMyTimeReasonForm('+String('i')+')'),'Each row must open its own form');
+assert(reason.includes("onclick=\"openMyTimeReasonForm('+i+')\""),'Each row must open its own form');
 assert(reason.includes('onclick="openMyTimeReasonForm('),'Table must render per-row action');
 assert(reason.includes("rows.length>1"),'Multiple simultaneous reasons must show table first');
 assert(reason.includes("getMyTimeExceptionReasons"),'Selected event must be verified by server');
