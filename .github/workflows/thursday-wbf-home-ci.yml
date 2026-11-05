@@ -1,0 +1,40 @@
+name: Thursday WBF home and punch regression (no deployment)
+on:
+  push:
+    branches: [fix/20261105-thursday-wbf-home-punch]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  wbf-home:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate PHP scheduling, punch and cron
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l php/_lib.php
+          php -l php/api.php
+          php -l php/cron_notifications.php
+          php php/tests/thursday-wbf-home-test.php
+          php php/tests/cron-notifications-test.php
+          php php/tests/monthly-wbf-explanation-test.php
+          php php/tests/time-exception-reasons-test.php
+          node --check < mysql-ui/Scripts.html
+          node mysql-ui/tests/thursday-wbf-home.test.js
+          node mysql-ui/tests/time-exception-reasons.test.js
+      - name: Package changed PHP without secrets (manual install only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staging/ekeberadaansmkbbsul/php
+          cp php/_lib.php php/api.php php/cron_notifications.php staging/ekeberadaansmkbbsul/php/
+          (cd staging && zip -qr "$GITHUB_WORKSPACE/eKeberadaan_WBF_SOURCE_BACKEND_ONLY.zip" ekeberadaansmkbbsul)
+          unzip -t eKeberadaan_WBF_SOURCE_BACKEND_ONLY.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eKeberadaan-WBF-source-backend-staging
+          path: eKeberadaan_WBF_SOURCE_BACKEND_ONLY.zip
+          retention-days: 30

@@ -558,7 +558,18 @@ const state = {
     // Sesi 2 memang sudah tercatat; ALLOW_OPTIONAL_SECOND_SESSION sahaja tidak
     // memaksa kad Sesi 2 muncul untuk pengguna satu sesi.
     const hasSecondSession=!!(b.schedule.s2In||b.schedule.s2Out||a.inTime2||a.outTime2);
-    text('s1InRef',b.schedule.s1In||'—'); text('s1OutRef',b.schedule.s1Out||'—');
+    text('s1InRef',b.schedule.s1In||'—');
+    const wbf=b.schedule||{};
+    const activeWbf=!!wbf.wbfActive;
+    text('s1OutRef',wbf.wbfPending?(wbf.wbfOutWindow||'—'):(wbf.s1Out||'—'));
+    document.getElementById('homeWbfTag')?.classList.toggle('hidden',!activeWbf);
+    const wbfDetail=activeWbf
+      ?(wbf.wbfApplied?'WBF aktif · Waktu balik dikira berdasarkan rekod Masuk Sesi 1.'
+        :wbf.wbfPending?'WBF aktif · Waktu balik tepat akan dikira selepas Rakam Masuk.'
+        :'WBF tidak terpakai pada rekod ini kerana waktu masuk di luar julat WBF.')
+      :'';
+    text('homeWbfDetail',wbfDetail);
+    document.getElementById('homeWbfDetail')?.classList.toggle('hidden',!activeWbf);
     text('s2InRef',b.schedule.s2In||'—'); text('s2OutRef',b.schedule.s2Out||'—');
     text('s1InTime',a.inTime||'—'); text('s1OutTime',a.outTime||'—');
     text('s2InTime',a.inTime2||'—'); text('s2OutTime',a.outTime2||'—');
@@ -962,7 +973,11 @@ const state = {
         gps('ok',`GPS ±${Math.round(loc.accuracy)}m${Number.isFinite(estimated)?` · anggaran ${estimated}m / ${Math.round(gpsPolicy.radiusM)}m`:''} · menyemak server…`);
       }
       const clientInfo=await clientInfoPromise, res=await runServer('punch',state.token,type,loc,clientInfo);
-      if(res&&res.attendance){state.boot.attendance=res.attendance;renderBoot();}else await refreshBoot();
+      if(res&&res.attendance){
+        state.boot.attendance=res.attendance;
+        if(res.schedule)state.boot.schedule=res.schedule;
+        renderBoot();
+      }else await refreshBoot();
       gps('ok',test?'Rekod MOD TEST diterima.':`Rekod waktu diterima · GPS ±${Number(res.accuracyM)||Math.round(loc?.accuracy||0)}m · jarak ${res.distanceM}m / ${Number(res.radiusM)||Math.round(gpsPolicy.radiusM)}m.`);
       toast(res.message,4500);
       invalidateClientCache('myCard','adminCard');

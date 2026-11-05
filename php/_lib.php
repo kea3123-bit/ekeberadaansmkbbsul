@@ -249,6 +249,61 @@ function schedule(array $u,array $s): array {
       'allowSecondSession'=>strtoupper((string)($s['ALLOW_OPTIONAL_SECOND_SESSION']??'TRUE'))!=='FALSE',
       'lateAfter'=>$in,'punchOutFrom'=>$out];
 }
+/**
+ * Effective Thursday WBF reference from the actual Sesi 1 clock-in.
+ * The historical Apps Script rule is restricted to AKP / Pengetua, with
+ * user-configurable WBF window and duration (MYT local clock).
+ * Returns '' when WBF is not applicable; never invents a clock-in.
+ */
+function wbf_thursday_out_reference(array $u,array $s,string $date,string $firstIn): string {
+    if(!preg_match('/^\d{4}-\d{2}-\d{2}$/',$date)|| (int)date('N',strtotime($date.' 12:00'))!==4)return '';
+    if(strtoupper(trim((string)($s['THURSDAY_WBF_ENABLED']??'TRUE')))==='FALSE')return '';
+    $category=strtoupper(trim((string)($u['kategori']??'')));
+    if($category!=='AKP'&&!preg_match('/\bPENGETUA\b/iu',(string)($u['jawatan']??'')))return '';
+    $parse=static function($v): ?int {
+        $v=time_text($v);
+        if(!preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/',$v,$m))return null;
+        return (int)$m[1]*60+(int)$m[2];
+    };
+    $actual=$parse($firstIn);
+    $from=$parse($s['THURSDAY_WBF_IN_FROM']??'07:30');
+    $until=$parse($s['THURSDAY_WBF_IN_TO']??'09:00');
+    $outFrom=$parse($s['THURSDAY_WBF_OUT_FROM']??'15:00');
+    $outUntil=$parse($s['THURSDAY_WBF_OUT_TO']??'16:30');
+    if(in_array(null,[$actual,$from,$until,$outFrom,$outUntil],true)
+        ||$actual>$until||$from>$until||$outFrom>$outUntil)return '';
+    $duration=(int)($s['THURSDAY_WBF_DURATION_MINUTES']??450);
+    if($duration<1)return '';
+    $minutes=min($outUntil,max($outFrom,max($actual,$from)+$duration));
+    return sprintf('%02d:%02d',intdiv($minutes,60),$minutes%60);
+}
+/**
+ * Presentation and punch evaluation must use the same effective schedule.
+ * No change to the user's configured base schedule or to database settings.
+ */
+function schedule_for_attendance(array $u,array $s,string $date,?array $attendance): array {
+    $sch=schedule($u,$s);
+    $sch['wbfActive']=false;$sch['wbfApplied']=false;$sch['wbfPending']=false;
+    $sch['wbfOutWindow']='';
+    if(!preg_match('/^\d{4}-\d{2}-\d{2}$/',$date) ||
+       (int)date('N',strtotime($date.' 12:00'))!==4 ||
+       strtoupper(trim((string)($s['THURSDAY_WBF_ENABLED']??'TRUE')))==='FALSE')return $sch;
+    $category=strtoupper(trim((string)($u['kategori']??'')));
+    if($category!=='AKP'&&!preg_match('/\bPENGETUA\b/iu',(string)($u['jawatan']??'')))return $sch;
+    $sch['wbfActive']=true;
+    $sch['wbfOutWindow']=time_text($s['THURSDAY_WBF_OUT_FROM']??'15:00').
+        '–'.time_text($s['THURSDAY_WBF_OUT_TO']??'16:30');
+    $in=time_text($attendance['masuk']??'');
+    $reference=wbf_thursday_out_reference($u,$s,$date,$in);
+    if($reference!==''){
+        $sch['s1Out']=$reference;
+        $sch['punchOutFrom']=$reference;
+        $sch['wbfApplied']=true;
+    } elseif($in==='') {
+        $sch['wbfPending']=true;
+    }
+    return $sch;
+}
 function attendance_row(string $email,string $date): ?array {
     return one('SELECT * FROM kehadiran WHERE emel=? AND tarikh=? ORDER BY _row_id DESC LIMIT 1',[$email,$date]);
 }
@@ -277,10 +332,13 @@ function bootstrap(array $u): array {
         $viewer['hasProfilePhoto']=true;
         $viewer['profilePhotoLookupPending']=true;
     }
-    return ['today'=>today(),'now'=>now_myt(),'user'=>$viewer,'settings'=>$p,
-        'schedule'=>schedule($u,$s),
+    $date=today();
+    $attendance=attendance_row((string)$u['emel'],$date);
+    $effectiveSchedule=schedule_for_attendance($u,$s,$date,$attendance);
+    return ['today'=>$date,'now'=>now_myt(),'user'=>$viewer,'settings'=>$p,
+        'schedule'=>$effectiveSchedule,
         'locationReady'=>(strtoupper((string)($s['SYSTEM_MODE']??'REAL'))==='TEST'||($p['schoolLat']!==''&&$p['schoolLng']!=='')),
-        'attendance'=>attendance_public(attendance_row((string)$u['emel'],today()),schedule($u,$s))];
+        'attendance'=>attendance_public($attendance,$effectiveSchedule)];
 }
 function require_user($token,bool $admin=false,bool $enforcePinChange=true): array {
     $hash=hash('sha256',(string)$token);

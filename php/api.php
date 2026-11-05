@@ -369,16 +369,26 @@ function punch_mysql(array $u,string $type,$location): array {
               [$value,$lat,$lng,$distance,$accuracy,$ip,$excel,$r['_row_id']]);
         }
         $updated=attendance_row($email,$date);
-        $flags=[];$in=time_text($updated['masuk']??'');$out=time_text($updated['balik']??'');
-        if ($in && $in>($sch['s1In']??'07:30')) $flags[]='LEWAT';
-        if ($out && $out<($sch['s1Out']??'16:30')) $flags[]='BALIK AWAL';
+        $effectiveSch=schedule_for_attendance($u,$s,$date,$updated);
+        $flags=[];$in=time_text($updated['masuk']??'');
+        $out=time_text($updated['balik']??'');
+        $in2=time_text($updated['masuk2']??'');
+        $out2=time_text($updated['balik2']??'');
+        if ($in && $in>($effectiveSch['s1In']??'07:30')) $flags[]='LEWAT';
+        // A Sesi 1 OUT followed by Sesi 2 is a break, not the final exit.
+        $lastOut=$out2!==''?$out2:($in2!==''?'':$out);
+        $refOut=($out2!=='' && !$effectiveSch['wbfApplied'] && !empty($effectiveSch['s2Out']))
+            ?$effectiveSch['s2Out']:$effectiveSch['s1Out'];
+        if ($lastOut && $lastOut<$refOut) $flags[]='BALIK AWAL';
         $status=implode(' / ',$flags)?:'HADIR';
         execute_sql('UPDATE kehadiran SET status=?,statuswaktu=? WHERE _row_id=?',
           [$status,implode('|',$flags),$updated['_row_id']]);
         db()->commit();
         audit_event($email,'RAKAM_WAKTU',$date,$type.' sesi '.$n);
         $saved=attendance_row($email,$date);
-        $response=['ok'=>true,'attendance'=>attendance_public($saved,$sch),
+        $savedSchedule=schedule_for_attendance($u,$s,$date,$saved);
+        $response=['ok'=>true,'attendance'=>attendance_public($saved,$savedSchedule),
+           'schedule'=>$savedSchedule,
            'ip'=>$ip,'distanceM'=>$distance,'ipWarning'=>'','message'=>'Rekod waktu berjaya disimpan.'];
         // Never let the optional reason-popup feature break a successful punch.
         // Report only the incident created by THIS button press (date/session).
