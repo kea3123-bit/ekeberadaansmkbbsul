@@ -40,19 +40,26 @@ function mysql_time_review_jobs():array {
                 if(str_contains($source,'ADMIN')||str_contains($source,'AUTO_'))continue;
                 $flags=strtoupper(trim((string)($r['statuswaktu']??'').'|'.(string)($r['status']??'')));
                 $person=$employees[$email];
-                $sch=schedule($person,$s);
+                $sch=schedule_for_attendance($person,$s,$day,$r);
                 $events=[];
                 if(str_contains($flags,'LEWAT'))$events[]=['LEWAT','masuk','s1In',1];
-                if(str_contains($flags,'BALIK AWAL'))$events[]=['BALIK AWAL','balik','s1Out',1];
-                // Session 2 is optional: never infer a violation when its reference is unset.
+                // Re-evaluate early departures from actual clock times, not
+                // stored flags that may have been computed by an older PHP
+                // release against 16:30 on WBF Thursdays.
                 $secondIn=time_text($r['masuk2']??'');
                 $secondOut=time_text($r['balik2']??'');
+                $firstOut=time_text($r['balik']??'');
                 $refIn2=time_text($sch['s2In']??'');
-                $refOut2=time_text($sch['s2Out']??'');
                 if($secondIn!==''&&$refIn2!==''&&$secondIn>$refIn2)
                     $events[]=['LEWAT','masuk2','s2In',2];
-                if($secondOut!==''&&$refOut2!==''&&$secondOut<$refOut2)
-                    $events[]=['BALIK AWAL','balik2','s2Out',2];
+                $finalOut=$secondOut!==''?$secondOut:($secondIn!==''?'':$firstOut);
+                $finalReference=$secondOut!=='' && !$sch['wbfApplied'] && !empty($sch['s2Out'])
+                    ?$sch['s2Out']:$sch['s1Out'];
+                if($finalOut!==''&&$finalReference!==''&&$finalOut<$finalReference){
+                    $events[]=['BALIK AWAL',$secondOut!==''?'balik2':'balik',
+                        $secondOut!=='' && !$sch['wbfApplied'] && !empty($sch['s2Out'])?'s2Out':'s1Out',
+                        $secondOut!==''?2:1];
+                }
                 foreach($events as [$type,$column,$referenceKey,$session]){
                     $clock=time_text($r[$column]??'');
                     $reference=time_text($sch[$referenceKey]??'');
