@@ -62,3 +62,11 @@ backend bridge failures and image retrieval errors.
 
 ## Google Workspace limits
 The signed bridge currently implements profile photos, Drive-based photo sync, PDF and Sheet export. **Automated Gmail/MailApp notifications and old timed triggers are not migrated**. Do not continue running older GAS notifications that read Google Sheets as though it were the authoritative database; they could send incorrect messages. A separate MySQL-backed notification queue and signed Workspace email handler are required for full email parity.
+
+## Laporan PDF Bulanan (MySQL)
+
+- Panel Pentadbir → Jana Laporan → pilih bulan → **Buka Laporan / Simpan PDF**.
+- Opens a new browser print view; choose **Cetak / Simpan PDF**, then destination **Save as PDF** (desktop) or share/print-to-PDF on iPhone/Android.
+- Contains Ringkasan Kehadiran, Lewat/Balik Awal, Laporan Perakam Waktu (31 daily columns) and one Laporan Individu page per active staff member.
+- Requires the `generateAttendancePresenceReportHtml` endpoint and `php/monthly_print.php` from the companion PHP/MySQL backend repository `farshoffs/ekeberadaansmkbbsul`.
+- **Deploy PHP API to cPanel first**, then deploy the GitHub Pages frontend. Google Workspace is not required for this report and no staff data is persisted in the browser.
