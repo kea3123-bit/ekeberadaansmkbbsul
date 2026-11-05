@@ -12,7 +12,9 @@ function today():string{return '2026-11-01';}
 function now_myt():string{return '2026-11-01 15:01:00';}
 function time_text($v):string{return strlen((string)$v)>5?substr((string)$v,11,5):(string)$v;}
 function excel_number($v):float{return 55555.1234;}
-function schedule(array $u,array $s):array{return ['s1In'=>'07:30','s1Out'=>'16:30','s2In'=>'11:30','s2Out'=>'15:00'];}
+function schedule(array $u,array $s):array{return ['s1In'=>'07:30','s1Out'=>'16:30',
+  's2In'=>!empty($GLOBALS['secondEnabled'])?'11:30':'',
+  's2Out'=>!empty($GLOBALS['secondEnabled'])?'15:00':''];}
 function schedule_for_attendance(array $u,array $s,string $date,?array $r):array{return schedule($u,$s)+['wbfApplied'=>false];}
 function rows(string $sql,array $args=[]):array {
   if(str_contains($sql,'FROM pengguna') && str_contains($sql,'pentadbir=1'))return [['emel'=>'admin@example.com']];
@@ -60,6 +62,8 @@ check($r['created']===0,'Manual correction must be excluded');
 $GLOBALS['attendance'][0]['sumber']='PHP_MYSQL';
 $GLOBALS['attendance'][0]['status']='HADIR';
 $GLOBALS['attendance'][0]['statuswaktu']='';
+$GLOBALS['secondEnabled']=true;
+$GLOBALS['attendance'][0]['masuk']='2026-11-01 07:20:00';
 $GLOBALS['attendance'][0]['masuk2']='11:45';
 $GLOBALS['attendance'][0]['balik2']='14:45';
 $GLOBALS['savedReviews']=[];$GLOBALS['mail']=[];
