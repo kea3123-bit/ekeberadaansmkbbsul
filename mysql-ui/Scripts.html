@@ -963,6 +963,22 @@ const state = {
     const gpsPolicy=punchGpsPolicy();
     setPunchBusy(true); gps('busy',test?'MOD TEST — merakam waktu…':'Mengesan lokasi… sasaran GPS ±80m');
     try{
+      if(type==='OUT'&&!test){
+        // Fast client-side preflight for a usable form; the PHP server also
+        // rejects OUT while any same-day reason remains, across all devices.
+        let summary=null;
+        try{summary=await refreshMyTimeReasonNotice(true);}
+        catch(preflightError){
+          console.warn('Semakan sebab sebelum Rakam Balik tidak tersedia.',preflightError?.message||preflightError);
+        }
+        const unresolved=(summary?.rows||[]).filter(r=>r.date===state.boot?.today);
+        if(unresolved.length){
+          gps('','Sila isi sebab Lewat/Balik Awal sebelum Rakam Balik.');
+          showMyTimeReasonTable(summary.rows);
+          toast('Isi sebab rekod hari ini dahulu sebelum Rakam Balik.',5000);
+          return;
+        }
+      }
       const clientInfoPromise=getClientDeviceInfo(false,2*60*1000); let loc=null;
       if(!test){
         let pos=state.liveLocation;
@@ -990,7 +1006,14 @@ const state = {
         invalidateClientCache('timeReview');
         setTimeout(()=>loadMyTimeExceptionReasons(res.timeException).catch(()=>{}),200);
       }
-    }catch(e){gps('',e.message);handleServerError(e,false);}finally{setPunchBusy(false);}
+    }catch(e){
+      const message=String(e?.message||e||'');
+      if(message.includes('SEBAB_WAKTU_DIPERLUKAN')){
+        gps('','Isi sebab hari ini sebelum Rakam Balik.');
+        toast('Sila nyatakan sebab Lewat/Balik Awal hari ini sebelum Rakam Balik.',5000);
+        await openMyTimeReasonTable();
+      }else{gps('',message);handleServerError(e,false);}
+    }finally{setPunchBusy(false);}
   }
 
   function currentPosition(){
