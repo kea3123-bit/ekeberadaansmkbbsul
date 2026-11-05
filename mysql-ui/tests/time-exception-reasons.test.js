@@ -6,8 +6,8 @@ const html=fs.readFileSync('mysql-ui/Index.html','utf8');
 new Function(js);
 for(const needle of [
  'getMyTimeExceptionReasons','saveMyTimeExceptionReason','loadMyTimeExceptionReasons(res.timeException)',
- "state.timeReasonPromptShown.add(row.id)","r.userReason","esc(r.userReason)",
- "state.timeReasonCurrent=null","if(res.timeException)","runServer('getMyTimeExceptionReasons',state.token,justPunched)"
+ "state.timeReasonPromptShown.add(now.id)","r.userReason","esc(r.userReason)",
+ "state.timeReasonCurrent=null","if(res.timeException)","runServer('getMyTimeExceptionReasons',token,{"
 ])assert(js.includes(needle),'Missing UI behavior: '+needle);
 assert(!js.includes("setTimeout(()=>loadMyTimeExceptionReasons().catch(()=>{}),450)"),'Login must never open the popup');
 assert(!js.includes("if(name==='home')setTimeout(()=>loadMyTimeExceptionReasons"),'Opening Home must never open the popup');

@@ -6,6 +6,7 @@ const state = {
     selectedUserEmails:new Set(), filteredUsers:[], filteredReport:[], tableSorts:{},
     absence:null, absencePublic:null, absenceManagement:null, timeReview:null,
     timeReasonPromptShown:new Set(),timeReasonCurrent:null,timeReasonFetching:false,
+    timeReasonSummary:null,timeReasonSummaryBusy:false,timeReasonItems:[],timeReasonRequestSeq:0,
     cacheTimes:{},
     lastSessionCheck:0, sessionCheckBusy:false, sessionRecoveryPromise:null,
     locationMap:null, locationMarker:null, locationCircle:null,
@@ -533,7 +534,11 @@ const state = {
   function enterApp(){
     rememberLastAccount(state.boot?.user);
     document.getElementById('loginPage').classList.add('hidden'); document.getElementById('appShell').classList.remove('hidden');
+    state.timeReasonSummary=null;state.timeReasonItems=[];
+    state.timeReasonPromptShown.clear();
     renderBoot(); navigate('home');
+    // Fetch reminder counts only; NEVER auto-open an old-record popup.
+    setTimeout(()=>refreshMyTimeReasonNotice().catch(()=>{}),600);
     // Start GPS immediately after authentication so punch actions can reuse a
     // fresh, already-resolved position instead of waiting for a new GPS fix.
     setTimeout(()=>startLiveLocationTracking(false).catch(()=>{}),0);
@@ -661,6 +666,7 @@ const state = {
     state.currentScreen=name;
     const titles={home:'Utama',mycard:'Kad Perakam Waktu Saya',absence:'Tidak Hadir / Keberadaan',absencepublic:'Senarai Tidak Hadir / Keberadaan',absencemanage:'Semakan Tidak Hadir / Keberadaan',timereview:'Semakan Lewat / Balik Awal',admin:'Pentadbir Sistem',admincard:'Kad Perakam Waktu Pegawai'};
     text('pageTitle',titles[name]||'e-Keberadaan'); closeMobileMenu();
+    if(name==='home')setTimeout(()=>refreshMyTimeReasonNotice().catch(()=>{}),250);
     if(name==='mycard')loadMyCard();
     if(name==='absence')loadAbsenceData();
     if(name==='absencepublic')loadAbsencePublic();
@@ -958,6 +964,22 @@ const state = {
     const gpsPolicy=punchGpsPolicy();
     setPunchBusy(true); gps('busy',test?'MOD TEST — merakam waktu…':'Mengesan lokasi… sasaran GPS ±80m');
     try{
+      if(type==='OUT'&&!test){
+        // Fast client-side preflight for a usable form; the PHP server also
+        // rejects OUT while any same-day reason remains, across all devices.
+        let summary=null;
+        try{summary=await refreshMyTimeReasonNotice(true);}
+        catch(preflightError){
+          console.warn('Semakan sebab sebelum Rakam Balik tidak tersedia.',preflightError?.message||preflightError);
+        }
+        const unresolved=(summary?.rows||[]).filter(r=>r.date===state.boot?.today);
+        if(unresolved.length){
+          gps('','Sila isi sebab Lewat/Balik Awal sebelum Rakam Balik.');
+          showMyTimeReasonTable(summary.rows);
+          toast('Isi sebab rekod hari ini dahulu sebelum Rakam Balik.',5000);
+          return;
+        }
+      }
       const clientInfoPromise=getClientDeviceInfo(false,2*60*1000); let loc=null;
       if(!test){
         let pos=state.liveLocation;
@@ -985,7 +1007,14 @@ const state = {
         invalidateClientCache('timeReview');
         setTimeout(()=>loadMyTimeExceptionReasons(res.timeException).catch(()=>{}),200);
       }
-    }catch(e){gps('',e.message);handleServerError(e,false);}finally{setPunchBusy(false);}
+    }catch(e){
+      const message=String(e?.message||e||'');
+      if(message.includes('SEBAB_WAKTU_DIPERLUKAN')){
+        gps('','Isi sebab hari ini sebelum Rakam Balik.');
+        toast('Sila nyatakan sebab Lewat/Balik Awal hari ini sebelum Rakam Balik.',5000);
+        await openMyTimeReasonTable();
+      }else{gps('',message);handleServerError(e,false);}
+    }finally{setPunchBusy(false);}
   }
 
   function currentPosition(){
@@ -1005,52 +1034,154 @@ const state = {
   function setPunchBusy(b){const step=state.boot?.attendance?.nextRecord||{type:'IN',session:1,complete:false},i=document.getElementById('btnIn'),o=document.getElementById('btnOut');if(i)i.disabled=b||step.complete||step.type!=='IN';if(o)o.disabled=b||step.complete||step.type!=='OUT';}
 
   // ---------- Sebab Lewat / Balik Awal (pemohon sendiri) ----------
-  async function loadMyTimeExceptionReasons(justPunched){
-    if(!justPunched||justPunched.date!==state.boot?.today)return;
-    if(!state.token||!state.boot||state.currentScreen!=='home'||state.timeReasonFetching||state.timeReasonCurrent)return;
-    if(String(state.boot.settings?.systemMode||'REAL')==='TEST')return;
-    const modal=document.getElementById('modal');
-    if(modal&&!modal.classList.contains('hidden'))return;
-    state.timeReasonFetching=true;
+  function renderMyTimeReasonNotice(){
+    const area=document.getElementById('homeTimeReasonNotice');
+    if(!area)return;
+    const data=state.timeReasonSummary;
+    const past=Number(data?.pastDays||0);
+    const today=Number(data?.todayCount||0);
+    area.classList.toggle('hidden',!(past||today));
+    if(!past&&!today)return;
+    text('homeTimeReasonHeading',past?'Peringatan Lewat / Balik Awal':'Sebab Rekod Hari Ini');
+    text('homeTimeReasonText',past
+      ?('Anda telah LEWAT/BALIK AWAL sebanyak '+past+' hari tanpa sebab. Sila klik sini untuk nyatakan sebab LEWAT/BALIK AWAL.'
+        +(today?' Terdapat juga '+today+' rekod hari ini yang perlu dijelaskan sebelum Rakam Balik.':''))
+      :('Terdapat '+today+' rekod Lewat/Balik Awal hari ini yang belum diberi sebab. Lengkapkan sebelum Rakam Balik.'));
+  }
+  async function refreshMyTimeReasonNotice(force=false){
+    if(!state.token||!state.boot)return null;
+    if(String(state.boot.settings?.systemMode||'REAL')==='TEST')return null;
+    const token=state.token;
+    const requestSeq=++state.timeReasonRequestSeq;
+    state.timeReasonSummaryBusy=true;
     try{
-      const response=await runServer('getMyTimeExceptionReasons',state.token,justPunched);
-      if(state.currentScreen!=='home'||!state.token)return;
-      const row=(response?.rows||[]).find(r=>r?.id&&r.date===justPunched.date&&r.type===justPunched.type&&Number(r.session)===Number(justPunched.session)&&r.recordTime===justPunched.recordTime&&!state.timeReasonPromptShown.has(r.id));
-      if(!row)return;
-      state.timeReasonPromptShown.add(row.id);
+      const data=await runServer('getMyTimeReasonSummary',token);
+      if(state.token!==token||requestSeq!==state.timeReasonRequestSeq)return state.timeReasonSummary;
+      state.timeReasonSummary=data;
+      renderMyTimeReasonNotice();
+      return data;
+    }catch(error){
+      // During staged cPanel rollout an older backend may not support this
+      // read-only endpoint. Never break login or location / punch for that.
+      if(force)throw error;
+      console.warn('Notifikasi sebab waktu belum dapat dimuatkan.',error?.message||error);
+      return null;
+    }finally{if(requestSeq===state.timeReasonRequestSeq)state.timeReasonSummaryBusy=false;}
+  }
+  function showMyTimeReasonTable(rows){
+    state.timeReasonItems=Array.isArray(rows)?rows:[];
+    state.timeReasonCurrent=null;
+    if(!state.timeReasonItems.length){closeModal();toast('Tiada rekod lewat/balik awal tanpa sebab.');return;}
+    const total=state.timeReasonItems.length;
+    const lines=state.timeReasonItems.map((item,i)=>
+      '<tr><td>'+esc(item.date)+'</td><td><b>'+esc(item.type)+'</b><small class="table-sub">Sesi '+esc(item.session)+'</small></td>'
+      +'<td>'+esc(item.recordTime)+' / '+esc(item.referenceTime)+'</td>'
+      +'<td><button type="button" class="btn primary small" onclick="openMyTimeReasonForm('+i+')">Isi Sebab</button></td></tr>'
+    ).join('');
+    showModal('<div class="review-request"><div class="first-login-badge">SEBAB LEWAT / BALIK AWAL</div>'
+      +'<h3>Senarai Rekod Belum Diberi Sebab</h3>'
+      +'<p>Anda mempunyai <b>'+total+'</b> kejadian yang memerlukan penjelasan. Pilih satu rekod dan isi sebabnya.'
+      +' Rekod hari ini perlu dijelaskan sebelum boleh Rakam Balik.</p>'
+      +'<div class="table-scroll" style="max-height:52vh;overflow-y:auto"><table class="data-table">'
+      +'<thead><tr><th>Tarikh</th><th>Jenis</th><th>Rekod / Rujukan</th><th>Tindakan</th></tr></thead>'
+      +'<tbody>'+lines+'</tbody></table></div></div>');
+  }
+  async function openMyTimeReasonTable(){
+    if(!state.token)return;
+    try{
+      const data=await refreshMyTimeReasonNotice(true);
+      const rows=data?.rows||state.timeReasonSummary?.rows||[];
+      if(!rows.length){toast('Tiada rekod yang memerlukan sebab.');return;}
+      showMyTimeReasonTable(rows);
+    }catch(error){handleServerError(error);}
+  }
+  async function openMyTimeReasonForm(index){
+    const picked=state.timeReasonItems[Number(index)];
+    if(!picked||!state.token)return;
+    if(state.timeReasonFetching)return;
+    state.timeReasonFetching=true;
+    const token=state.token;
+    try{
+      // The server recomputes the user's own punch, effective WBF, and
+      // permitted leave for this exact date/session/time before creating a
+      // review record. A historical case opens only after an explicit click.
+      const response=await runServer('getMyTimeExceptionReasons',token,{
+        date:picked.date,type:picked.type,session:picked.session,recordTime:picked.recordTime
+      });
+      if(state.token!==token)return;
+      const row=(response?.rows||[]).find(x=>x?.id&&x.date===picked.date
+        &&x.type===picked.type&&Number(x.session)===Number(picked.session)
+        &&x.recordTime===picked.recordTime);
+      if(!row){
+        toast('Rekod telah dijelaskan atau mempunyai permohonan berkaitan.');
+        closeModal();
+        await refreshMyTimeReasonNotice();
+        return;
+      }
       state.timeReasonCurrent=row;
       const heading=row.type==='LEWAT'?'Lewat':'Balik Awal';
       const html='<div class="review-request"><div class="first-login-badge">PERINGATAN PERAKAM WAKTU</div>'
         +'<h3>Nyatakan Sebab '+esc(heading)+'</h3><p>Rekod <b>'+esc(row.date)+'</b> · Sesi '+esc(row.session)+'</p>'
         +'<div class="review-summary"><div><span>Waktu rekod</span><b>'+esc(row.recordTime||'—')+'</b></div>'
         +'<div><span>Waktu rujukan</span><b>'+esc(row.referenceTime||'—')+'</b></div></div>'
-        +'<p class="muted">Tiada permohonan Tidak Hadir / Keberadaan meliputi waktu ini. '
-        +'Nyatakan sebab untuk semakan pentadbir. Rekod punch dan status semakan tidak berubah.</p>'
+        +'<p class="muted">Tiada permohonan Tidak Hadir / Keberadaan yang meliputi waktu ini. '
+        +'Sila nyatakan sebab sebenar untuk semakan pentadbir. '
+        +(row.date===state.boot?.today?'Sebab hari ini perlu diisi sebelum Rakam Balik. ':'')
+        +'Rekod punch dan status semakan tidak berubah.</p>'
         +'<form onsubmit="saveMyTimeExceptionReason(event)"><label>Sebab '+esc(heading)
         +'<textarea name="reason" minlength="10" maxlength="800" rows="4" required '
         +'placeholder="Terangkan sebab sebenar (minimum 10 aksara)"></textarea></label>'
-        +'<p class="button-row"><button type="submit" class="btn primary">Hantar Sebab</button>'
-        +'<button type="button" class="btn ghost" onclick="dismissMyTimeExceptionReason()">Kemudian</button></p></form></div>';
+        +'<p class="button-row"><button type="submit" class="btn primary">Hantar Sebab</button></p></form></div>';
       showModal(html);
-    }catch(error){
-      if(!/tidak disokong|unknown|unrecognized|unknown column/i.test(String(error?.message||'')))
-        console.warn('Semakan sebab waktu tidak dapat dimuatkan.',error?.message||error);
-    }finally{state.timeReasonFetching=false;}
+    }catch(error){handleServerError(error);}
+    finally{state.timeReasonFetching=false;}
   }
-  function dismissMyTimeExceptionReason(){state.timeReasonCurrent=null;closeModal();}
+  async function loadMyTimeExceptionReasons(justPunched){
+    // Only a successful new punch may auto-open today's reason prompt.
+    if(!justPunched||justPunched.date!==state.boot?.today||!state.token)return;
+    if(state.currentScreen!=='home')return;
+    const modal=document.getElementById('modal');
+    if(modal&&!modal.classList.contains('hidden'))return;
+    try{
+      const response=await runServer('getMyTimeExceptionReasons',state.token,justPunched);
+      const now=(response?.rows||[]).find(r=>r?.id&&r.date===justPunched.date
+        &&r.type===justPunched.type&&Number(r.session)===Number(justPunched.session)
+        &&r.recordTime===justPunched.recordTime);
+      if(!now||state.timeReasonPromptShown.has(now.id))return;
+      state.timeReasonPromptShown.add(now.id);
+      const all=await refreshMyTimeReasonNotice(true);
+      const rows=all?.rows||[now];
+      if(rows.length>1){
+        showMyTimeReasonTable(rows);
+      }else{
+        state.timeReasonItems=[now];
+        await openMyTimeReasonForm(0);
+      }
+    }catch(error){console.warn('Borang sebab waktu tidak dapat dibuka.',error?.message||error);}
+  }
   async function saveMyTimeExceptionReason(ev){
     ev.preventDefault();
-    const item=state.timeReasonCurrent;if(!item)return;
-    const form=ev.target,reason=String(new FormData(form).get('reason')||'').trim();
+    const item=state.timeReasonCurrent;
+    if(!item)return;
+    const form=ev.target;
+    const reason=String(new FormData(form).get('reason')||'').trim();
     if(reason.length<10||reason.length>800){toast('Sebab mesti 10 hingga 800 aksara.');return;}
     const submit=form.querySelector('[type="submit"]');
     setButtonBusy(submit,true,'Menghantar…');
     try{
       await runServer('saveMyTimeExceptionReason',state.token,item.id,reason);
-      state.timeReasonCurrent=null;closeModal();
+      state.timeReasonCurrent=null;
+      closeModal();
       toast('Sebab berjaya dihantar kepada pentadbir.',4500);
       invalidateClientCache('timeReview');
-    }catch(error){handleServerError(error);}finally{setButtonBusy(submit,false,'');}
+      const updated=await refreshMyTimeReasonNotice();
+      const remaining=updated?.rows||[];
+      // If there were several incidents, return to the table for one-by-one
+      // completion instead of reopening the same reason automatically.
+      if(remaining.length&&state.timeReasonItems.length>1)showMyTimeReasonTable(remaining);
+      else state.timeReasonItems=remaining;
+    }catch(error){handleServerError(error);}
+    finally{setButtonBusy(submit,false,'');}
   }
   // ---------- Own Kad Perakam Waktu ----------
   async function loadMyCard(force=false){

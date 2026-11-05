@@ -212,6 +212,10 @@ function rpc(string $fn,array $a) {
         require_once __DIR__.'/email_queue.php';
         notify_absence_reviewed_mysql($id,$d);
         return ['ok'=>true,'status'=>$d];
+      case 'getMyTimeReasonSummary':
+        $u=require_user($a[0]??'');
+        require_once __DIR__.'/time_exception_reasons.php';
+        return ek_reason_my_summary($u);
       case 'getMyTimeExceptionReasons':
         $u=require_user($a[0]??'');
         require_once __DIR__.'/time_exception_reasons.php';
@@ -357,7 +361,16 @@ function punch_mysql(array $u,string $type,$location): array {
         $r=attendance_row($email,$date);
         $step=$r?attendance_public($r,$sch)['nextRecord']:['type'=>'IN','session'=>1,'complete'=>false];
         if ($step['complete']||$step['type']!==$type) throw new RuntimeException('Turutan masuk/keluar tidak sah. Muat semula rekod.');
-        $n=(int)$step['session'];$now=now_myt();$excel=excel_number($now);
+        $n=(int)$step['session'];
+        // Authoritative on-server gate: a reload, PWA update or second device
+        // cannot bypass today's unresolved reasons when punching OUT.
+        if($type==='OUT'&&!$test&&$r){
+            require_once __DIR__.'/time_exception_reasons.php';
+            $openReasons=ek_reason_requires_before_out($u,$date,$r);
+            if($openReasons)throw new RuntimeException(
+                'SEBAB_WAKTU_DIPERLUKAN: Isi sebab Lewat/Balik Awal hari ini sebelum Rakam Balik.');
+        }
+        $now=now_myt();$excel=excel_number($now);
         if (!$r) {
             execute_sql("INSERT INTO kehadiran (_source_row,tarikh,emel,nama,kategori,masuk,masuklat,masuklng,masukjarakm,masukakurasim,masukip,status,sumber,dikemaskinipada) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
               [0,$date,$email,$u['nama'],$u['kategori'],$now,$lat,$lng,$distance,$accuracy,$ip,'HADIR','PHP_MYSQL',$excel]);

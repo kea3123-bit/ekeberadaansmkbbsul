@@ -161,6 +161,19 @@
 
           <div id="testModeBanner" class="mode-banner test hidden"><b>MOD UJIAN</b><span>Semakan lokasi dan status waktu tidak digunakan. Rekod waktu ditanda sebagai TEST.</span></div>
 
+          <section id="homeTimeReasonNotice" class="panel hidden" role="status" aria-live="polite"
+            style="border-left:5px solid #d97706;padding:14px 18px;margin:14px 0;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+              <div>
+                <b id="homeTimeReasonHeading">Peringatan Lewat / Balik Awal</b>
+                <p id="homeTimeReasonText" style="margin:6px 0 0;">Anda mempunyai rekod yang memerlukan sebab.</p>
+              </div>
+              <button type="button" class="btn primary small" onclick="openMyTimeReasonTable()">
+                Lihat &amp; Isi Sebab
+              </button>
+            </div>
+          </section>
+
           <section class="panel home-punch-panel">
             <div class="page-heading compact home-punch-heading">
               <div><div class="eyebrow">Menu utama</div><h1>Perakam Waktu Digital</h1><p id="punchInstruction"></p></div>
