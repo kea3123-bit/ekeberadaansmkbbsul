@@ -12,7 +12,7 @@ function time_text($v):string {
     return substr($v,0,5);
 }
 function settings_raw():array{return [
- 'SYSTEM_MODE'=>'REAL','SYSTEM_START_DATE'=>'2026-11-01',
+ 'SYSTEM_MODE'=>'REAL','SYSTEM_START_DATE'=>'2026-09-01',
  'THURSDAY_WBF_ENABLED'=>'FALSE'
 ];}
 function schedule(array $u,array $s):array{return [
@@ -42,7 +42,7 @@ $applications=[
 function all_absence_rows():array{return $GLOBALS['applications'];}
 function rows(string $sql,array $args=[]):array{
     global $attendance,$reviews;
-    if(str_contains($sql,'FROM sejarah_jadual'))return [];
+    if(str_contains($sql,'FROM sejarah_jadual'))return $GLOBALS['history']??[];
     if(str_contains($sql,'FROM kehadiran'))return array_values(array_filter($attendance,static fn($r)=>
       strtolower($r['emel'])===$args[0]&&$r['tarikh']>=$args[1]&&$r['tarikh']<=$args[2]));
     if(str_contains($sql,'FROM semakan_waktu'))return array_values(array_filter($reviews,static fn($r)=>
@@ -83,4 +83,48 @@ $applications[]=[
 $reviews=array_values(array_filter($reviews,static fn($r)=>$r['id']!=='nov-5-saved'));
 check_it(ek_reason_my_summary($user)['todayCount']===1,
     'Rejected leave must not suppress a required explanation');
+
+/**
+ * Real database history shape: 08:30 from 1 Sep, 07:30 from 13 Sep;
+ * WBF Thursday stored as Excel time fractions (07:30-09:00, 15:00-16:30).
+ * Current account schedule and CURRENT WBF settings intentionally disagree.
+ */
+$historicalWbf=[
+ 'layakwbfkhamis'=>1,'wbfenabled'=>1,'wbfmasukmula'=>0.3125,
+ 'wbfmasukakhir'=>0.375,'wbfkeluarmula'=>0.625,'wbfkeluarakhir'=>0.6875,
+ 'wbfminit'=>450,'sesi1keluar'=>'16:30','sesi2masuk'=>null,'sesi2keluar'=>null
+];
+$history=[
+ ['berkuatkuasapada'=>46266,'sesi1masuk'=>'08:30']+$historicalWbf,
+ ['berkuatkuasapada'=>46278,'sesi1masuk'=>'07:30']+$historicalWbf
+];
+$oldThursday=[
+ 'tarikh'=>'2026-09-10','emel'=>'owner@example.test',
+ 'masuk'=>'2026-09-10 08:15:00','balik'=>'2026-09-10 15:45:00',
+ 'masuk2'=>null,'balik2'=>null,'status'=>'BALIK AWAL'
+];
+check_it(ek_reason_incidents($oldThursday,$user,settings_raw(),$history)===[],
+ 'Historic 08:30 arrival and 08:15 + 450min WBF must not be flagged');
+$afterChange=$oldThursday;
+$afterChange['tarikh']='2026-09-17';
+$afterChange['masuk']='2026-09-17 08:15:00';
+$afterChange['balik']='2026-09-17 15:45:00';
+$newEvents=ek_reason_incidents($afterChange,$user,settings_raw(),$history);
+check_it(count($newEvents)===1&&$newEvents[0]['type']==='LEWAT'
+  &&$newEvents[0]['referenceTime']==='07:30',
+ 'After 13 Sep, 08:15 is late but 15:45 is a valid WBF exit');
+$afterChange['balik']='2026-09-17 15:40:00';
+$earlyEvents=ek_reason_incidents($afterChange,$user,settings_raw(),$history);
+check_it(count($earlyEvents)===2&&$earlyEvents[1]['type']==='BALIK AWAL'
+  &&$earlyEvents[1]['referenceTime']==='15:45',
+ 'WBF Thursday departure must use stored 450min and 15:45 reference');
+$history[1]['wbfenabled']=0;
+$disabledEvents=ek_reason_incidents($afterChange,$user,settings_raw(),$history);
+check_it($disabledEvents[1]['referenceTime']==='16:30',
+ 'Stored historical WBF disabled must override current WBF policy');
+$history[1]['wbfenabled']=1;
+$attendance[]=$oldThursday;
+$alert=ek_reason_my_summary($user);
+check_it(!in_array('2026-09-10',array_column($alert['rows'],'date'),true),
+ 'Historic correctly timed day must not appear in the user notification');
 echo "TIME_REASON_BACKLOG_AUTO_SOURCE_GATE_AND_COVERAGE_OK\n";
