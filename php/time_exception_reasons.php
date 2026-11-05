@@ -106,7 +106,7 @@ function ek_reason_request_covers(array $requests,string $day,string $reference,
 function ek_reason_incidents(array $attendance,array $user,array $settings,array $history=[]):array {
     $events=[];
     $date=date_key($attendance['tarikh']??'');
-    if(!preg_match('/^20\\d\\d-\\d\\d-\\d\\d$/',$date))return [];
+    if(!preg_match('/^20\d\d-\d\d-\d\d$/',$date))return [];
     [$sch,$effectiveSettings,$wbfEligible]=ek_reason_schedule_on_date($user,$settings,$date,$history);
     // Source/status (including AUTO_TIDAK_HADIR) must never suppress a real
     // late/early time. Only actual punch timestamps determine an incident.
