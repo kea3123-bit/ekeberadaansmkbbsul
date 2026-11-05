@@ -1,0 +1,29 @@
+name: Explicit admin acknowledgement and reviewer job (safe staging)
+on:
+  push:
+    branches: [fix/20261105-reason-admin-review-v2]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  verify-manual-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP lint and self-service reason regression
+        run: |
+          set -euo pipefail
+          php -l php/api.php
+          php -l php/time_exception_reasons.php
+          php php/tests/time-exception-reasons-test.php
+          php php/tests/time-reason-backlog-test.php
+          php php/tests/admin-pending-actions-test.php
+      - name: Review remains pending and actual approver job is visible
+        run: |
+          set -euo pipefail
+          node --check < mysql-ui/Scripts.html
+          node mysql-ui/tests/time-review-manual-acknowledgement.test.js
+          node mysql-ui/tests/time-exception-reasons.test.js
+          node mysql-ui/tests/admin-pending-actions.test.js
+          node mysql-ui/tests/mobile-reason-admin-notice.test.js
