@@ -1130,7 +1130,7 @@
       }
       const renderGroup=(items,title,offset)=>items.length
         ?'<h4 style="margin:16px 0 8px">'+esc(title)+' ('+items.length+')</h4>'
-          +'<div class="table-wrap" style="max-height:300px;overflow:auto"><table><thead><tr>'
+          +'<div class="table-wrap ek-notice-scroll" style="max-height:300px;overflow:auto"><table class="ek-responsive-notice-table ek-admin-list"><thead><tr>'
           +'<th>Pegawai</th><th>Jenis</th><th>Tarikh</th><th>Tindakan</th></tr></thead><tbody>'
           +items.map((item,i)=>'<tr><td><b>'+esc(item.name||'—')+'</b></td>'
             +'<td>'+esc(item.kind==='ABSENCE'
@@ -1215,14 +1215,14 @@
     const total=state.timeReasonItems.length;
     const lines=state.timeReasonItems.map((item,i)=>
       '<tr><td>'+esc(item.date)+'</td><td><b>'+esc(item.type)+'</b><small class="table-sub">Sesi '+esc(item.session)+'</small></td>'
-      +'<td>'+esc(item.recordTime)+' / '+esc(item.referenceTime)+'</td>'
+      +'<td><span class="ek-record-times"><span><small>Rekod</small><b>'+esc(item.recordTime||'—')+'</b></span><span><small>Rujukan</small><b>'+esc(item.referenceTime||'—')+'</b></span></span></td>'
       +'<td><button type="button" class="btn primary small" onclick="openMyTimeReasonForm('+i+')">Isi Sebab</button></td></tr>'
     ).join('');
     showModal('<div class="review-request"><div class="first-login-badge">SEBAB LEWAT / BALIK AWAL</div>'
       +'<h3>Senarai Rekod Belum Diberi Sebab</h3>'
       +'<p>Anda mempunyai <b>'+total+'</b> kejadian yang memerlukan penjelasan. Pilih satu rekod dan isi sebabnya.'
       +' Rekod hari ini perlu dijelaskan sebelum boleh Rakam Balik.</p>'
-      +'<div class="table-scroll" style="max-height:52vh;overflow-y:auto"><table class="data-table">'
+      +'<div class="table-scroll ek-notice-scroll" style="max-height:52vh;overflow-y:auto"><table class="data-table ek-responsive-notice-table ek-reason-list">'
       +'<thead><tr><th>Tarikh</th><th>Jenis</th><th>Rekod / Rujukan</th><th>Tindakan</th></tr></thead>'
       +'<tbody>'+lines+'</tbody></table></div></div>');
   }
