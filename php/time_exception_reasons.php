@@ -306,7 +306,16 @@ function ek_reason_save(array $user,string $id,string $reason):array {
        strtolower(trim((string)($r['email']??'')))===$email));
     if(ek_reason_request_covers($requests,$day,$current[0]['referenceTime'],$current[0]['recordTime']))
        throw new InvalidArgumentException('Permohonan Keberadaan/Tidak Hadir sudah meliputi waktu ini.');
-    $n=execute_sql("UPDATE semakan_waktu SET sebabpengguna=?,sebabdihantarpada=NOW() WHERE id=? AND LOWER(emel)=? AND (sebabpengguna IS NULL OR sebabpengguna='')",
+    // A staff explanation is NOT an admin acknowledgement. Historical records
+    // may already carry an older review decision; submitting a NEW explanation
+    // must reopen that incident for a fresh, explicit administrator decision.
+    // Clearing reviewer metadata prevents an old approver from being displayed
+    // as though they approved the newly submitted explanation.
+    $n=execute_sql("UPDATE semakan_waktu
+      SET sebabpengguna=?,sebabdihantarpada=NOW(),
+          statussemakan='BELUM DIAMBIL MAKLUM',
+          disemakoleh=NULL,namapelulus=NULL,disemakpada=NULL,ulasan=NULL
+      WHERE id=? AND LOWER(emel)=? AND (sebabpengguna IS NULL OR sebabpengguna='')",
         [$reason,$id,$email]);
     if($n<1)throw new RuntimeException('Sebab telah dihantar pada peranti lain. Sila segar semula.');
     audit_event($email,'HANTAR_SEBAB_WAKTU',$id,'Alasan sendiri dihantar untuk semakan '.$item['jenis']);

@@ -713,16 +713,35 @@ function submit_absence(array $u,array $p): array {
     return ['ok'=>true,'id'=>$id,'message'=>'Permohonan berjaya dihantar.'];
 }
 function time_reviews(string $from,string $to): array {
-    $from=valid_day($from);$to=valid_day($to);if ($from>$to)throw new InvalidArgumentException('Tempoh tidak sah.');
+    $from=valid_day($from);$to=valid_day($to);if($from>$to)throw new InvalidArgumentException('Tempoh tidak sah.');
     $r=rows('SELECT * FROM semakan_waktu WHERE tarikh BETWEEN ? AND ? ORDER BY tarikh DESC',[$from,$to]);
-    $data=array_map(fn($x)=>['id'=>$x['id'],'date'=>$x['tarikh'],'email'=>$x['emel'],'name'=>$x['nama'],
-      'jobTitle'=>$x['jawatan']??'','category'=>$x['kategori'],'type'=>$x['jenis'],'session'=>$x['sesi'],
-      'recordTime'=>time_text($x['wakturekod']),'referenceTime'=>time_text($x['wakturujukan']),
-      'reviewStatus'=>$x['statussemakan']??'BELUM DIAMBIL MAKLUM','reviewerJobTitle'=>'',
-      'reviewedAt'=>$x['disemakpada']?date_key($x['disemakpada']):'',
-      'comment'=>$x['ulasan']??'','userReason'=>$x['sebabpengguna']??'',
-      'userReasonAt'=>$x['sebabdihantarpada']??null,
-      'createdAt'=>$x['diciptapada']?date_key($x['diciptapada']):''],$r);
+
+    // Display the actual reviewer's job title (e.g. Pengetua), not the
+    // generic "Pentadbir Sistem" label. Look up titles in one batched query.
+    // Never assume that the applicant's job title is the reviewer's title.
+    $needsTitles=false;
+    foreach($r as $x) {
+        if(trim((string)($x['disemakoleh']??''))!==''){$needsTitles=true;break;}
+    }
+    $reviewerTitles=[];
+    if($needsTitles)foreach(rows('SELECT emel,jawatan FROM pengguna WHERE emel IS NOT NULL') as $reviewer) {
+        $email=strtolower(trim((string)($reviewer['emel']??'')));
+        if($email!=='')$reviewerTitles[$email]=trim((string)($reviewer['jawatan']??''));
+    }
+
+    $data=array_map(static function($x) use($reviewerTitles) {
+        $reviewerEmail=strtolower(trim((string)($x['disemakoleh']??'')));
+        return ['id'=>$x['id'],'date'=>$x['tarikh'],'email'=>$x['emel'],'name'=>$x['nama'],
+          'jobTitle'=>$x['jawatan']??'','category'=>$x['kategori'],'type'=>$x['jenis'],'session'=>$x['sesi'],
+          'recordTime'=>time_text($x['wakturekod']),'referenceTime'=>time_text($x['wakturujukan']),
+          'reviewStatus'=>trim((string)($x['statussemakan']??''))?:'BELUM DIAMBIL MAKLUM',
+          'reviewerJobTitle'=>$reviewerEmail!==''?($reviewerTitles[$reviewerEmail]??''):'',
+          'reviewerName'=>trim((string)($x['namapelulus']??'')),
+          'reviewedAt'=>$x['disemakpada']?date_key($x['disemakpada']):'',
+          'comment'=>$x['ulasan']??'','userReason'=>$x['sebabpengguna']??'',
+          'userReasonAt'=>$x['sebabdihantarpada']??null,
+          'createdAt'=>$x['diciptapada']?date_key($x['diciptapada']):''];
+    },$r);
     return ['fromDate'=>$from,'toDate'=>$to,'rows'=>$data];
 }
 function admin_save_attendance(array $admin,array $p): array {

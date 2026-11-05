@@ -1,0 +1,22 @@
+'use strict';
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const api=fs.readFileSync('php/api.php','utf8');
+const reason=fs.readFileSync('php/time_exception_reasons.php','utf8');
+const page=fs.readFileSync('mysql-ui/Scripts.html','utf8');
+new Function(page);
+const save=reason.slice(reason.indexOf('function ek_reason_save('));
+assert(save.includes("statussemakan='BELUM DIAMBIL MAKLUM'"),'Submitting a reason must reopen pending administrator review');
+for(const field of ['disemakoleh=NULL','namapelulus=NULL','disemakpada=NULL','ulasan=NULL'])
+  assert(save.includes(field),'Old reviewer must be cleared on new user explanation: '+field);
+assert(!save.includes("statussemakan='DIAMBIL MAKLUM'"),'Self-service explanation must never be auto-acknowledged');
+assert(api.includes("case 'reviewTimeException':"),'Admin review action missing');
+assert(api.includes("require_user($a[0]??'',true)"),'Admin authorization missing');
+assert(api.includes("if (!in_array($d,['DIAMBIL MAKLUM','DITOLAK'],true))"),'Only explicit decisions allowed');
+const review=api.slice(api.indexOf('function time_reviews('),api.indexOf('function admin_save_attendance('));
+assert(review.includes("SELECT emel,jawatan FROM pengguna"),'Reviewer job should be sourced from registered staff');
+assert(review.includes("'reviewerJobTitle'=>$reviewerEmail"),'Reviewer role must be returned by API');
+assert(review.includes("'reviewerName'"),'Actual reviewer identity fallback missing');
+assert(page.includes("r.reviewerJobTitle||r.reviewerName||'Jawatan tidak direkodkan'"),'Never label all reviewers as Pentadbir Sistem');
+assert(page.includes("r.reviewStatus==='BELUM DIAMBIL MAKLUM'"),'Pending time records must still expose manual review actions');
+console.log('TIME_REVIEW_REQUIRES_EXPLICIT_ADMIN_DECISION_AND_REAL_JOB_TITLE_OK');
