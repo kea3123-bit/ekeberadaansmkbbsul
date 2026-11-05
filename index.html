@@ -164,6 +164,18 @@
 
           <div id="testModeBanner" class="mode-banner test hidden"><b>MOD UJIAN</b><span>Semakan lokasi dan status waktu tidak digunakan. Rekod waktu ditanda sebagai TEST.</span></div>
 
+          <section id="homeAdminPendingNotice" class="panel hidden" role="status" aria-live="polite"
+            style="background:linear-gradient(135deg,#eff6ff 0%,#e0edff 100%);border:1px solid #93c5fd;border-left:5px solid #2563eb;color:#1e3a8a;padding:14px 18px;margin:14px 0;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+              <div>
+                <b>Tindakan Tertunggak Pentadbir Sistem</b>
+                <p id="homeAdminPendingText" style="margin:6px 0 0;">Permohonan atau rekod waktu memerlukan semakan pentadbir.</p>
+              </div>
+              <button type="button" class="btn primary small" onclick="openAdminPendingActions()"
+                style="background:#1d4ed8;border-color:#1d4ed8;color:#fff;">Lihat Tindakan</button>
+            </div>
+          </section>
+
           <section id="homeTimeReasonNotice" class="panel hidden" role="status" aria-live="polite"
             style="background:linear-gradient(135deg,#fff1f2 0%,#ffe4e6 100%);border:1px solid #fda4af;border-left:5px solid #dc2626;color:#881337;padding:14px 18px;margin:14px 0;">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
@@ -555,7 +567,7 @@
 
   <div id="modal" class="modal hidden" onclick="if(event.target===this) closeModal()"><div class="modal-card"><button class="modal-close" onclick="closeModal()">×</button><div id="modalContent"></div></div></div>
   <div id="toast" class="toast hidden"></div>
-  <script defer src="./assets/app.5fc119d3b879.js?v=reason-backlog-20261105"></script>
+  <script defer src="./assets/app.5fc119d3b879.js?v=admin-actions-20261105"></script>
 <script>
 (() => {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
