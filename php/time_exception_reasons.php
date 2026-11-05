@@ -36,7 +36,7 @@ function ek_reason_schedule_history(array $user):array {
     $email=strtolower(trim((string)($user['emel']??'')));
     if($email==='')return [];
     try {
-        return rows('SELECT * FROM sejarah_jadual WHERE LOWER(emel)=? AND berkuatkuasapada IS NOT NULL ORDER BY berkuatkuasapada ASC,_row_id ASC',[$email]);
+        return rows('SELECT * FROM sejarah_jadual WHERE emel=? AND berkuatkuasapada IS NOT NULL ORDER BY berkuatkuasapada ASC,_row_id ASC',[$email]);
     } catch(PDOException $e) {
         if((int)($e->errorInfo[1]??0)===1146)return [];
         throw $e;
