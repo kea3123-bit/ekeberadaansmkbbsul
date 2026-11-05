@@ -1,0 +1,26 @@
+name: Admin pending actions notification (safe staging)
+on:
+  push:
+    branches: [feature/20261105-admin-action-notifications-v2]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  admin-notices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate PHP and admin-only read operations
+        run: |
+          php -l php/api.php
+          php -l php/admin_action_notifications.php
+          php php/tests/admin-pending-actions-test.php
+      - name: Check frontend and prior time/absence features
+        run: |
+          node --check < mysql-ui/Scripts.html
+          node mysql-ui/tests/admin-pending-actions.test.js
+          node mysql-ui/tests/time-reason-backlog.test.js
+          node mysql-ui/tests/absence-reviewer-dates.test.js
+          node mysql-ui/tests/time-exception-reasons.test.js
+          php php/tests/time-reason-backlog-test.php

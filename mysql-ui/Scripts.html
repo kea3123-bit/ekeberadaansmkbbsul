@@ -7,6 +7,7 @@ const state = {
     absence:null, absencePublic:null, absenceManagement:null, timeReview:null,
     timeReasonPromptShown:new Set(),timeReasonCurrent:null,timeReasonFetching:false,
     timeReasonSummary:null,timeReasonSummaryBusy:false,timeReasonItems:[],timeReasonRequestSeq:0,
+    adminPendingSummary:null,adminPendingItems:[],adminPendingLastAt:0,adminPendingPromise:null,
     cacheTimes:{},
     lastSessionCheck:0, sessionCheckBusy:false, sessionRecoveryPromise:null,
     locationMap:null, locationMarker:null, locationCircle:null,
@@ -536,9 +537,12 @@ const state = {
     document.getElementById('loginPage').classList.add('hidden'); document.getElementById('appShell').classList.remove('hidden');
     state.timeReasonSummary=null;state.timeReasonItems=[];
     state.timeReasonPromptShown.clear();
+    state.adminPendingSummary=null;state.adminPendingItems=[];state.adminPendingLastAt=0;
+    document.getElementById('homeAdminPendingNotice')?.classList.add('hidden');
     renderBoot(); navigate('home');
     // Fetch reminder counts only; NEVER auto-open an old-record popup.
     setTimeout(()=>refreshMyTimeReasonNotice().catch(()=>{}),600);
+    if(state.boot?.user?.isAdmin)setTimeout(()=>refreshAdminPendingNotice().catch(()=>{}),700);
     // Start GPS immediately after authentication so punch actions can reuse a
     // fresh, already-resolved position instead of waiting for a new GPS fix.
     setTimeout(()=>startLiveLocationTracking(false).catch(()=>{}),0);
@@ -666,7 +670,10 @@ const state = {
     state.currentScreen=name;
     const titles={home:'Utama',mycard:'Kad Perakam Waktu Saya',absence:'Tidak Hadir / Keberadaan',absencepublic:'Senarai Tidak Hadir / Keberadaan',absencemanage:'Semakan Tidak Hadir / Keberadaan',timereview:'Semakan Lewat / Balik Awal',admin:'Pentadbir Sistem',admincard:'Kad Perakam Waktu Pegawai'};
     text('pageTitle',titles[name]||'e-Keberadaan'); closeMobileMenu();
-    if(name==='home')setTimeout(()=>refreshMyTimeReasonNotice().catch(()=>{}),250);
+    if(name==='home'){
+      setTimeout(()=>refreshMyTimeReasonNotice().catch(()=>{}),250);
+      if(state.boot?.user?.isAdmin)setTimeout(()=>refreshAdminPendingNotice().catch(()=>{}),350);
+    }
     if(name==='mycard')loadMyCard();
     if(name==='absence')loadAbsenceData();
     if(name==='absencepublic')loadAbsencePublic();
@@ -1032,6 +1039,107 @@ const state = {
   }
   function gps(cls,msg){const d=document.getElementById('gpsDot');if(d)d.className='gps-dot '+cls;text('locationText',msg);}
   function setPunchBusy(b){const step=state.boot?.attendance?.nextRecord||{type:'IN',session:1,complete:false},i=document.getElementById('btnIn'),o=document.getElementById('btnOut');if(i)i.disabled=b||step.complete||step.type!=='IN';if(o)o.disabled=b||step.complete||step.type!=='OUT';}
+
+
+  // ---------- Notifikasi tindakan tertunggak Pentadbir Sistem ----------
+  function renderAdminPendingNotice(){
+    const panel=document.getElementById('homeAdminPendingNotice');
+    if(!panel)return;
+    const data=state.adminPendingSummary;
+    const admin=!!state.boot?.user?.isAdmin;
+    const absence=Number(data?.absenceCount||0);
+    const time=Number(data?.timeReviewCount||0);
+    panel.classList.toggle('hidden',!admin||!(absence+time));
+    if(!admin||!(absence+time))return;
+    text('homeAdminPendingText',
+      'Anda mempunyai '+absence+' permohonan Tidak Hadir / Keberadaan menunggu kelulusan dan '
+      +time+' rekod Lewat / Balik Awal belum diambil maklum.');
+  }
+  async function refreshAdminPendingNotice(force=false){
+    if(!state.token||!state.boot?.user?.isAdmin)return null;
+    if(!force&&state.adminPendingSummary&&Date.now()-state.adminPendingLastAt<45000)
+      return state.adminPendingSummary;
+    if(state.adminPendingPromise)return state.adminPendingPromise;
+    const token=state.token;
+    const pending=(async()=>{
+      try{
+        const data=await runServer('getAdminPendingActions',token);
+        if(token!==state.token||!state.boot?.user?.isAdmin)return null;
+        state.adminPendingSummary=data;
+        state.adminPendingLastAt=Date.now();
+        renderAdminPendingNotice();
+        return data;
+      }catch(error){
+        // Older cPanel APIs may not yet have this optional read-only RPC.
+        if(token===state.token){
+          state.adminPendingSummary=null;
+          renderAdminPendingNotice();
+        }
+        if(force)throw error;
+        console.warn('Notifikasi tindakan pentadbir belum tersedia.',error?.message||error);
+        return null;
+      }
+    })();
+    state.adminPendingPromise=pending;
+    try{return await pending;}
+    finally{if(state.adminPendingPromise===pending)state.adminPendingPromise=null;}
+  }
+  async function openAdminPendingActions(){
+    if(!state.boot?.user?.isAdmin)return toast('Akses Pentadbir Sistem diperlukan.');
+    try{
+      const data=await refreshAdminPendingNotice(true);
+      const requests=Array.isArray(data?.requests)?data.requests:[];
+      const reviews=Array.isArray(data?.timeReviews)?data.timeReviews:[];
+      state.adminPendingItems=[...requests,...reviews];
+      if(!state.adminPendingItems.length){
+        toast('Semua permohonan dan rekod waktu sudah disemak.');
+        renderAdminPendingNotice();
+        return;
+      }
+      const renderGroup=(items,title,offset)=>items.length
+        ?'<h4 style="margin:16px 0 8px">'+esc(title)+' ('+items.length+')</h4>'
+          +'<div class="table-wrap" style="max-height:300px;overflow:auto"><table><thead><tr>'
+          +'<th>Pegawai</th><th>Jenis</th><th>Tarikh</th><th>Tindakan</th></tr></thead><tbody>'
+          +items.map((item,i)=>'<tr><td><b>'+esc(item.name||'—')+'</b></td>'
+            +'<td>'+esc(item.kind==='ABSENCE'
+                ?(item.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir')+' · '+(item.type||'')
+                :(item.type||'Lewat/Balik Awal')+' · Sesi '+(item.session||1))+'</td>'
+            +'<td>'+esc(item.kind==='ABSENCE'
+                ?formatDateRange(item.startDate,item.endDate)
+                :item.date)+'</td>'
+            +'<td><button class="btn primary small" type="button" onclick="openAdminPendingAction('+(offset+i)+')">Semak</button></td></tr>').join('')
+          +'</tbody></table></div>'
+        :'<p class="muted">Tiada '+esc(title.toLowerCase())+'.</p>';
+      showModal('<h3>Tindakan Tertunggak Pentadbir</h3>'
+        +'<p class="muted">Sila pilih rekod untuk dibawa ke halaman semakan. Kelulusan dan pengesahan dibuat di halaman tersebut.</p>'
+        +renderGroup(requests,'Menunggu Kelulusan',0)
+        +renderGroup(reviews,'Belum Diambil Maklum',requests.length));
+    }catch(e){handleServerError(e);}
+  }
+  function openAdminPendingAction(index){
+    if(!state.boot?.user?.isAdmin)return toast('Akses Pentadbir Sistem diperlukan.');
+    const item=state.adminPendingItems[Number(index)];
+    if(!item)return toast('Rekod tidak dijumpai. Sila segar semula.');
+    closeModal();
+    if(item.kind==='ABSENCE'){
+      const day=item.startDate||state.boot.today;
+      document.getElementById('absenceManageFrom').value=day;
+      document.getElementById('absenceManageTo').value=day;
+      document.getElementById('absenceManageStatus').value='MENUNGGU';
+      document.getElementById('absenceManageSearch').value=item.id||item.email||'';
+      document.getElementById('absenceManageMode').value='';
+      document.getElementById('absenceManageCategory').value='';
+      navigate('absencemanage');
+    }else if(item.kind==='TIME_REVIEW'){
+      const day=item.date||state.boot.today;
+      document.getElementById('timeReviewFrom').value=day;
+      document.getElementById('timeReviewTo').value=day;
+      document.getElementById('timeReviewStatus').value='BELUM DIAMBIL MAKLUM';
+      document.getElementById('timeReviewType').value=['LEWAT','BALIK AWAL'].includes(item.type)?item.type:'';
+      document.getElementById('timeReviewSearch').value=item.email||item.name||'';
+      navigate('timereview');
+    }
+  }
 
   // ---------- Sebab Lewat / Balik Awal (pemohon sendiri) ----------
   function renderMyTimeReasonNotice(){
@@ -1680,7 +1788,7 @@ function ensureAbsenceManageTableLayout(){
     const r=state.absenceManagement?.requests?.find(x=>x.id===id);if(!r)return;const approve=decision==='DILULUSKAN';
     showModal(`<div class="review-request"><div class="first-login-badge">PERMOHONAN KEPADA PENGETUA</div><h3>${approve?'Luluskan':'Tolak'} Permohonan</h3><p><b>${esc(r.name)}</b><br><span class="muted">${esc(r.jobTitle||'')} · ${esc(r.email)} · ${esc(r.category)}</span></p><div class="review-summary"><div><span>Mod</span><b>${esc(r.mode==='KEBERADAAN'?'Keberadaan':'Tidak Hadir')}</b></div><div><span>Jenis</span><b>${esc(r.type)}</b></div><div><span>Tempoh</span><b>${esc(formatDateRange(r.startDate,r.endDate))}</b></div><div><span>Masa</span><b>${r.mode==='KEBERADAAN'?esc(`${r.startTime} – ${r.endTime}`):'—'}</b></div><div class="span-2"><span>Catatan</span><b>${esc(r.note||'—')}</b></div></div><form onsubmit='reviewAbsence(event,${attr(JSON.stringify(id))},${attr(JSON.stringify(decision))})'><label>Ulasan Pengetua / Pengurusan<textarea name="comment" rows="3" placeholder="Ulasan keputusan (opsyenal)"></textarea></label><p><button class="btn ${approve?'primary':'dark'}" type="submit">${approve?'Luluskan Permohonan':'Tolak Permohonan'}</button></p></form></div>`);
   }
-  async function reviewAbsence(ev,id,decision){ev.preventDefault();if(!state.boot?.user?.isAdmin)return toast('Akses Pentadbir Sistem diperlukan.');const comment=new FormData(ev.target).get('comment')||'';try{const r=await runServer('reviewAbsenceRequest',state.token,id,decision,comment);closeModal();toast(r.conflicts?.length?`Keputusan disimpan. ${r.conflicts.length} tarikh mempunyai rekod waktu sedia ada dan tidak ditindih.`:'Keputusan permohonan disimpan.',5000);invalidateClientCache('absenceManagement','absence','absencePublic','myCard','adminCard');await loadAbsenceManagement(true);}catch(e){handleServerError(e);}}
+  async function reviewAbsence(ev,id,decision){ev.preventDefault();if(!state.boot?.user?.isAdmin)return toast('Akses Pentadbir Sistem diperlukan.');const comment=new FormData(ev.target).get('comment')||'';try{const r=await runServer('reviewAbsenceRequest',state.token,id,decision,comment);closeModal();toast(r.conflicts?.length?`Keputusan disimpan. ${r.conflicts.length} tarikh mempunyai rekod waktu sedia ada dan tidak ditindih.`:'Keputusan permohonan disimpan.',5000);invalidateClientCache('absenceManagement','absence','absencePublic','myCard','adminCard');await loadAbsenceManagement(true);refreshAdminPendingNotice(true).catch(()=>{});}catch(e){handleServerError(e);}}
   async function generateAbsencePresencePdfClient(){if(!state.boot?.user?.isAdmin)return toast('Akses Pentadbir Sistem diperlukan.');try{const filters={fromDate:document.getElementById('absenceManageFrom').value,toDate:document.getElementById('absenceManageTo').value,mode:document.getElementById('absenceManageMode').value,status:document.getElementById('absenceManageStatus').value,category:document.getElementById('absenceManageCategory').value};const r=await runServer('generateAbsencePresencePdf',state.token,filters);downloadPdfResult(r);toast('Laporan PDF dijana.');}catch(e){handleServerError(e);}}
 
   // ---------- Semakan Lewat / Balik Awal ----------
@@ -1697,7 +1805,7 @@ function ensureAbsenceManageTableLayout(){
   function applyTimeReviewFilters(){const data=state.timeReview?.rows||[],q=norm(document.getElementById('timeReviewSearch')?.value),type=document.getElementById('timeReviewType')?.value||'',st=document.getElementById('timeReviewStatus')?.value||'',sort=getTableSort('timeReview');const list=sortRecords(data.filter(r=>{const hay=norm([r.name,r.jobTitle,r.email,r.category,r.date,r.type,r.session,r.recordTime,r.referenceTime,r.reviewStatus,r.reviewerJobTitle,r.comment,r.userReason].join(' '));return(!q||hay.includes(q))&&(!type||r.type===type)&&(!st||r.reviewStatus===st);}),sort);text('timeReviewCount',`${list.length} / ${data.length} rekod`);const body=document.getElementById('timeReviewRows');if(!body)return;body.innerHTML=list.length?list.map(r=>`<tr><td><b>${esc(r.name)}</b><small class="table-sub">${esc(r.jobTitle||'—')} · ${esc(r.email)}</small></td><td>${esc(r.date)}</td><td><span class="badge ${r.type==='LEWAT'?'lewat':'awal'}">${esc(r.type)}</span></td><td>${esc(r.session)}</td><td><b>${esc(r.recordTime)}</b></td><td>${esc(r.referenceTime||'—')}</td><td>${r.userReason?`<div class="time-user-reason">${esc(r.userReason)}</div><small class="table-sub">Dihantar: ${esc(r.userReasonAt||'—')}</small>`:'<small class="muted">Belum diberikan</small>'}</td><td><span class="request-status ${r.reviewStatus==='DIAMBIL MAKLUM'?'approved':r.reviewStatus==='DITOLAK'?'rejected':'pending'}">${esc(r.reviewStatus)}</span></td><td>${r.reviewStatus==='BELUM DIAMBIL MAKLUM'?`<div class="row-actions"><button class="action-link approve-link" onclick='openTimeReview(${attr(JSON.stringify(r.id))},"DIAMBIL MAKLUM")'>Diambil Maklum</button><button class="action-link warn-link" onclick='openTimeReview(${attr(JSON.stringify(r.id))},"DITOLAK")'>Ditolak</button></div>`:`<span class="review-role-tag">${esc(r.reviewerJobTitle||'Pentadbir Sistem')}</span><small class="table-sub">Catatan: ${esc(r.comment||'—')}</small><small class="table-sub">${esc(r.reviewedAt||'—')}</small>`}</td></tr>`).join(''):'<tr><td colspan="9" class="empty-cell">Tiada rekod sepadan.</td></tr>';
   }
   function openTimeReview(id,decision){const r=state.timeReview?.rows?.find(x=>x.id===id);if(!r)return;showModal(`<h3>${esc(decision==='DIAMBIL MAKLUM'?'Diambil Maklum':'Tolak')} Rekod Waktu</h3><p><b>${esc(r.name)}</b><br><span class="muted">${esc(r.jobTitle||'')} · ${esc(r.email)}</span></p><div class="review-summary"><div><span>Jenis</span><b>${esc(r.type)}</b></div><div><span>Sesi</span><b>${esc(r.session)}</b></div><div><span>Waktu</span><b>${esc(r.recordTime)}</b></div><div><span>Rujukan</span><b>${esc(r.referenceTime||'—')}</b></div></div><form onsubmit='submitTimeReview(event,${attr(JSON.stringify(id))},${attr(JSON.stringify(decision))})'><label>Ulasan<textarea name="comment" rows="3" placeholder="Catatan (opsyenal)"></textarea></label><p><button class="btn ${decision==='DIAMBIL MAKLUM'?'primary':'dark'}" type="submit">Simpan Keputusan</button></p></form>`);}
-  async function submitTimeReview(ev,id,decision){ev.preventDefault();const comment=new FormData(ev.target).get('comment')||'';try{const r=await runServer('reviewTimeException',state.token,id,decision,comment);closeModal();toast(`${r.status}.`,4500);invalidateClientCache('timeReview','myCard','adminCard');await loadTimeReview(true);}catch(e){handleServerError(e);}}
+  async function submitTimeReview(ev,id,decision){ev.preventDefault();const comment=new FormData(ev.target).get('comment')||'';try{const r=await runServer('reviewTimeException',state.token,id,decision,comment);closeModal();toast(`${r.status}.`,4500);invalidateClientCache('timeReview','myCard','adminCard');await loadTimeReview(true);refreshAdminPendingNotice(true).catch(()=>{});}catch(e){handleServerError(e);}}
   async function generateTimeReviewPdfClient(){try{const filters={fromDate:document.getElementById('timeReviewFrom').value,toDate:document.getElementById('timeReviewTo').value,type:document.getElementById('timeReviewType').value,status:document.getElementById('timeReviewStatus').value};const r=await runServer('generateTimeReviewPdf',state.token,filters);downloadPdfResult(r);toast('Laporan PDF dijana.');}catch(e){handleServerError(e);}}
 
   // ---------- Admin data / report ----------
