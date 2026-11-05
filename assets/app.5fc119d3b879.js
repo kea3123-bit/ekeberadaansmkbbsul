@@ -1182,7 +1182,11 @@
         &&r.recordTime===justPunched.recordTime);
       if(!now||state.timeReasonPromptShown.has(now.id))return;
       state.timeReasonPromptShown.add(now.id);
-      const all=await refreshMyTimeReasonNotice(true);
+      // Keep the already-working single-event popup usable while the cPanel
+      // server is still on the previous API release during staged rollout.
+      let all=null;
+      try{all=await refreshMyTimeReasonNotice(true);}
+      catch(summaryError){console.warn('Notifikasi baharu belum aktif di cPanel; borang semasa masih tersedia.');}
       const rows=all?.rows||[now];
       if(rows.length>1){
         showMyTimeReasonTable(rows);
