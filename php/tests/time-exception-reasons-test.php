@@ -43,6 +43,7 @@ $GLOBALS['storedReasons']=[];
 $GLOBALS['writes']=[];
 function all_absence_rows():array{return $GLOBALS['applications'];}
 function rows(string $sql,array $args=[]):array{
+  if(str_contains($sql,'FROM sejarah_jadual'))return [];
   if(str_contains($sql,'FROM kehadiran'))return [$GLOBALS['attendance']];
   throw new RuntimeException('Unexpected SQL: '.$sql);
 }
