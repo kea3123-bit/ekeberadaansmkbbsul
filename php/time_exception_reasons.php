@@ -11,11 +11,11 @@ function ek_reason_minutes(string $time):?int {
     if(!preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/',$time,$m))return null;
     return (int)$m[1]*60+(int)$m[2];
 }
-function ek_reason_thursday_out(array $user,array $settings,string $date,string $in,string $normal):string {
+function ek_reason_thursday_out(array $user,array $settings,string $date,string $in,string $normal,?bool $historicallyEligible=null):string {
     if((int)date('N',strtotime($date))!==4)return $normal;
     if(strtoupper((string)($settings['THURSDAY_WBF_ENABLED']??'TRUE'))==='FALSE')return $normal;
     $category=strtoupper(trim((string)($user['kategori']??'')));
-    if($category!=='AKP'&&!preg_match('/\bPENGETUA\b/iu',(string)($user['jawatan']??'')))return $normal;
+    if($historicallyEligible===false||($historicallyEligible===null&&$category!=='AKP'&&!preg_match('/\bPENGETUA\b/iu',(string)($user['jawatan']??''))))return $normal;
     $actual=ek_reason_minutes($in);
     $start=ek_reason_minutes((string)($settings['THURSDAY_WBF_IN_FROM']??'07:30'));
     $end=ek_reason_minutes((string)($settings['THURSDAY_WBF_IN_TO']??'09:00'));
@@ -27,6 +27,65 @@ function ek_reason_thursday_out(array $user,array $settings,string $date,string 
     if($duration<1)return $normal;
     $target=min($outEnd,max($outStart,max($start,$actual)+$duration));
     return sprintf('%02d:%02d',intdiv($target,60),$target%60);
+}
+/**
+ * Read the per-user dated schedule snapshots once per reason-summary / OUT check.
+ * The MySQL import stores dates as Excel serials, including fractional days.
+ */
+function ek_reason_schedule_history(array $user):array {
+    $email=strtolower(trim((string)($user['emel']??'')));
+    if($email==='')return [];
+    try {
+        return rows('SELECT * FROM sejarah_jadual WHERE LOWER(emel)=? AND berkuatkuasapada IS NOT NULL ORDER BY berkuatkuasapada ASC,_row_id ASC',[$email]);
+    } catch(PDOException $e) {
+        if((int)($e->errorInfo[1]??0)===1146)return [];
+        throw $e;
+    }
+}
+function ek_reason_historic_time($raw,string $fallback):string {
+    if($raw===null||trim((string)$raw)==='')return $fallback;
+    if(is_numeric($raw)) {
+        $minutes=((int)round((float)$raw*1440))%1440;
+        if($minutes<0)$minutes+=1440;
+        return sprintf('%02d:%02d',intdiv($minutes,60),$minutes%60);
+    }
+    $text=time_text($raw);
+    return ek_reason_minutes($text)!==null?$text:$fallback;
+}
+/** Choose the latest historical entry effective on or before the incident day. */
+function ek_reason_schedule_on_date(array $user,array $settings,string $date,array $history):array {
+    $schedule=schedule($user,$settings);
+    $effective=null;
+    foreach($history as $entry) {
+        $serial=$entry['berkuatkuasapada']??null;
+        if(!is_numeric($serial)||!is_finite((float)$serial)||(float)$serial<=0)continue;
+        $day=gmdate('Y-m-d',((int)floor((float)$serial)-25569)*86400);
+        if($day>$date)break;
+        $effective=$entry;
+    }
+    if(!$effective)return [$schedule,$settings,null];
+    $snapshot=json_decode((string)($effective['snapshotjson']??''),true);
+    if(!is_array($snapshot))$snapshot=[];
+    $original=is_array($snapshot['schedule']??null)?$snapshot['schedule']:[];
+    $historicalSettings=is_array($snapshot['timingSettings']??null)?$snapshot['timingSettings']:[];
+    $schedule['s1In']=ek_reason_historic_time($effective['sesi1masuk']??($original['s1In']??null),(string)$schedule['s1In']);
+    $schedule['s1Out']=ek_reason_historic_time($effective['sesi1keluar']??($original['s1Out']??null),(string)$schedule['s1Out']);
+    $schedule['s2In']=ek_reason_historic_time($effective['sesi2masuk']??($original['s2In']??null),'');
+    $schedule['s2Out']=ek_reason_historic_time($effective['sesi2keluar']??($original['s2Out']??null),'');
+    $historicSettings=array_replace($settings,$historicalSettings);
+    if(($effective['wbfenabled']??null)!==null)
+        $historicSettings['THURSDAY_WBF_ENABLED']=(int)$effective['wbfenabled']===1?'TRUE':'FALSE';
+    foreach(['THURSDAY_WBF_IN_FROM'=>'wbfmasukmula','THURSDAY_WBF_IN_TO'=>'wbfmasukakhir',
+       'THURSDAY_WBF_OUT_FROM'=>'wbfkeluarmula','THURSDAY_WBF_OUT_TO'=>'wbfkeluarakhir'] as $key=>$column) {
+        if(($effective[$column]??null)!==null)
+            $historicSettings[$key]=ek_reason_historic_time($effective[$column],(string)($historicSettings[$key]??''));
+    }
+    if(($effective['wbfminit']??null)!==null)
+        $historicSettings['THURSDAY_WBF_DURATION_MINUTES']=(int)$effective['wbfminit'];
+    $eligible=($effective['layakwbfkhamis']??null)!==null
+       ?(int)$effective['layakwbfkhamis']===1
+       :(array_key_exists('wbfEligible',$snapshot)?(bool)$snapshot['wbfEligible']:null);
+    return [$schedule,$historicSettings,$eligible];
 }
 function ek_reason_request_covers(array $requests,string $day,string $reference,string $recorded):bool {
     $from=min($reference,$recorded);$to=max($reference,$recorded);
@@ -44,10 +103,11 @@ function ek_reason_request_covers(array $requests,string $day,string $reference,
     }
     return false;
 }
-function ek_reason_incidents(array $attendance,array $user,array $settings):array {
-    $events=[];$sch=schedule($user,$settings);
+function ek_reason_incidents(array $attendance,array $user,array $settings,array $history=[]):array {
+    $events=[];
     $date=date_key($attendance['tarikh']??'');
-    if(!preg_match('/^20\d\d-\d\d-\d\d$/',$date))return [];
+    if(!preg_match('/^20\\d\\d-\\d\\d-\\d\\d$/',$date))return [];
+    [$sch,$effectiveSettings,$wbfEligible]=ek_reason_schedule_on_date($user,$settings,$date,$history);
     // Source/status (including AUTO_TIDAK_HADIR) must never suppress a real
     // late/early time. Only actual punch timestamps determine an incident.
     $in=time_text($attendance['masuk']??'');
@@ -61,7 +121,7 @@ function ek_reason_incidents(array $attendance,array $user,array $settings):arra
     $secondConfigured=trim((string)($sch['s2In']??''))!==''||trim((string)($sch['s2Out']??''))!=='';
     $finalOut=$out2?:($in2||$secondConfigured?'':$out);
     $normalOut=time_text($out2?(($sch['s2Out']??'')?:($sch['s1Out']??'16:30')):($sch['s1Out']??'16:30'));
-    $effectiveOut=ek_reason_thursday_out($user,$settings,$date,$in,$normalOut);
+    $effectiveOut=ek_reason_thursday_out($user,$effectiveSettings,$date,$in,$normalOut,$wbfEligible);
     if($finalOut!==''&&ek_reason_minutes($effectiveOut)!==null&&$finalOut<$effectiveOut)
         $events[]=['type'=>'BALIK AWAL','session'=>$out2?2:1,'recordTime'=>$finalOut,'referenceTime'=>$effectiveOut];
     $refIn2=time_text($sch['s2In']??'');
@@ -74,13 +134,14 @@ function ek_reason_incidents(array $attendance,array $user,array $settings):arra
  * user-reason modal. No login, navigation, refresh or historical scan.
  */
 function ek_reason_current_punch_event(array $attendance,array $user,array $settings,string $type,int $session):?array {
+    $history=ek_reason_schedule_history($user);
     // A configured second shift makes first-session OUT an intermediate break.
     if($type==='OUT'&&$session===1){
-        $sch=schedule($user,$settings);
+        [$sch]=ek_reason_schedule_on_date($user,$settings,date_key($attendance['tarikh']??''),$history);
         if(trim((string)($sch['s2In']??''))!=='')return null;
     }
     $wanted=$type==='IN'?'LEWAT':'BALIK AWAL';
-    foreach(ek_reason_incidents($attendance,$user,$settings) as $event){
+    foreach(ek_reason_incidents($attendance,$user,$settings,$history) as $event){
         if($event['type']!==$wanted||(int)$event['session']!==$session)continue;
         return ['date'=>date_key($attendance['tarikh']??''),
           'type'=>$wanted,'session'=>$session,'recordTime'=>$event['recordTime'],
@@ -98,6 +159,7 @@ function ek_reason_unresolved_for_user(array $user,string $from,string $to,?arra
     $email=strtolower(trim((string)($user['emel']??'')));
     if($email===''||$from>$to)return [];
     $settings=settings_raw();
+    $history=ek_reason_schedule_history($user);
     $attendanceRows=$onlyAttendance!==null?[$onlyAttendance]:
         rows('SELECT * FROM kehadiran WHERE LOWER(emel)=? AND tarikh BETWEEN ? AND ? ORDER BY tarikh DESC,_row_id DESC',
             [$email,$from,$to]);
@@ -116,7 +178,7 @@ function ek_reason_unresolved_for_user(array $user,string $from,string $to,?arra
     foreach($attendanceRows as $attendance){
         $day=date_key($attendance['tarikh']??'');
         if($day<$from||$day>$to)continue;
-        foreach(ek_reason_incidents($attendance,$user,$settings) as $event){
+        foreach(ek_reason_incidents($attendance,$user,$settings,$history) as $event){
             $key=$day.'|'.$event['type'].'|'.$event['session'];
             if(isset($seen[$key]))continue;
             $seen[$key]=true;
@@ -181,12 +243,13 @@ function ek_reason_my_pending(array $user,array $trigger=[]):array {
     $email=strtolower(trim((string)($user['emel']??'')));
     $latest=attendance_row($email,$targetDate);
     $records=$latest?[$latest]:[];
+    $history=ek_reason_schedule_history($user);
     $applications=array_values(array_filter(all_absence_rows(),static fn($r)=>
         strtolower(trim((string)($r['email']??'')))===$email));
     $results=[];$seen=[];
     foreach($records as $record) {
         $date=date_key($record['tarikh']??'');
-        foreach(ek_reason_incidents($record,$user,$settings) as $event) {
+        foreach(ek_reason_incidents($record,$user,$settings,$history) as $event) {
             $type=$event['type'];$session=$event['session'];
             if($date!==$targetDate||$type!==$targetType||
                (int)$session!==$targetSession||$event['recordTime']!==$targetTime)continue;
@@ -234,8 +297,9 @@ function ek_reason_save(array $user,string $id,string $reason):array {
     // been created/approved after the popup was opened.
     $day=date_key($item['tarikh']??'');
     $records=attendance_row($email,$day);
+    $history=ek_reason_schedule_history($user);
     $current=[];
-    if($records)foreach(ek_reason_incidents($records,$user,settings_raw()) as $event)
+    if($records)foreach(ek_reason_incidents($records,$user,settings_raw(),$history) as $event)
         if($event['type']===(string)$item['jenis']&&(int)$event['session']===(int)$item['sesi'])$current[]=$event;
     if(!$current)throw new InvalidArgumentException('Rekod waktu telah berubah. Sila segar semula.');
     $requests=array_values(array_filter(all_absence_rows(),static fn($r)=>
