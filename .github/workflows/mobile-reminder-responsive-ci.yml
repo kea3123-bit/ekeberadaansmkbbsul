@@ -1,0 +1,26 @@
+name: Mobile reminder modal responsive regression (safe staging)
+on:
+  push:
+    branches: [fix/20261105-mobile-reason-admin-notification-v2]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  notice-layout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify compact mobile dialogs and existing user actions
+        run: |
+          set -euo pipefail
+          node --check < mysql-ui/Scripts.html
+          node mysql-ui/tests/mobile-reason-admin-notice.test.js
+          node mysql-ui/tests/time-reason-backlog.test.js
+          node mysql-ui/tests/admin-pending-actions.test.js
+          node mysql-ui/tests/time-exception-reasons.test.js
+      - name: Verify no PHP/DB behavior regression
+        run: |
+          set -euo pipefail
+          php php/tests/admin-pending-actions-test.php
+          php php/tests/time-reason-backlog-test.php

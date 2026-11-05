@@ -1004,4 +1004,141 @@
       touch-action:manipulation;
     }
   }
+
+
+/* Compact, accessible mobile-only cards for the two Home reminder dialogs.
+   Desktop keeps the original four-column data table. */
+@media (max-width:760px){
+  .modal-card:has(.ek-responsive-notice-table){
+    width:min(440px,100%);
+    max-height:calc(100dvh - 24px);
+    padding:20px 14px 16px;
+  }
+  .modal-card:has(.ek-responsive-notice-table) h3{
+    padding-right:20px;
+    font-size:19px;
+    line-height:1.25;
+    margin-bottom:8px;
+  }
+  .modal-card:has(.ek-responsive-notice-table) .review-request>p{
+    font-size:13px;
+    line-height:1.45;
+    margin:8px 0 12px;
+  }
+  .ek-notice-scroll{
+    max-width:100%;
+    overflow-x:hidden!important;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-y:contain;
+    border:0!important;
+  }
+  .ek-notice-scroll .ek-responsive-notice-table,
+  .ek-notice-scroll .ek-responsive-notice-table tbody{
+    display:block;
+    width:100%;
+    min-width:0!important;
+    border-collapse:separate;
+  }
+  .ek-notice-scroll .ek-responsive-notice-table thead{display:none}
+  .ek-notice-scroll .ek-responsive-notice-table tbody{
+    display:grid;
+    gap:10px;
+  }
+  .ek-notice-scroll .ek-responsive-notice-table tr{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:7px 12px;
+    padding:12px;
+    background:#f8fbff;
+    border:1px solid #dce8fa;
+    border-radius:14px;
+    box-shadow:0 3px 12px rgba(23,53,95,.04);
+  }
+  .ek-notice-scroll .ek-responsive-notice-table td{
+    display:block;
+    padding:0!important;
+    border:0!important;
+    min-width:0;
+    overflow-wrap:anywhere;
+    font-size:13px;
+    line-height:1.4;
+  }
+  .ek-notice-scroll .ek-responsive-notice-table .btn{
+    min-height:44px;
+    font-size:14px;
+    touch-action:manipulation;
+  }
+  .ek-notice-scroll .ek-reason-list tr{
+    grid-template-areas:"date type" "times times" "action action";
+  }
+  .ek-notice-scroll .ek-reason-list td:nth-child(1){
+    grid-area:date;
+    font-weight:800;
+    font-variant-numeric:tabular-nums;
+    align-self:center;
+  }
+  .ek-notice-scroll .ek-reason-list td:nth-child(2){
+    grid-area:type;
+    text-align:right;
+    font-size:12px;
+  }
+  .ek-notice-scroll .ek-reason-list td:nth-child(2) b{
+    display:inline-block;
+    padding:3px 8px;
+    background:#fff3cd;
+    border-radius:999px;
+    color:#735a07;
+  }
+  .ek-notice-scroll .ek-reason-list td:nth-child(2) .table-sub{
+    display:block;
+    font-size:11px;
+  }
+  .ek-notice-scroll .ek-reason-list td:nth-child(3){
+    grid-area:times;
+    border-top:1px solid #e2e8f0!important;
+    padding-top:8px!important;
+  }
+  .ek-notice-scroll .ek-reason-list td:nth-child(4){grid-area:action}
+  .ek-notice-scroll .ek-reason-list td:nth-child(4) .btn{width:100%}
+  .ek-notice-scroll .ek-admin-list tr{
+    grid-template-areas:"name name" "kind kind" "date action";
+  }
+  .ek-notice-scroll .ek-admin-list td:nth-child(1){
+    grid-area:name;
+    font-size:14px;
+    color:#102a4c;
+  }
+  .ek-notice-scroll .ek-admin-list td:nth-child(2){
+    grid-area:kind;
+    color:#475467;
+  }
+  .ek-notice-scroll .ek-admin-list td:nth-child(3){
+    grid-area:date;
+    align-self:center;
+    font-variant-numeric:tabular-nums;
+    color:#344054;
+    font-size:12px;
+  }
+  .ek-notice-scroll .ek-admin-list td:nth-child(4){grid-area:action;justify-self:end}
+  .ek-notice-scroll .ek-admin-list td:nth-child(4) .btn{padding:8px 16px}
+}
+@media (max-width:360px){
+  .ek-notice-scroll .ek-reason-list tr{
+    grid-template-areas:"date date" "type type" "times times" "action action";
+  }
+  .ek-notice-scroll .ek-reason-list td:nth-child(2){text-align:left}
+}
+.ek-record-times{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 16px;
+  font-variant-numeric:tabular-nums;
+}
+.ek-record-times>span{display:inline-flex;align-items:baseline;gap:5px}
+.ek-record-times small{font-size:11px;color:#667085}
+@media(max-width:760px){
+  .ek-record-times>span{flex:1 1 95px;display:grid;gap:2px}
+  .ek-record-times b{font-size:17px;color:#102a4c}
+}
+
 </style>
