@@ -40,6 +40,7 @@ check_case(ek_reason_request_covers($leave,$day,'07:30','08:15'),'Same-day appro
 $GLOBALS['attendance']=$event;
 $GLOBALS['applications']=[];
 $GLOBALS['storedReasons']=[];
+$GLOBALS['reviewState']=[];
 $GLOBALS['writes']=[];
 function all_absence_rows():array{return $GLOBALS['applications'];}
 function rows(string $sql,array $args=[]):array{
@@ -54,7 +55,8 @@ function one(string $sql,array $args=[]):?array{
     $id='SW-MYSQL-20261102-'.substr(hash('sha256','b@example.test|2026-11-02|LEWAT|1'),0,18);
     if(isset($GLOBALS['storedReasons'][$id])){
       return ['id'=>$id,'tarikh'=>'2026-11-02','jenis'=>'LEWAT','sesi'=>1,
-        'emel'=>'b@example.test','sebabpengguna'=>$GLOBALS['storedReasons'][$id]];
+        'emel'=>'b@example.test','sebabpengguna'=>$GLOBALS['storedReasons'][$id],
+        'statussemakan'=>$GLOBALS['reviewState'][$id]??'BELUM DIAMBIL MAKLUM'];
     }
     return null;
   }
@@ -65,9 +67,15 @@ function execute_sql(string $query,array $args=[]):int{
   $GLOBALS['writes'][]=[$query,$args];
   if(str_contains($query,'INSERT INTO semakan_waktu')){
     $GLOBALS['storedReasons'][$args[0]]='';
+    $GLOBALS['reviewState'][$args[0]]='BELUM DIAMBIL MAKLUM';
   }
   if(str_contains($query,'UPDATE semakan_waktu')){
+    check_case(str_contains($query,"statussemakan='BELUM DIAMBIL MAKLUM'"),
+      'User explanation must NOT automatically approve, and must reset a historic reviewed status');
+    foreach(['disemakoleh=NULL','namapelulus=NULL','disemakpada=NULL','ulasan=NULL'] as $field)
+       check_case(str_contains($query,$field),'Old reviewer metadata must be cleared: '.$field);
     $GLOBALS['storedReasons'][$args[1]]=$args[0];
+    $GLOBALS['reviewState'][$args[1]]='BELUM DIAMBIL MAKLUM';
   }
   return 1;
 }
@@ -85,10 +93,15 @@ $results=ek_reason_my_pending($ppp,$trigger);
 check_case(count($results)===1,'Owner pending list should create a single late incident');
 check_case(str_starts_with($results[0]['id'],'SW-MYSQL-'),'Inserted incident must use deterministic MySQL ID');
 $id=$results[0]['id'];
+// Regression: an incident was acknowledged BEFORE the staff wrote a reason.
+// The newly supplied reason must now be routed to an administrator again.
+$GLOBALS['reviewState'][$id]='DIAMBIL MAKLUM';
 try{ek_reason_save($akp,$id,'Terlewat kerana banjir kilat');throw new RuntimeException('Wrong owner accepted');}
 catch(InvalidArgumentException $ok){}
 $save=ek_reason_save($ppp,$id,'Terlewat kerana banjir kilat');
 check_case($save['ok']===true,'User reason did not persist');
+check_case($GLOBALS['reviewState'][$id]==='BELUM DIAMBIL MAKLUM',
+  'Reason submission cannot inherit an earlier DIAMBIL MAKLUM approval');
 check_case(ek_reason_my_pending($ppp,$trigger)===[],'Submitted reason should not show again');
 check_case(count(array_filter($GLOBALS['writes'],fn($e)=>str_contains($e[0],'UPDATE semakan_waktu')))==1,'Reason write must occur only once');
 echo "SELF_SERVICE_TIME_REASON_TESTS_OK\n";
