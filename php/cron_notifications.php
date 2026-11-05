@@ -27,6 +27,26 @@ function mysql_time_review_jobs():array {
             $employees[$email]=$u;
             if((int)($u['pentadbir']??0)===1)$adminEmails[$email]=true;
         }
+        // Use the same dated schedule + WBF rules as the user's reason popup.
+        // A row with source AUTO_TIDAK_HADIR may later receive a real punch.
+        require_once __DIR__.'/time_exception_reasons.php';
+        $histories=[];
+        // Keep exemptions aligned with the user's reason notification; a
+        // matching pending/approved absence/presence must not generate a review.
+        $requestsByEmail=[];
+        foreach(rows("SELECT emel,status,`mod`,tarikhmula,tarikhakhir,masamula,masaakhir
+            FROM tidak_hadir WHERE status IN ('MENUNGGU','DILULUSKAN')") as $request){
+            $requestEmail=strtolower(trim((string)($request['emel']??'')));
+            if($requestEmail==='')continue;
+            $requestsByEmail[$requestEmail][]=[
+                'status'=>(string)($request['status']??''),
+                'mode'=>(string)($request['mod']??'TIDAK_HADIR'),
+                'startDate'=>date_key($request['tarikhmula']??''),
+                'endDate'=>date_key($request['tarikhakhir']??''),
+                'startTime'=>time_text($request['masamula']??''),
+                'endTime'=>time_text($request['masaakhir']??'')
+            ];
+        }
         foreach($dates as $day){
             if($day<$start)continue;
             $latest=[];
@@ -35,35 +55,26 @@ function mysql_time_review_jobs():array {
                 if(isset($employees[$email]))$latest[$email]=$r;
             }
             foreach($latest as $email=>$r){
-                $source=strtoupper((string)($r['sumber']??''));
-                // Admin manual corrections and automated absences aren't new staff punch events.
-                if(str_contains($source,'ADMIN')||str_contains($source,'AUTO_'))continue;
-                $flags=strtoupper(trim((string)($r['statuswaktu']??'').'|'.(string)($r['status']??'')));
-                $person=$employees[$email];
-                $sch=schedule_for_attendance($person,$s,$day,$r);
-                $events=[];
-                if(str_contains($flags,'LEWAT'))$events[]=['LEWAT','masuk','s1In',1];
-                // Re-evaluate early departures from actual clock times, not
-                // stored flags that may have been computed by an older PHP
-                // release against 16:30 on WBF Thursdays.
-                $secondIn=time_text($r['masuk2']??'');
-                $secondOut=time_text($r['balik2']??'');
-                $firstOut=time_text($r['balik']??'');
-                $refIn2=time_text($sch['s2In']??'');
-                if($secondIn!==''&&$refIn2!==''&&$secondIn>$refIn2)
-                    $events[]=['LEWAT','masuk2','s2In',2];
-                $finalOut=$secondOut!==''?$secondOut:($secondIn!==''?'':$firstOut);
-                $finalReference=$secondOut!=='' && !$sch['wbfApplied'] && !empty($sch['s2Out'])
-                    ?$sch['s2Out']:$sch['s1Out'];
-                if($finalOut!==''&&$finalReference!==''&&$finalOut<$finalReference){
-                    $events[]=['BALIK AWAL',$secondOut!==''?'balik2':'balik',
-                        $secondOut!=='' && !$sch['wbfApplied'] && !empty($sch['s2Out'])?'s2Out':'s1Out',
-                        $secondOut!==''?2:1];
+                $source=strtoupper(trim((string)($r['sumber']??'')));
+                // Manual admin corrections are intentionally not new punches.
+                // AUTO_TIDAK_HADIR is only a source label, not proof of absence:
+                // accept it when an actual punch timestamp exists.
+                if(str_contains($source,'ADMIN'))continue;
+                $hasPunch=false;
+                foreach(['masuk','balik','masuk2','balik2'] as $field){
+                    if(time_text($r[$field]??'')!==''){$hasPunch=true;break;}
                 }
-                foreach($events as [$type,$column,$referenceKey,$session]){
-                    $clock=time_text($r[$column]??'');
-                    $reference=time_text($sch[$referenceKey]??'');
-                    if(!$clock||!$reference)continue;
+                if(!$hasPunch)continue;
+                $person=$employees[$email];
+                if(!array_key_exists($email,$histories))
+                    $histories[$email]=ek_reason_schedule_history($person);
+                foreach(ek_reason_incidents($r,$person,$s,$histories[$email]) as $incident){
+                    $type=$incident['type'];
+                    $session=(int)$incident['session'];
+                    $clock=$incident['recordTime'];
+                    $reference=$incident['referenceTime'];
+                    if(ek_reason_request_covers($requestsByEmail[$email]??[],$day,$reference,$clock))
+                        continue;
                     $id=mysql_review_event_id($email,$day,$type,$session);
                     $found=one('SELECT id,statussemakan FROM semakan_waktu WHERE emel=? AND tarikh=? AND jenis=? AND sesi=? ORDER BY _row_id DESC LIMIT 1',
                         [$email,$day,$type,$session]);
