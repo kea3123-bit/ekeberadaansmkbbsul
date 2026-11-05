@@ -185,6 +185,10 @@ function rpc(string $fn,array $a) {
       case 'getAbsenceManagementData':
         $u=require_user($a[0]??''); if (!$u['pentadbir'] && $u['kategori']!=='Pengurusan') throw new RuntimeException('Tiada kebenaran.');
         return management_absences($u,(string)($a[1]??today()),(string)($a[2]??today()));
+      case 'getAdminPendingActions':
+        $admin=require_user($a[0]??'',true);
+        require_once __DIR__.'/admin_action_notifications.php';
+        return ek_admin_pending_actions($admin);
       case 'submitAbsenceRequest':
         $user=require_user($a[0]??'');
         $payload=is_array($a[1]??null)?$a[1]:[];
