@@ -48,6 +48,6 @@ $settings['THURSDAY_WBF_ENABLED']='TRUE';
 $lateArrival=schedule_for_attendance($akp,$settings,'2026-11-05',['masuk'=>'2026-11-05 09:10:00']);
 testWbf($lateArrival['wbfActive']&&!$lateArrival['wbfApplied']&&!$lateArrival['wbfPending']
   &&$lateArrival['s1Out']==='16:30','Invalid WBF window must not silently grant flex time');
-$numeric=schedule_for_attendance($akp,$settings,'2026-11-05',['masuk'=>excel_number('2026-11-05 08:54:00')]);
+$numeric=schedule_for_attendance($akp,$settings,'2026-11-05',['masuk'=>excel_number('2026-11-05 08:54:30')]);
 testWbf($numeric['s1Out']==='16:24','Excel numeric times must be handled');
 echo "THURSDAY_WBF_HOME_SCHEDULE_TESTS_OK\n";
