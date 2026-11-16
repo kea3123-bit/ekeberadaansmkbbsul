@@ -14,7 +14,7 @@
     lastSessionCheck:0, sessionCheckBusy:false, sessionRecoveryPromise:null,
     locationMap:null, locationMarker:null, locationCircle:null,
     settingsCurrentMarker:null, settingsAccuracyCircle:null,
-    homeLocationMap:null, homeSchoolMarker:null, homeRadiusCircle:null, homeCurrentMarker:null, homeAccuracyCircle:null,
+    homeLocationMap:null, homeSchoolMarker:null, homeRadiusCircle:null, homeFallbackRadiusCircle:null, homeCurrentMarker:null, homeAccuracyCircle:null,
     liveLocation:null, locationWatchId:null, locationUpdatedAt:0, locationRefreshPromise:null,
     locationPermissionState:'unknown', locationPermissionProblem:'', locationPermissionStatus:null,
     photoCache:new Map(), clientInfo:null, clientInfoPromise:null, leafletPromise:null
@@ -722,6 +722,7 @@
     const thresholdsM=[80,100,120,140];
     return {
       radiusM,
+      maxPunchRadiusM:Math.max(140,radiusM),
       configuredMaxAccuracyM:Math.max(140,Number(s.maxGpsAccuracyM)||140),
       thresholdsM,
       stageMs:2000,
@@ -741,6 +742,18 @@
     return clientHaversineMeters(Number(pos.coords.latitude),Number(pos.coords.longitude),lat,lng);
   }
 
+  // Geofence radius steps are independent of GPS ±accuracy. This is only a
+  // display estimate: PHP calculates the actual distance and makes the decision.
+  function progressivePunchRadius(distanceM,baseRadiusM){
+    const base=Math.max(1,Number(baseRadiusM)||200);
+    const max=Math.max(140,base);
+    if(!Number.isFinite(distanceM)||distanceM<0)
+      return {allowed:false,baseRadiusM:base,usedRadiusM:base,maxRadiusM:max,extended:false};
+    let used=base;
+    while(distanceM>used&&used<max)used=Math.min(max,used+10);
+    return {allowed:distanceM<=used,baseRadiusM:base,usedRadiusM:used,
+      maxRadiusM:max,extended:used>base};
+  }
   function liveLocationAgeMs(){return state.locationUpdatedAt?Date.now()-state.locationUpdatedAt:Infinity;}
   function isUsablePunchPosition(pos,maxAgeMs=45000){
     const accuracy=Number(pos?.coords?.accuracy);
@@ -835,7 +848,13 @@
     if(!pos?.coords)return;
     const accuracy=Math.round(Number(pos.coords.accuracy)||0),distance=Math.round(punchGpsDistance(pos));
     const ageSec=Math.max(0,Math.round(liveLocationAgeMs()/1000));
-    gps('ok',`Lokasi live tersedia · GPS ±${accuracy}m${Number.isFinite(distance)?` · jarak ${distance}m / ${Math.round(punchGpsPolicy().radiusM)}m`:''}${ageSec>8?` · ${ageSec}s lalu`:''}`);
+    const policy=punchGpsPolicy(),limit=progressivePunchRadius(punchGpsDistance(pos),policy.radiusM);
+    const rangeInfo=Number.isFinite(distance)
+      ?' · jarak '+distance+'m / '+Math.round(policy.radiusM)+'m'
+         +(limit.extended&&limit.allowed?' · toleransi '+Math.round(limit.usedRadiusM)+'m'
+           :!limit.allowed?' · luar had '+Math.round(limit.maxRadiusM)+'m':'')
+      :'';
+    gps('ok','Lokasi live tersedia · GPS ±'+accuracy+'m'+rangeInfo+(ageSec>8?' · '+ageSec+'s lalu':''));
   }
   function liveLocationIcon(){
     return L.divIcon({className:'ek-live-location-icon',html:'<span></span>',iconSize:[22,22],iconAnchor:[11,11]});
@@ -860,10 +879,28 @@
       state.homeLocationMap=L.map(el,{zoomControl:true,attributionControl:true}).setView([lat,lng],17);
       L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'}).addTo(state.homeLocationMap);
       state.homeSchoolMarker=L.marker([lat,lng],{title:'Lokasi sekolah'}).addTo(state.homeLocationMap);
-      state.homeRadiusCircle=L.circle([lat,lng],{radius:Math.max(1,Number(s.radiusM)||200),weight:2,fillOpacity:.07}).addTo(state.homeLocationMap);
+      const policy=punchGpsPolicy();
+      if(policy.maxPunchRadiusM>policy.radiusM)
+        state.homeFallbackRadiusCircle=L.circle([lat,lng],{
+          radius:policy.maxPunchRadiusM,color:'#2563eb',weight:1.5,
+          opacity:.75,fillOpacity:0,dashArray:'6 6',interactive:false
+        }).addTo(state.homeLocationMap);
+      state.homeRadiusCircle=L.circle([lat,lng],{radius:policy.radiusM,weight:2,fillOpacity:.07}).addTo(state.homeLocationMap);
     }else{
       state.homeSchoolMarker?.setLatLng([lat,lng]);
-      state.homeRadiusCircle?.setLatLng([lat,lng]).setRadius(Math.max(1,Number(s.radiusM)||200));
+      const policy=punchGpsPolicy();
+      state.homeRadiusCircle?.setLatLng([lat,lng]).setRadius(policy.radiusM);
+      if(policy.maxPunchRadiusM>policy.radiusM){
+        if(!state.homeFallbackRadiusCircle)
+          state.homeFallbackRadiusCircle=L.circle([lat,lng],{
+            radius:policy.maxPunchRadiusM,color:'#2563eb',weight:1.5,
+            opacity:.75,fillOpacity:0,dashArray:'6 6',interactive:false
+          }).addTo(state.homeLocationMap);
+        else state.homeFallbackRadiusCircle.setLatLng([lat,lng]).setRadius(policy.maxPunchRadiusM);
+      }else if(state.homeFallbackRadiusCircle){
+        state.homeLocationMap.removeLayer(state.homeFallbackRadiusCircle);
+        state.homeFallbackRadiusCircle=null;
+      }
     }
     if(pos?.coords){
       syncCurrentLocationMarker(state.homeLocationMap,'homeCurrentMarker','homeAccuracyCircle',pos);
@@ -1032,7 +1069,11 @@
         }
         loc={lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy};
         const estimated=Math.round(punchGpsDistance(pos));
-        gps('ok',`GPS ±${Math.round(loc.accuracy)}m${Number.isFinite(estimated)?` · anggaran ${estimated}m / ${Math.round(gpsPolicy.radiusM)}m`:''} · menyemak server…`);
+        const candidate=progressivePunchRadius(punchGpsDistance(pos),gpsPolicy.radiusM);
+        const radiusLabel=candidate.allowed
+          ?' · tahap radius '+Math.round(candidate.usedRadiusM)+'m'
+          :' · di luar had '+Math.round(candidate.maxRadiusM)+'m';
+        gps('ok',`GPS ±${Math.round(loc.accuracy)}m${Number.isFinite(estimated)?` · jarak ${estimated}m`:''}${radiusLabel} · menyemak server…`);
       }
       const clientInfo=await clientInfoPromise, res=await runServer('punch',state.token,type,loc,clientInfo);
       if(res&&res.attendance){
@@ -1040,7 +1081,10 @@
         if(res.schedule)state.boot.schedule=res.schedule;
         renderBoot();
       }else await refreshBoot();
-      gps('ok',test?'Rekod MOD TEST diterima.':`Rekod waktu diterima · GPS ±${Number(res.accuracyM)||Math.round(loc?.accuracy||0)}m · jarak ${res.distanceM}m / ${Number(res.radiusM)||Math.round(gpsPolicy.radiusM)}m.`);
+      const used=Number(res.usedRadiusM)||gpsPolicy.radiusM;
+      const extended=!!res.progressiveRadiusUsed;
+      gps('ok',test?'Rekod MOD TEST diterima.':
+        `Rekod waktu diterima · GPS ±${Number(res.accuracyM)||Math.round(loc?.accuracy||0)}m · jarak ${res.distanceM}m · radius ${Math.round(used)}m${extended?' (toleransi)':''}.`);
       toast(res.message,4500);
       invalidateClientCache('myCard','adminCard');
       if(res.timeException){
