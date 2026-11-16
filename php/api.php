@@ -343,18 +343,50 @@ function distance_m(float $a,float $b,float $c,float $d): float {
     $x=sin($dp/2)**2+cos($p1)*cos($p2)*sin($dl/2)**2;
     return $r*2*atan2(sqrt($x),sqrt(1-$x));
 }
+/**
+ * Progressive school geofence: honour the configured radius first, then
+ * add 10 m steps up to an absolute 140 m fallback ceiling.
+ *
+ * This never changes GPS coordinates or GPS accuracy requirements. If an
+ * administrator already configured a radius >140 m, preserve it rather than
+ * silently tightening an existing school setting.
+ */
+function progressive_punch_radius(float $distanceM,float $configuredRadiusM):array {
+    if(!is_finite($distanceM)||$distanceM<0||!is_finite($configuredRadiusM))
+        throw new InvalidArgumentException('Jarak GPS tidak sah.');
+    $base=max(1.0,$configuredRadiusM);
+    $limit=max($base,140.0);
+    $used=$base;
+    while($distanceM>$used && $used<$limit) {
+        $used=min($limit,$used+10.0);
+    }
+    return [
+        'allowed'=>$distanceM<=$used,
+        'baseRadiusM'=>$base,
+        'usedRadiusM'=>$used,
+        'maxRadiusM'=>$limit,
+        'extended'=>$used>$base
+    ];
+}
 function punch_mysql(array $u,string $type,$location): array {
     $type=strtoupper($type); if (!in_array($type,['IN','OUT'],true)) throw new InvalidArgumentException('Jenis rekod tidak sah.');
     $s=settings_raw();$sch=schedule($u,$s);$test=strtoupper((string)($s['SYSTEM_MODE']??'REAL'))==='TEST';
     $lat=null;$lng=null;$accuracy=null;$distance=0;
+    $radiusDecision=progressive_punch_radius(0.0,(float)($s['RADIUS_M']??200));
     if (!$test) {
         if (!isset($location['lat'],$location['lng'],$location['accuracy'])||empty($s['SCHOOL_LAT'])||empty($s['SCHOOL_LNG']))
             throw new RuntimeException('Lokasi sekolah / GPS belum ditetapkan.');
         $lat=(float)$location['lat'];$lng=(float)$location['lng'];$accuracy=(float)$location['accuracy'];
         if ($accuracy<0||$accuracy>(float)($s['MAX_GPS_ACCURACY_M']??120)) throw new RuntimeException('Ketepatan GPS tidak mencukupi.');
         if (abs($lat)>90||abs($lng)>180) throw new RuntimeException('Koordinat GPS tidak sah.');
-        $distance=(int)round(distance_m($lat,$lng,(float)$s['SCHOOL_LAT'],(float)$s['SCHOOL_LNG']));
-        if ($distance>(float)($s['RADIUS_M']??200)) throw new RuntimeException('Anda berada di luar radius sekolah.');
+        $measuredDistance=distance_m($lat,$lng,(float)$s['SCHOOL_LAT'],(float)$s['SCHOOL_LNG']);
+        $distance=(int)round($measuredDistance);
+        // Check the unrounded distance so a reading >140.00 m cannot
+        // become 140 m and accidentally pass due to rounding.
+        $radiusDecision=progressive_punch_radius($measuredDistance,(float)($s['RADIUS_M']??200));
+        if(!$radiusDecision['allowed'])throw new RuntimeException(
+            'Anda berada di luar radius sekolah (had maksimum '
+             .round($radiusDecision['maxRadiusM']).' m).');
     }
     $email=(string)$u['emel'];$date=today();$ip=(string)($_SERVER['REMOTE_ADDR']??'');
     $lock='ek_punch_'.hash('sha256',$email.'|'.$date);
@@ -401,12 +433,26 @@ function punch_mysql(array $u,string $type,$location): array {
         execute_sql('UPDATE kehadiran SET status=?,statuswaktu=? WHERE _row_id=?',
           [$status,implode('|',$flags),$updated['_row_id']]);
         db()->commit();
-        audit_event($email,'RAKAM_WAKTU',$date,$type.' sesi '.$n);
+        $radiusAudit=$test?'MOD_TEST':(
+            'GPS '.$distance.'m; accuracy='.round((float)$accuracy).'m; '
+            .'radius asal='.round($radiusDecision['baseRadiusM']).'m; '
+            .'radius digunakan='.round($radiusDecision['usedRadiusM']).'m; '
+            .'mode='.($radiusDecision['extended']?'PROGRESSIVE':'NORMAL'));
+        audit_event($email,'RAKAM_WAKTU',$date,$type.' sesi '.$n.' | '.$radiusAudit);
         $saved=attendance_row($email,$date);
         $savedSchedule=schedule_for_attendance($u,$s,$date,$saved);
         $response=['ok'=>true,'attendance'=>attendance_public($saved,$savedSchedule),
            'schedule'=>$savedSchedule,
-           'ip'=>$ip,'distanceM'=>$distance,'ipWarning'=>'','message'=>'Rekod waktu berjaya disimpan.'];
+           'ip'=>$ip,'distanceM'=>$distance,
+           'radiusM'=>$radiusDecision['baseRadiusM'],
+           'usedRadiusM'=>$radiusDecision['usedRadiusM'],
+           'maxRadiusM'=>$radiusDecision['maxRadiusM'],
+           'progressiveRadiusUsed'=>$radiusDecision['extended'],
+           'accuracyM'=>$accuracy,
+           'ipWarning'=>'',
+           'message'=>$radiusDecision['extended']
+               ?'Rekod waktu berjaya disimpan melalui toleransi radius sehingga '.round($radiusDecision['usedRadiusM']).' m.'
+               :'Rekod waktu berjaya disimpan.'];
         // Never let the optional reason-popup feature break a successful punch.
         // Report only the incident created by THIS button press (date/session).
         if(!$test){
