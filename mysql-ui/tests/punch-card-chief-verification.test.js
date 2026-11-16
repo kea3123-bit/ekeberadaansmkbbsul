@@ -26,7 +26,7 @@ for(const html of [display,print]){
   assert(html.includes('pc-chief-mark'),'Verified decision must be rendered');
   assert(html.includes('<small>MAKLUM</small>'),'Late incident should be marked acknowledged');
   assert(html.includes('<small>LULUS</small>'),'Approved absence should be marked LULUS');
-  assert(html.includes('Pengetua'),'Reviewer's real title should appear in the tooltip');
+  assert(html.includes('Pengetua'),"Reviewer's real title should appear in the tooltip");
   assert(html.includes('2026-11-15'),'Decision date should appear in tooltip');
   assert(html.includes('colspan="5" class="pc-absence-full"'),'Absent rows must reserve own TT Ketua cell');
   assert(html.includes('<td class="pc-sign"></td>'),'Unreviewed incidents must keep TT Ketua blank');
