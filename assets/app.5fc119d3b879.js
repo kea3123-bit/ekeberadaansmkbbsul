@@ -1434,9 +1434,15 @@
         .filter(Boolean).join(' · ');
     }).join(' | ');
     const context=(label==='MAKLUM'?'Diambil maklum':'Diluluskan');
-    const accessibility=context+(details?' — '+details:'');
-    return '<span class="pc-chief-mark" title="'+esc(accessibility)+'" aria-label="'+esc(accessibility)+'">'
-      +'<b aria-hidden="true">✓</b><small>'+esc(label)+'</small></span>';
+    const titles=[...new Set(entries.map(item=>String(item.reviewerJobTitle||'').trim()).filter(Boolean))];
+    // Show actual registered job title(s) in TT Ketua, never a generic
+    // "LULUS"/"MAKLUM" role. Decision type remains in the accessible tooltip.
+    const jobTitle=titles.length?titles.join(' / '):'—';
+    const accessibility=context+(details?' — '+details:'')
+      +(titles.length?'':' — Jawatan penyemak tidak direkodkan');
+    const sizeClass=jobTitle.length>16?' pc-chief-mark-long':'';
+    return '<span class="pc-chief-mark'+sizeClass+'" title="'+esc(accessibility)+'" aria-label="'+esc(accessibility)+'">'
+      +'<b aria-hidden="true">✓</b><small>'+esc(jobTitle)+'</small></span>';
   }
   function shortTime(v){return v?String(v).slice(0,5):'';}
   function compactCardReason(reason){
