@@ -428,6 +428,58 @@ function punch_mysql(array $u,string $type,$location): array {
  * The original workbook's Sesi 1 DATETIME and Sesi 2 Excel serial columns
  * are normalized by time_text(). All calendar/read overlays remain read-only.
  */
+
+/**
+ * TT Ketua represents an existing recorded administrative decision, NOT an
+ * electronic/handwritten signature. Every outstanding time incident must have
+ * its own explicit acknowledgement; one acknowledged event cannot approve
+ * another late/early event on the same day.
+ */
+function punch_card_chief_verification(array $row,array $absence,array $presence):?array {
+    $date=(string)($row['date']??'');
+    $status=strtoupper(trim((string)($row['status']??'')));
+    $reviews=array_values(array_filter($row['reviewItems']??[],
+      static fn($item)=>in_array(strtoupper(trim((string)($item['type']??''))),['LEWAT','BALIK AWAL'],true)));
+    if($reviews) {
+        foreach($reviews as $item) {
+            if(strtoupper(trim((string)($item['reviewStatus']??'')))!=='DIAMBIL MAKLUM'
+               ||trim((string)($item['reviewerEmail']??''))==='')return null;
+        }
+        $flagNames=array_map('strtoupper',(array)($row['statusFlags']??[]));
+        foreach(['LEWAT','BALIK AWAL'] as $type) {
+            if(!in_array($type,$flagNames,true)&&strpos($status,$type)===false)continue;
+            $found=false;
+            foreach($reviews as $item)
+                if(strtoupper((string)($item['type']??''))===$type){$found=true;break;}
+            if(!$found)return null;
+        }
+        return ['label'=>'MAKLUM','kind'=>'TIME_REVIEW','entries'=>array_map(
+          static fn($item)=>[
+            'type'=>trim((string)($item['type']??'')).' Sesi '.(int)($item['session']??1),
+            'reviewerName'=>(string)($item['reviewerName']??''),
+            'reviewerJobTitle'=>(string)($item['reviewerJobTitle']??''),
+            'reviewedAt'=>(string)($item['reviewedAt']??'')
+          ],$reviews)];
+    }
+    // Do not display TT Ketua merely because a request was approved when the
+    // day's flagged LEWAT/BALIK AWAL incident itself remains unacknowledged.
+    if(strpos($status,'LEWAT')!==false||strpos($status,'BALIK AWAL')!==false
+       ||array_intersect(['LEWAT','BALIK AWAL'],(array)($row['statusFlags']??[])))
+        return null;
+    $mode=$status==='TIDAK HADIR'?'TIDAK_HADIR':'KEBERADAAN';
+    foreach(($mode==='TIDAK_HADIR'?$absence:$presence) as $request) {
+        if(($request['status']??'')!=='DILULUSKAN'
+           ||($request['from']??'')>$date||($request['to']??'')<$date
+           ||trim((string)($request['reviewedBy']??''))==='')continue;
+        return ['label'=>'LULUS','kind'=>$mode,'entries'=>[[
+          'type'=>$mode.' · '.(string)($request['type']??''),
+          'reviewerName'=>(string)($request['reviewerName']??''),
+          'reviewerJobTitle'=>(string)($request['reviewerJobTitle']??''),
+          'reviewedAt'=>(string)($request['reviewedAt']??'')
+        ]]];
+    }
+    return null;
+}
 function punch_card(array $u,string $month): array {
     if ($month==='') $month=substr(today(),0,7);
     if (!preg_match('/^(20\d\d|21\d\d)-(0[1-9]|1[0-2])$/',$month))
@@ -517,7 +569,7 @@ function punch_card(array $u,string $month): array {
         $from=date_key($row['tarikhmula']);$to=date_key($row['tarikhakhir']);
         if($from>$end||$to<$start)continue;
         $item=['from'=>$from,'to'=>$to,'type'=>(string)$row['jenis'],'status'=>$status,
-           'reviewedBy'=>$row['disemakoleh']??'','note'=>$row['catatan']??'',
+           'reviewedBy'=>$row['disemakoleh']??'','reviewedAt'=>date_key($row['disemakpada']??''),'note'=>$row['catatan']??'',
            'startTime'=>time_text($row['masamula']??''),'endTime'=>time_text($row['masaakhir']??'')];
         if($mode==='KEBERADAAN')$presence[]=$item;else $absence[]=$item;
     }
@@ -561,24 +613,48 @@ function punch_card(array $u,string $month): array {
     $reviewByDate=[];
     foreach($reviews as $r) $reviewByDate[date_key($r['tarikh'])][]=$r;
     $reviewerCache=[];
+    $reviewerInfo=static function($email) use (&$reviewerCache):array {
+        $email=strtolower(trim((string)$email));
+        if($email==='')return ['name'=>'','jobTitle'=>''];
+        if(!array_key_exists($email,$reviewerCache)){
+            $person=user_by_email($email,false);
+            $reviewerCache[$email]=[
+                'name'=>(string)($person['nama']??''),
+                'jobTitle'=>(string)($person['jawatan']??'')
+            ];
+        }
+        return $reviewerCache[$email];
+    };
+    foreach($absence as &$request){
+        $person=$reviewerInfo($request['reviewedBy']??'');
+        $request['reviewerName']=$person['name'];
+        $request['reviewerJobTitle']=$person['jobTitle'];
+    }
+    unset($request);
+    foreach($presence as &$request){
+        $person=$reviewerInfo($request['reviewedBy']??'');
+        $request['reviewerName']=$person['name'];
+        $request['reviewerJobTitle']=$person['jobTitle'];
+    }
+    unset($request);
     foreach($byDay as &$r){
         $reviewItems=[];
         foreach($reviewByDate[$r['date']]??[] as $rev) {
-            $reviewer=strtolower((string)($rev['disemakoleh']??''));
-            if(!array_key_exists($reviewer,$reviewerCache)) {
-                $p=$reviewer!==''?user_by_email($reviewer,false):null;
-                $reviewerCache[$reviewer]=$p?($p['jawatan']??''):'';
-            }
+            $reviewer=strtolower(trim((string)($rev['disemakoleh']??'')));
+            $reviewerData=$reviewerInfo($reviewer);
             $reviewItems[]=[
                 'type'=>strtoupper(trim((string)($rev['jenis']??''))),
                 'session'=>(int)($rev['sesi']?:1),
                 'reviewStatus'=>(string)($rev['statussemakan']??''),
-                'reviewerJobTitle'=>$reviewerCache[$reviewer],
+                'reviewerEmail'=>$reviewer,
+                'reviewerName'=>trim((string)($rev['namapelulus']??''))?:$reviewerData['name'],
+                'reviewerJobTitle'=>$reviewerData['jobTitle'],
                 'reviewedAt'=>date_key($rev['disemakpada']??''),
                 'comment'=>(string)($rev['ulasan']??'')
             ];
         }
         $r['reviewItems']=$reviewItems;
+        $r['chiefVerification']=punch_card_chief_verification($r,$absence,$presence);
         $statuses=array_filter(array_map(static fn($v)=>strtoupper(trim((string)$v['reviewStatus'])),$reviewItems));
         $r['reviewState']=$statuses?
             (in_array('DIAMBIL MAKLUM',$statuses,true)?'DIAMBIL MAKLUM':(in_array('DITOLAK',$statuses,true)?'DITOLAK':'BELUM DIAMBIL MAKLUM')):
