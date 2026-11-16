@@ -1,0 +1,28 @@
+name: TT Ketua evidence and rendering regression (safe staging)
+on:
+  push:
+    branches: [fix/20261116-tt-ketua-v2]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  tt-ketua:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax and real-authority TT Ketua decisions
+        run: |
+          set -euo pipefail
+          php -l php/api.php
+          php php/tests/punch-card-chief-verification-test.php
+          php php/tests/absence-reviewer-dates-test.php
+          php php/tests/time-exception-reasons-test.php
+      - name: Shared own/admin/print card presentation and unrelated regressions
+        run: |
+          set -euo pipefail
+          node --check < mysql-ui/Scripts.html
+          node mysql-ui/tests/punch-card-chief-verification.test.js
+          node mysql-ui/tests/monthly-print.test.js
+          node mysql-ui/tests/time-exception-reasons.test.js
+          php php/tests/monthly-report-test.php
