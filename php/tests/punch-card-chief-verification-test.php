@@ -16,6 +16,7 @@ function time_text($value):string {
     if($value===null||$value==='')return '';
     return substr((string)$value,-8,5)==='-11-'?'':substr((string)$value,11,5);
 }
+function excel_number($v):float {return (strtotime(substr((string)$v,0,10).' UTC')/86400)+25569;}
 function today():string {return '2026-11-16';}
 function now_myt():string {return '2026-11-16 17:00:00';}
 function settings_raw():array {return [
