@@ -24,8 +24,8 @@ const display=cardRowsHtml(data,1);
 const print=cardRowsHtml(data,1,true);
 for(const html of [display,print]){
   assert(html.includes('pc-chief-mark'),'Verified decision must be rendered');
-  assert(html.includes('<small>MAKLUM</small>'),'Late incident should be marked acknowledged');
-  assert(html.includes('<small>LULUS</small>'),'Approved absence should be marked LULUS');
+  assert(html.includes('<small>Pengetua</small>'),'Reviewer job title should replace acknowledgement label');
+  assert(!html.includes('<small>LULUS</small>')&&!html.includes('<small>MAKLUM</small>'),'Generic approval labels must not appear in TT Ketua');
   assert(html.includes('Pengetua'),"Reviewer's real title should appear in the tooltip");
   assert(html.includes('2026-11-15'),'Decision date should appear in tooltip');
   assert(html.includes('colspan="5" class="pc-absence-full"'),'Absent rows must reserve own TT Ketua cell');
@@ -41,4 +41,25 @@ assert(js.includes('renderMyPunchCard(){')&&js.includes('cardRowsHtml(d,state.my
 assert(js.includes('function renderAdminCard(){')&&js.includes('cardRowsHtml(d,state.adminCardHalf)'),'Admin card uses shared renderer');
 assert(js.includes('rows.innerHTML=cardRowsHtml(data,half,true)'),'Print spread uses shared renderer');
 assert(css.includes('.pc-chief-mark')&&css.includes('@media print'),'Decision marker must remain printable');
+assert(css.includes('.pc-chief-mark.pc-chief-mark-long small'),'Long job title must fit compact card column');
+for(const decision of ['MAKLUM','LULUS']){
+ const title='Penolong Kanan Pentadbiran';
+ const html=cardChiefMark({chiefVerification:{label:decision,entries:[{type:'LEWAT Sesi 1',
+    reviewerJobTitle:title,reviewerName:'Pegawai A',reviewedAt:'2026-11-16'}]}});
+ assert(html.includes('pc-chief-mark-long'),'Long title needs compact typography');
+ assert(html.includes('<small>'+title+'</small>'),'Full true job title should be visible');
+ assert(html.includes('Pegawai A')&&html.includes('2026-11-16'),'Reviewer identity and decision date remain in tooltip');
+ assert(html.includes(decision==='MAKLUM'?'Diambil maklum':'Diluluskan'),'Decision type must remain accessible');
+}
+const mixed=cardChiefMark({chiefVerification:{label:'MAKLUM',entries:[
+ {reviewerJobTitle:'Pengetua',reviewerName:'A'},
+ {reviewerJobTitle:'Penolong Kanan Pentadbiran',reviewerName:'B'}
+]}});
+assert(mixed.includes('Pengetua / Penolong Kanan Pentadbiran'),
+ 'All distinct actual approver roles must be preserved');
+const withoutTitle=cardChiefMark({chiefVerification:{label:'MAKLUM',entries:[{reviewerName:'Penyemak Lama'}]}});
+assert(withoutTitle.includes('<small>—</small>')&&withoutTitle.includes('Jawatan penyemak tidak direkodkan'),
+ 'Missing title must not be replaced by a fabricated job');
+const escaping=cardChiefMark({chiefVerification:{label:'LULUS',entries:[{reviewerJobTitle:'Pengetua <b>fake</b> & Co'}]}});
+assert(!escaping.includes('<b>fake</b>'),'Job title HTML must be escaped');
 console.log('PUNCH_CARD_TT_KETUA_OWN_ADMIN_PRINT_OK');
