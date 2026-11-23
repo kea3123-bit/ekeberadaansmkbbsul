@@ -20,7 +20,7 @@ jobs:
       - name: Verify renderer and MySQL-only transport
         shell: bash
         env:
-          EKE_PUBLIC_API_URL: https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php
+          EKE_PUBLIC_API_URL: https://115.133.12.204/api.php
         run: |
           set -euo pipefail
           php -l mysql-ui/index.php
@@ -35,7 +35,7 @@ jobs:
           from pathlib import Path
           s=Path('/tmp/eke-mysql-preview/index.html').read_text('utf-8')
           assert s.lstrip().lower().startswith('<!doctype html>')
-          assert 'https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php' in s
+          assert 'https://115.133.12.204/api.php' in s
           assert 'google.script.run' not in s, 'Old Google Apps Script transport is still active'
           assert 'gas-shim' not in s, 'Old Google bridge is still active'
           assert 'script.google.com/macros/' not in s, 'Old Apps Script URL is still embedded'
