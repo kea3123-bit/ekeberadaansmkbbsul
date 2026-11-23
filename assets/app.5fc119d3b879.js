@@ -35,12 +35,12 @@
     };
     let response;
     try {
-      response=await fetch("https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php",options);
+      response=await fetch("https://115.133.12.204/api.php",options);
       if(response.status===415){
         // Graceful compatibility while an older cPanel api.php is upgraded.
         // The old server rejects before dispatching, so retry is safe.
         try{
-          response=await fetch("https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php",{
+          response=await fetch("https://115.133.12.204/api.php",{
             ...options,headers:{'Content-Type':'application/json'}
           });
         }catch(_legacyError){
