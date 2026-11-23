@@ -60,7 +60,7 @@ JS;
 // The endpoint is PUBLIC configuration, not a database credential.
 $apiUrl = getenv('EKE_PUBLIC_API_URL') ?: 'api.php';
 if ($apiUrl !== 'api.php' &&
-    $apiUrl !== 'https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php') {
+    $apiUrl !== 'https://115.133.12.204/api.php') {
     http_response_code(500);
     exit('Invalid EKE_PUBLIC_API_URL');
 }
