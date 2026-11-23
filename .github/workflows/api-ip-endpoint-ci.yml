@@ -1,0 +1,38 @@
+name: Validate direct IP API endpoint (no production deployment)
+on:
+  push:
+    branches: [fix/20261123-api-ip-v2]
+  pull_request:
+    branches: [refactor/performance-v2]
+permissions:
+  contents: read
+jobs:
+  endpoint-render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify allowlisted IP endpoint and render the MySQL frontend
+        env:
+          EKE_PUBLIC_API_URL: https://115.133.12.204/api.php
+        run: |
+          set -euo pipefail
+          php -l mysql-ui/php/index.php
+          php -l mysql-ui/index.php
+          node --check < mysql-ui/Scripts.html
+          php mysql-ui/index.php > /tmp/eKeberadaan-ip-preview.html
+          python3 - <<'PY'
+          from pathlib import Path
+          target = 'https://115.133.12.204/api.php'
+          old = 'https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php'
+          html = Path('/tmp/eKeberadaan-ip-preview.html').read_text('utf-8')
+          assert html.count('fetch("'+target+'"') == 2, 'Both normal and 415 retry must use new IP'
+          assert old not in html, 'Stale original endpoint in generated HTML'
+          assert "credentials:'omit'" in html, 'Preserve stateless API calls'
+          assert 'google.script.run' not in html
+          for f in ['mysql-ui/php/index.php','.github/workflows/github-pages.yml',
+                    '.github/workflows/validate-mysql-frontend.yml']:
+              contents=Path(f).read_text('utf-8')
+              assert target in contents, f+' not switched'
+              assert old not in contents, f+' still points to old endpoint'
+          print('PASS_DIRECT_IP_ENDPOINT_RENDER_AND_BUILD_CONFIG')
+          PY

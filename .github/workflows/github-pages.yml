@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Render HTML and verify MySQL endpoint
         env:
-          EKE_PUBLIC_API_URL: https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php
+          EKE_PUBLIC_API_URL: https://115.133.12.204/api.php
         run: |
           set -euo pipefail
           php -l mysql-ui/php/index.php
@@ -36,7 +36,7 @@ jobs:
           from pathlib import Path
           html = Path('/tmp/eke-mysql-ui/index.html').read_text('utf-8')
           assert html.lstrip().lower().startswith('<!doctype html>')
-          assert 'fetch("https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php"' in html, 'MySQL API URL not found'
+          assert 'fetch("https://115.133.12.204/api.php"' in html, 'MySQL API URL not found'
           assert 'google.script.run' not in html, 'Google Sheets RPC remains'
           assert 'gas-shim' not in html, 'Google Sheets client shim remains'
           assert "credentials:'omit'" in html, 'No cross-domain cookies allowed'
@@ -180,7 +180,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          API='https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php'
+          API='https://115.133.12.204/api.php'
           code=$(curl -sS -L --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 30 \
             -D /tmp/eke-api-headers -o /tmp/eke-api-health.json -w '%{http_code}' \
             -H 'Origin: https://kea3123-bit.github.io' \
@@ -267,7 +267,7 @@ jobs:
           logo_file=$(grep -oE 'assets/logo\.[0-9a-f]{12}\.png' /tmp/eke-staged.html | head -1)
           test -n "$js_file" && test -n "$css_file" && test -n "$logo_file"
           git show "origin/gh-pages:$js_file" > /tmp/eke-published-app.js
-          grep -Fq "https://ppdkmy.edu.my/ekeberadaansmkbbsul/api.php" /tmp/eke-published-app.js
+          grep -Fq "https://115.133.12.204/api.php" /tmp/eke-published-app.js
           ! grep -Fq 'google.script.run' /tmp/eke-published-app.js
           ! grep -Fq 'gas-shim' /tmp/eke-staged.html
           git cat-file -e "origin/gh-pages:$css_file"
